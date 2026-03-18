@@ -1,0 +1,375 @@
+name: Playwright Tests
+
+on:
+  schedule:
+    - cron: '0 3 * * *' # Tous les jours à 3h du matin (UTC)
+  push:
+    branches: [ main, master ]
+  pull_request:
+    branches: [ main, master ]
+  workflow_dispatch: # Permet le déclenchement manuel
+
+permissions:
+  contents: write # Nécessaire pour déployer sur GitHub Pages
+
+env:
+  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
+
+jobs:
+  test:
+    timeout-minutes: 60
+    runs-on: ubuntu-latest
+    concurrency:
+      group: gh-pages-deploy
+      cancel-in-progress: false
+
+    steps:
+    - uses: actions/checkout@v4
+
+    - uses: actions/setup-node@v4
+      with:
+        node-version: lts/*
+
+    - name: Install dependencies
+      run: npm ci
+
+    - name: Install Playwright Browsers
+      run: npx playwright install --with-deps
+
+    - name: Create .env file
+      run: |
+        echo "BASE_URL=${{ secrets.BASE_URL }}" >> .env
+        echo "USER_EMAIL=${{ secrets.USER_EMAIL }}" >> .env
+        echo "USER_PASSWORD=${{ secrets.USER_PASSWORD }}" >> .env
+
+    - name: Run Playwright tests
+      id: tests
+      run: npx playwright test
+      continue-on-error: true
+
+    # ── Allure : récupérer l'historique précédent depuis gh-pages ──
+    - name: Récupérer l'historique Allure depuis gh-pages
+      if: ${{ !cancelled() }}
+      run: |
+        mkdir -p allure-results/history
+        git fetch origin gh-pages 2>/dev/null || true
+        if git rev-parse --verify origin/gh-pages >/dev/null 2>&1; then
+          git checkout origin/gh-pages -- history/ 2>/dev/null || true
+          cp -r history/* allure-results/history/ 2>/dev/null || true
+          rm -rf history
+        fi
+
+    # ── Allure : branding personnalisé (ICARE QUALITY) ──
+    - name: Appliquer le branding ICARE QUALITY
+      if: ${{ !cancelled() }}
+      run: |
+        PLUGIN_DIR="node_modules/allure-commandline/dist/plugins/custom-logo-plugin/static"
+        cp allure-branding/styles.css "$PLUGIN_DIR/styles.css"
+        # Activer le plugin dans la config Allure
+        CONFIG="node_modules/allure-commandline/dist/config/allure.yml"
+        if ! grep -q "custom-logo-plugin" "$CONFIG"; then
+          echo "  - custom-logo-plugin" >> "$CONFIG"
+        fi
+
+    # ── Allure : générer le rapport ──
+    - name: Générer le rapport Allure
+      if: ${{ !cancelled() }}
+      run: npx allure generate allure-results -o allure-report --clean --name "ICARE QUALITY"
+
+    # ── Allure : extraire les statistiques pour l'email ──
+    - name: Extraire le résumé Allure
+      if: ${{ !cancelled() }}
+      id: allure
+      run: |
+        TOTAL=$(jq '.statistic.total' allure-report/widgets/summary.json)
+        PASSED=$(jq '.statistic.passed' allure-report/widgets/summary.json)
+        FAILED=$(jq '.statistic.failed' allure-report/widgets/summary.json)
+        BROKEN=$(jq '.statistic.broken' allure-report/widgets/summary.json)
+        SKIPPED=$(jq '.statistic.skipped' allure-report/widgets/summary.json)
+        if [ "$TOTAL" -gt 0 ]; then
+          PASS_RATE=$(( PASSED * 100 / TOTAL ))
+        else
+          PASS_RATE=0
+        fi
+        echo "total=$TOTAL" >> $GITHUB_OUTPUT
+        echo "passed=$PASSED" >> $GITHUB_OUTPUT
+        echo "failed=$FAILED" >> $GITHUB_OUTPUT
+        echo "broken=$BROKEN" >> $GITHUB_OUTPUT
+        echo "skipped=$SKIPPED" >> $GITHUB_OUTPUT
+        echo "pass_rate=$PASS_RATE" >> $GITHUB_OUTPUT
+
+    # ── Déployer Allure sur GitHub Pages avec historique (main uniquement) ──
+    - name: Déployer le rapport Allure sur GitHub Pages (avec historique)
+      if: ${{ !cancelled() && github.ref == 'refs/heads/main' }}
+      env:
+        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      run: |
+        set -euo pipefail
+
+        # ── Configuration ──
+        MAX_REPORTS=20
+        RUN_TIMESTAMP=$(date -u +'%Y%m%d-%H%M%S')
+        RUN_DIR_NAME="run-${RUN_TIMESTAMP}-${{ github.run_id }}"
+        PAGES_URL="https://$(echo '${{ github.repository_owner }}' | tr '[:upper:]' '[:lower:]').github.io/$(echo '${{ github.repository }}' | cut -d'/' -f2)"
+
+        # ── Cloner gh-pages dans un dossier temporaire ──
+        DEPLOY_DIR=$(mktemp -d)
+        git clone --branch gh-pages --single-branch --depth 1 \
+          "https://x-access-token:${GITHUB_TOKEN}@github.com/${{ github.repository }}.git" \
+          "$DEPLOY_DIR" 2>/dev/null || {
+          mkdir -p "$DEPLOY_DIR"
+          cd "$DEPLOY_DIR"
+          git init
+          git checkout -b gh-pages
+          git remote add origin "https://x-access-token:${GITHUB_TOKEN}@github.com/${{ github.repository }}.git"
+          cd -
+        }
+
+        # ── Créer le dossier reports/ ──
+        mkdir -p "$DEPLOY_DIR/reports"
+
+        # ── Archiver le nouveau rapport ──
+        cp -r allure-report "$DEPLOY_DIR/reports/${RUN_DIR_NAME}"
+
+        # ── Mettre à jour reports/latest/ ──
+        rm -rf "$DEPLOY_DIR/reports/latest"
+        cp -r allure-report "$DEPLOY_DIR/reports/latest"
+
+        # ── Préserver history/ à la racine pour les tendances Allure ──
+        mkdir -p "$DEPLOY_DIR/history"
+        cp -r allure-report/history/* "$DEPLOY_DIR/history/" 2>/dev/null || true
+
+        # ── Rétention : garder uniquement les N derniers rapports archivés ──
+        cd "$DEPLOY_DIR/reports"
+        REPORT_COUNT=$(ls -1d run-* 2>/dev/null | wc -l)
+        if [ "$REPORT_COUNT" -gt "$MAX_REPORTS" ]; then
+          REMOVE_COUNT=$((REPORT_COUNT - MAX_REPORTS))
+          ls -1d run-* | sort | head -n "$REMOVE_COUNT" | while read -r OLD_DIR; do
+            rm -rf "$OLD_DIR"
+          done
+        fi
+        cd -
+
+        # ── Construire la liste des rapports pour l'index ──
+        ENTRIES=""
+        cd "$DEPLOY_DIR/reports"
+        for DIR in $(ls -1d run-* 2>/dev/null | sort -r); do
+          RAW=$(echo "$DIR" | sed 's/^run-//')
+          YEAR="${RAW:0:4}"
+          MONTH="${RAW:4:2}"
+          DAY="${RAW:6:2}"
+          HOUR="${RAW:9:2}"
+          MIN="${RAW:11:2}"
+          SEC="${RAW:13:2}"
+          DISPLAY_DATE="${DAY}/${MONTH}/${YEAR} a ${HOUR}:${MIN}:${SEC} UTC"
+          RUN_ID=$(echo "$RAW" | sed 's/^[0-9]\{8\}-[0-9]\{6\}-//')
+
+          BADGE=""
+          if [ -f "$DIR/widgets/summary.json" ]; then
+            TOTAL=$(jq -r '.statistic.total // 0' "$DIR/widgets/summary.json")
+            PASSED=$(jq -r '.statistic.passed // 0' "$DIR/widgets/summary.json")
+            if [ "$TOTAL" -gt 0 ]; then
+              RATE=$((PASSED * 100 / TOTAL))
+            else
+              RATE=0
+            fi
+            if [ "$RATE" -eq 100 ]; then
+              COLOR="#10b981"
+            elif [ "$RATE" -ge 80 ]; then
+              COLOR="#f59e0b"
+            else
+              COLOR="#ef4444"
+            fi
+            BADGE="<span style='background:${COLOR};color:#fff;padding:2px 10px;border-radius:12px;font-size:0.85rem;margin-left:8px;'>${RATE}% (${PASSED}/${TOTAL})</span>"
+          fi
+
+          ENTRIES="${ENTRIES}<li class='report-item'><div class='report-info'><span class='report-date'>${DISPLAY_DATE}${BADGE}</span><span class='report-id'>Run #${RUN_ID}</span></div><a class='report-link' href='reports/${DIR}/index.html'>Ouvrir</a></li>"
+        done
+        cd -
+
+        # ── Générer index.html ──
+        cat > "$DEPLOY_DIR/index.html" << INDEXEOF
+        <!DOCTYPE html>
+        <html lang="fr">
+        <head>
+          <meta charset="UTF-8">
+          <meta name="viewport" content="width=device-width, initial-scale=1.0">
+          <title>ICARE-CENTRY - Historique des rapports Allure</title>
+          <style>
+            :root{--primary:#6c2dc7;--primary-light:#8b5cf6;--bg:#f8f9fa;--card-bg:#fff;--text:#1a1a2e;--text-secondary:#6b7280;--border:#e5e7eb}
+            *{margin:0;padding:0;box-sizing:border-box}
+            body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;background:var(--bg);color:var(--text);line-height:1.6}
+            .header{background:linear-gradient(135deg,var(--primary),var(--primary-light));color:#fff;padding:2rem;text-align:center}
+            .header h1{font-size:1.8rem;margin-bottom:.5rem}
+            .header p{opacity:.9;font-size:.95rem}
+            .container{max-width:900px;margin:2rem auto;padding:0 1rem}
+            .latest-banner{background:var(--card-bg);border:2px solid var(--primary);border-radius:12px;padding:1.5rem;margin-bottom:2rem;text-align:center}
+            .latest-banner a{display:inline-block;background:var(--primary);color:#fff;padding:.75rem 2rem;border-radius:8px;text-decoration:none;font-weight:600;margin-top:.75rem;transition:background .2s}
+            .latest-banner a:hover{background:var(--primary-light)}
+            .report-list{list-style:none}
+            .report-item{background:var(--card-bg);border:1px solid var(--border);border-radius:8px;padding:1rem 1.5rem;margin-bottom:.75rem;display:flex;justify-content:space-between;align-items:center;transition:box-shadow .2s}
+            .report-item:hover{box-shadow:0 2px 8px rgba(0,0,0,.08)}
+            .report-info{display:flex;flex-direction:column}
+            .report-date{font-weight:600;font-size:1rem}
+            .report-id{color:var(--text-secondary);font-size:.85rem}
+            .report-link{background:var(--primary);color:#fff;padding:.5rem 1.25rem;border-radius:6px;text-decoration:none;font-size:.9rem;white-space:nowrap;transition:background .2s}
+            .report-link:hover{background:var(--primary-light)}
+            .footer{text-align:center;padding:2rem;color:var(--text-secondary);font-size:.85rem}
+          </style>
+        </head>
+        <body>
+          <div class="header">
+            <h1>ICARE-CENTRY - Rapports de Tests</h1>
+            <p>Historique des 20 derniers rapports Allure</p>
+          </div>
+          <div class="container">
+            <div class="latest-banner">
+              <h2>Dernier rapport</h2>
+              <p>Consultez le rapport Allure le plus recent.</p>
+              <a href="reports/latest/index.html">Ouvrir le dernier rapport</a>
+            </div>
+            <h3 style="margin-bottom:1rem">Tous les rapports</h3>
+            <ul class="report-list">
+              ${ENTRIES}
+            </ul>
+          </div>
+          <div class="footer">
+            <p>Genere automatiquement par GitHub Actions | Retention : 20 rapports</p>
+          </div>
+        </body>
+        </html>
+        INDEXEOF
+
+        # ── Fichier .nojekyll ──
+        touch "$DEPLOY_DIR/.nojekyll"
+
+        # ── Commit et push sur gh-pages ──
+        cd "$DEPLOY_DIR"
+        git config user.name "github-actions[bot]"
+        git config user.email "github-actions[bot]@users.noreply.github.com"
+        git add -A
+        git diff --cached --quiet && echo "No changes to deploy" && exit 0
+        git commit -m "Deploy Allure report ${RUN_DIR_NAME}"
+        git push origin gh-pages --force
+        cd -
+        rm -rf "$DEPLOY_DIR"
+
+    # ── Artifacts ──
+    - name: Upload Playwright report
+      uses: actions/upload-artifact@v4
+      if: ${{ !cancelled() }}
+      with:
+        name: playwright-report
+        path: playwright-report/
+        retention-days: 30
+
+    - name: Upload Allure report
+      uses: actions/upload-artifact@v4
+      if: ${{ !cancelled() }}
+      with:
+        name: allure-report
+        path: allure-report/
+        retention-days: 30
+
+    # ── Résumé & notification email ──
+    - name: Get test results summary
+      if: ${{ !cancelled() }}
+      id: summary
+      run: |
+        if [ "${{ steps.tests.outcome }}" == "success" ]; then
+          STATUS="SUCCES"
+          EMOJI="✅"
+        else
+          STATUS="ECHEC"
+          EMOJI="❌"
+        fi
+        echo "status=$STATUS" >> $GITHUB_OUTPUT
+        echo "emoji=$EMOJI" >> $GITHUB_OUTPUT
+        echo "date=$(date +'%d/%m/%Y à %H:%M UTC')" >> $GITHUB_OUTPUT
+        echo "run_url=${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}" >> $GITHUB_OUTPUT
+        # URL GitHub Pages
+        OWNER=$(echo "${{ github.repository }}" | cut -d'/' -f1 | tr '[:upper:]' '[:lower:]')
+        REPO=$(echo "${{ github.repository }}" | cut -d'/' -f2)
+        echo "allure_url=https://${OWNER}.github.io/${REPO}/" >> $GITHUB_OUTPUT
+
+    - name: Send email notification
+      if: ${{ !cancelled() }}
+      uses: dawidd6/action-send-mail@v3
+      with:
+        server_address: ssl0.ovh.net
+        server_port: 465
+        secure: true
+        username: ${{ secrets.SMTP_USERNAME }}
+        password: ${{ secrets.SMTP_PASSWORD }}
+        subject: "${{ steps.summary.outputs.emoji }} Tests ICARE - ${{ steps.summary.outputs.status }} - ${{ steps.summary.outputs.date }}"
+        to: yabyourekabore@gmail.com
+        from: ICARE Tests Automatisés <${{ secrets.SMTP_USERNAME }}>
+        html_body: |
+          <div style="font-family:Arial, sans-serif; max-width:600px;">
+            <h2 style="color:#333;">${{ steps.summary.outputs.emoji }} Rapport de Tests ICARE-CENTRY</h2>
+
+            <!-- ── Dashboard Allure : résumé ── -->
+            <div style="background:#f8f9fa; border-radius:8px; padding:20px; margin:16px 0;">
+              <h3 style="margin-top:0; color:#6c2dc7;">📊 Dashboard Allure</h3>
+              <table style="border-collapse:collapse; width:100%;">
+                <tr style="background:#fff;">
+                  <td style="padding:10px; border:1px solid #ddd;"><strong>Total tests</strong></td>
+                  <td style="padding:10px; border:1px solid #ddd; text-align:center; font-size:18px; font-weight:bold;">${{ steps.allure.outputs.total }}</td>
+                </tr>
+                <tr>
+                  <td style="padding:10px; border:1px solid #ddd;">✅ Réussis</td>
+                  <td style="padding:10px; border:1px solid #ddd; text-align:center; color:#28a745; font-weight:bold;">${{ steps.allure.outputs.passed }}</td>
+                </tr>
+                <tr style="background:#fff;">
+                  <td style="padding:10px; border:1px solid #ddd;">❌ Échoués</td>
+                  <td style="padding:10px; border:1px solid #ddd; text-align:center; color:#dc3545; font-weight:bold;">${{ steps.allure.outputs.failed }}</td>
+                </tr>
+                <tr>
+                  <td style="padding:10px; border:1px solid #ddd;">⚠️ Cassés</td>
+                  <td style="padding:10px; border:1px solid #ddd; text-align:center; color:#fd7e14; font-weight:bold;">${{ steps.allure.outputs.broken }}</td>
+                </tr>
+                <tr style="background:#fff;">
+                  <td style="padding:10px; border:1px solid #ddd;">⏭️ Ignorés</td>
+                  <td style="padding:10px; border:1px solid #ddd; text-align:center; color:#6c757d; font-weight:bold;">${{ steps.allure.outputs.skipped }}</td>
+                </tr>
+              </table>
+              <div style="margin-top:12px; padding:10px; background:#fff; border-radius:6px; text-align:center;">
+                <span style="font-size:14px; color:#666;">Taux de réussite :</span>
+                <span style="font-size:24px; font-weight:bold; color:#28a745; margin-left:8px;">${{ steps.allure.outputs.pass_rate }}%</span>
+              </div>
+            </div>
+
+            <!-- ── Infos d'exécution ── -->
+            <table style="border-collapse:collapse; width:100%; margin:16px 0;">
+              <tr>
+                <td style="padding:8px; border:1px solid #ddd;"><strong>Statut</strong></td>
+                <td style="padding:8px; border:1px solid #ddd;">${{ steps.summary.outputs.status }}</td>
+              </tr>
+              <tr>
+                <td style="padding:8px; border:1px solid #ddd;"><strong>Date</strong></td>
+                <td style="padding:8px; border:1px solid #ddd;">${{ steps.summary.outputs.date }}</td>
+              </tr>
+              <tr>
+                <td style="padding:8px; border:1px solid #ddd;"><strong>Branche</strong></td>
+                <td style="padding:8px; border:1px solid #ddd;">${{ github.ref_name }}</td>
+              </tr>
+              <tr>
+                <td style="padding:8px; border:1px solid #ddd;"><strong>Déclencheur</strong></td>
+                <td style="padding:8px; border:1px solid #ddd;">${{ github.event_name }}</td>
+              </tr>
+            </table>
+
+            <!-- ── Boutons ── -->
+            <div style="margin:20px 0;">
+              <a href="${{ steps.summary.outputs.allure_url }}" style="background-color:#6c2dc7; color:white; padding:12px 24px; text-decoration:none; border-radius:5px; display:inline-block; margin-right:10px;">
+                📊 Dashboard Allure complet
+              </a>
+              <a href="${{ steps.summary.outputs.run_url }}" style="background-color:#1a73e8; color:white; padding:12px 24px; text-decoration:none; border-radius:5px; display:inline-block;">
+                🔗 Exécution GitHub Actions
+              </a>
+            </div>
+
+            <p style="color:#666; font-size:12px; margin-top:24px;">
+              Ce mail est envoyé automatiquement par GitHub Actions. Le dashboard Allure avec l'historique complet est accessible via le bouton ci-dessus.
+            </p>
+          </div>
