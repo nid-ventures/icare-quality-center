@@ -303,7 +303,7 @@ jobs:
         password: ${{ secrets.SMTP_PASSWORD }}
         subject: "${{ steps.summary.outputs.emoji }} Tests ICARE - ${{ steps.summary.outputs.status }} - ${{ steps.summary.outputs.date }}"
         to: yabyourekabore@gmail.com
-        from: ICARE Tests Automatisés <${{ secrets.SMTP_USERNAME }}>
+        from: ICARE QUALITY CENTER <${{ secrets.SMTP_USERNAME }}>
         html_body: |
           <div style="font-family:Arial, sans-serif; max-width:600px;">
             <h2 style="color:#333;">${{ steps.summary.outputs.emoji }} Rapport de Tests ICARE-CENTRY</h2>
