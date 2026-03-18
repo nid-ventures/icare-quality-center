@@ -1,0 +1,93 @@
+# Page snapshot
+
+```yaml
+- generic [ref=e5]:
+  - navigation [ref=e6]:
+    - generic [ref=e7]:
+      - generic [ref=e8]:
+        - link "logo ICARE" [ref=e9] [cursor=pointer]:
+          - /url: /
+          - img "logo" [ref=e10]
+          - generic [ref=e11]: ICARE
+        - button [ref=e12] [cursor=pointer]:
+          - img [ref=e13]
+      - list [ref=e17]:
+        - listitem [ref=e18]:
+          - list [ref=e19]:
+            - listitem [ref=e20]:
+              - link "Medecins" [ref=e21] [cursor=pointer]:
+                - /url: /apps/doctor
+                - generic [ref=e22]:
+                  - img [ref=e23]
+                  - generic [ref=e25]: Medecins
+            - listitem [ref=e26]:
+              - link "Structures" [active] [ref=e27] [cursor=pointer]:
+                - /url: /apps/structure
+                - generic [ref=e28]:
+                  - img [ref=e29]
+                  - generic [ref=e31]: Structures
+            - listitem [ref=e32]:
+              - link "Utilisateurs" [ref=e33] [cursor=pointer]:
+                - /url: /apps/admin-structure
+                - generic [ref=e34]:
+                  - img [ref=e35]
+                  - generic [ref=e37]: Utilisateurs
+  - generic [ref=e38]:
+    - banner [ref=e39]:
+      - generic [ref=e42]:
+        - heading "ADMINISTRATEUR NID" [level=6] [ref=e43]
+        - button "userProfile" [ref=e45] [cursor=pointer]:
+          - img "userProfile" [ref=e46]
+    - generic [ref=e48]:
+      - heading "Structures" [level=2] [ref=e50]
+      - table [ref=e53]:
+        - rowgroup [ref=e54]:
+          - row "Nom de la structure Code Couleur" [ref=e55]:
+            - columnheader "Nom de la structure" [ref=e56]
+            - columnheader "Code" [ref=e57]
+            - columnheader "Couleur" [ref=e58]
+            - columnheader [ref=e59]
+        - rowgroup [ref=e60]:
+          - 'row "Clinique Rouge #b7311f" [ref=e61]':
+            - cell "Clinique Rouge" [ref=e62]
+            - cell [ref=e63]
+            - cell "#b7311f" [ref=e64]:
+              - paragraph [ref=e65]: "#b7311f"
+            - cell [ref=e66]:
+              - img [ref=e69] [cursor=pointer]
+          - 'row "Clinique Verte #1fb731" [ref=e71]':
+            - cell "Clinique Verte" [ref=e72]
+            - cell [ref=e73]
+            - cell "#1fb731" [ref=e74]:
+              - paragraph [ref=e75]: "#1fb731"
+            - cell [ref=e76]:
+              - img [ref=e79] [cursor=pointer]
+          - 'row "Clinique Jaune #eae448" [ref=e81]':
+            - cell "Clinique Jaune" [ref=e82]
+            - cell [ref=e83]
+            - cell "#eae448" [ref=e84]:
+              - paragraph [ref=e85]: "#eae448"
+            - cell [ref=e86]:
+              - img [ref=e89] [cursor=pointer]
+          - 'row "Indépendant #000000" [ref=e91]':
+            - cell "Indépendant" [ref=e92]
+            - cell [ref=e93]
+            - cell "#000000" [ref=e94]:
+              - paragraph [ref=e95]: "#000000"
+            - cell [ref=e96]:
+              - img [ref=e99] [cursor=pointer]
+          - 'row "Next For All #722e84" [ref=e101]':
+            - cell "Next For All" [ref=e102]
+            - cell [ref=e103]
+            - cell "#722e84" [ref=e104]:
+              - paragraph [ref=e105]: "#722e84"
+            - cell [ref=e106]:
+              - img [ref=e109] [cursor=pointer]
+          - 'row "Nuxt For Life #F34ABF" [ref=e111]':
+            - cell "Nuxt For Life" [ref=e112]
+            - cell [ref=e113]
+            - cell "#F34ABF" [ref=e114]:
+              - paragraph [ref=e115]: "#F34ABF"
+            - cell [ref=e116]:
+              - img [ref=e119] [cursor=pointer]
+```
