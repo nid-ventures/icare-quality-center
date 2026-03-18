@@ -194,7 +194,7 @@ jobs:
         <head>
           <meta charset="UTF-8">
           <meta name="viewport" content="width=device-width, initial-scale=1.0">
-          <title>ICARE-CENTRY - Historique des rapports Allure</title>
+          <title>ICARE-CENTRY - Historique des rapports</title>
           <style>
             :root{--primary:#6c2dc7;--primary-light:#8b5cf6;--bg:#f8f9fa;--card-bg:#fff;--text:#1a1a2e;--text-secondary:#6b7280;--border:#e5e7eb}
             *{margin:0;padding:0;box-sizing:border-box}
@@ -220,12 +220,12 @@ jobs:
         <body>
           <div class="header">
             <h1>ICARE-CENTRY - Rapports de Tests</h1>
-            <p>Historique des 20 derniers rapports Allure</p>
+            <p>Historique des 20 derniers rapports</p>
           </div>
           <div class="container">
             <div class="latest-banner">
               <h2>Dernier rapport</h2>
-              <p>Consultez le rapport Allure le plus recent.</p>
+              <p>Consultez le rapport le plus recent.</p>
               <a href="reports/latest/index.html">Ouvrir le dernier rapport</a>
             </div>
             <h3 style="margin-bottom:1rem">Tous les rapports</h3>
@@ -310,7 +310,7 @@ jobs:
 
             <!-- ── Dashboard Allure : résumé ── -->
             <div style="background:#f8f9fa; border-radius:8px; padding:20px; margin:16px 0;">
-              <h3 style="margin-top:0; color:#6c2dc7;">📊 Dashboard Allure</h3>
+              <h3 style="margin-top:0; color:#6c2dc7;">📊 Dashboard</h3>
               <table style="border-collapse:collapse; width:100%;">
                 <tr style="background:#fff;">
                   <td style="padding:10px; border:1px solid #ddd;"><strong>Total tests</strong></td>
@@ -362,7 +362,7 @@ jobs:
             <!-- ── Boutons ── -->
             <div style="margin:20px 0;">
               <a href="${{ steps.summary.outputs.allure_url }}" style="background-color:#6c2dc7; color:white; padding:12px 24px; text-decoration:none; border-radius:5px; display:inline-block; margin-right:10px;">
-                📊 Dashboard Allure complet
+                📊 Dashboard complet
               </a>
               <a href="${{ steps.summary.outputs.run_url }}" style="background-color:#1a73e8; color:white; padding:12px 24px; text-decoration:none; border-radius:5px; display:inline-block;">
                 🔗 Exécution GitHub Actions
@@ -370,6 +370,6 @@ jobs:
             </div>
 
             <p style="color:#666; font-size:12px; margin-top:24px;">
-              Ce mail est envoyé automatiquement par GitHub Actions. Le dashboard Allure avec l'historique complet est accessible via le bouton ci-dessus.
+              Ce mail est envoyé automatiquement par GitHub Actions. Le dashboard avec l'historique complet est accessible via le bouton ci-dessus.
             </p>
           </div>
