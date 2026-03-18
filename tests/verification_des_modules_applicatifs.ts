@@ -23,8 +23,8 @@ for (const user of users) {
      })
 
     await test.step('Vérification du module médecins', async()=> {
-      await medecinsPage.searchMedecin("MEDECIN")
-      await medecinsPage.expectMedecinVisible("TESTEUR MEDECIN")
+      await medecinsPage.searchMedecin("DIALLO")
+      await medecinsPage.expectMedecinVisible("Alassane DIALLO")
     })
 
     await test.step('Vérification du module structures', async()=> {
