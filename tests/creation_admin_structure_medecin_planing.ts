@@ -14,7 +14,7 @@ test("Création d'un admin de structure d'un medecin et de son planinng", async 
   await page.getByRole('textbox', { name: 'Entrer le prenom' }).click();
   await page.getByRole('textbox', { name: 'Entrer le prenom' }).fill('ADMIN');
   await page.locator('div:nth-child(4) > .focus\\:border-\\[\\#ff8041\\] > .css-13cymwt-control > .css-hlgwow > .css-19bb58m').click();
-  await page.getByRole('option', { name: 'Clnique Tests Auto' }).click();
+  await page.getByRole('option', { name: 'Clinique Tests Auto' }).click();
   await page.getByRole('textbox', { name: 'Entrer le nom d\'utilisateur' }).click();
   await page.getByRole('textbox', { name: 'Entrer le nom d\'utilisateur' }).fill('auto.admin@yopmail.com');
   await page.getByRole('textbox', { name: 'Entrer le mot de passe' }).click();
@@ -33,7 +33,7 @@ test("Création d'un admin de structure d'un medecin et de son planinng", async 
   await page.locator('div:nth-child(5) > div:nth-child(2) > .focus\\:border-\\[\\#ff8041\\] > .css-13cymwt-control > .css-hlgwow > .css-19bb58m').click();
   await page.getByRole('option', { name: 'Pédiatrie' }).click();
   await page.locator('div:nth-child(6) > .focus\\:border-\\[\\#ff8041\\] > .css-13cymwt-control > .css-hlgwow > .css-19bb58m').click();
-  await page.getByRole('option', { name: 'Clnique Tests Auto' }).click();
+  await page.getByRole('option', { name: 'Clinique Tests Auto' }).click();
   await page.getByRole('textbox', { name: 'Entrer le nom d\'utilisateur' }).click();
   await page.getByRole('textbox', { name: 'Entrer le nom d\'utilisateur' }).fill('auto.medecin@yopmail.com');
   await page.getByRole('textbox', { name: 'Entrer le mot de passe' }).click();
