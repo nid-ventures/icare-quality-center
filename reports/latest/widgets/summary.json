@@ -1,1 +1,1 @@
-{"reportName":"ICARE QUALITY","testRuns":[],"statistic":{"failed":1,"broken":0,"skipped":0,"passed":1,"unknown":0,"total":2},"time":{"start":1774210098709,"stop":1774210167163,"duration":68454,"minDuration":16991,"maxDuration":20082,"sumDuration":37073}}
+{"reportName":"ICARE QUALITY","testRuns":[],"statistic":{"failed":1,"broken":1,"skipped":0,"passed":0,"unknown":0,"total":2},"time":{"start":1774211898417,"stop":1774211973265,"duration":74848,"minDuration":14057,"maxDuration":30185,"sumDuration":44242}}

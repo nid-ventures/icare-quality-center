@@ -1,0 +1,128 @@
+# Page snapshot
+
+```yaml
+- generic [ref=e5]:
+  - navigation [ref=e6]:
+    - generic [ref=e7]:
+      - generic [ref=e8]:
+        - link "logo ICARE" [ref=e9] [cursor=pointer]:
+          - /url: /
+          - img "logo" [ref=e10]
+          - generic [ref=e11]: ICARE
+        - button [ref=e12] [cursor=pointer]:
+          - img [ref=e13]
+      - list [ref=e17]:
+        - listitem [ref=e18]:
+          - list [ref=e19]:
+            - listitem [ref=e20]:
+              - link "Medecins" [ref=e21] [cursor=pointer]:
+                - /url: /apps/doctor
+                - generic [ref=e22]:
+                  - img [ref=e23]
+                  - generic [ref=e25]: Medecins
+            - listitem [ref=e26]:
+              - link "Structures" [ref=e27] [cursor=pointer]:
+                - /url: /apps/structure
+                - generic [ref=e28]:
+                  - img [ref=e29]
+                  - generic [ref=e31]: Structures
+            - listitem [ref=e32]:
+              - link "Utilisateurs" [active] [ref=e33] [cursor=pointer]:
+                - /url: /apps/admin-structure
+                - generic [ref=e34]:
+                  - img [ref=e35]
+                  - generic [ref=e37]: Utilisateurs
+  - generic [ref=e38]:
+    - banner [ref=e39]:
+      - generic [ref=e42]:
+        - heading "ADMINISTRATEUR NID" [level=6] [ref=e43]
+        - button "userProfile" [ref=e45] [cursor=pointer]:
+          - img "userProfile" [ref=e46]
+    - generic [ref=e48]:
+      - generic [ref=e49]:
+        - heading "Utilisateurs" [level=2] [ref=e50]
+        - button "Ajouter un admininistrateur" [ref=e54] [cursor=pointer]:
+          - img [ref=e55]
+          - text: Ajouter un admininistrateur
+      - generic [ref=e61]:
+        - log [ref=e63]
+        - generic [ref=e64]:
+          - generic [ref=e65]:
+            - generic [ref=e66]: Comptes Actif
+            - combobox [ref=e68]
+          - img [ref=e72]
+      - table [ref=e76]:
+        - rowgroup [ref=e77]:
+          - row "Nom Prénom Téléphone Structure Role" [ref=e78]:
+            - columnheader "Nom" [ref=e79]
+            - columnheader "Prénom" [ref=e80]
+            - columnheader "Téléphone" [ref=e81]
+            - columnheader "Structure" [ref=e82]
+            - columnheader "Role" [ref=e83]
+            - columnheader [ref=e84]
+        - rowgroup [ref=e85]:
+          - row "AUTO ADMIN Clinique Tests Auto Admininistrateur structure" [ref=e86]:
+            - cell "AUTO" [ref=e87]
+            - cell "ADMIN" [ref=e88]
+            - cell [ref=e89]
+            - cell "Clinique Tests Auto" [ref=e90]:
+              - generic [ref=e92]: Clinique Tests Auto
+            - cell "Admininistrateur structure" [ref=e93]
+            - cell [ref=e94]:
+              - generic [ref=e96]:
+                - img [ref=e97] [cursor=pointer]
+                - img [ref=e100] [cursor=pointer]
+          - row "GRACIET Tom Clinique Rouge Admininistrateur structure" [ref=e102]:
+            - cell "GRACIET" [ref=e103]
+            - cell "Tom" [ref=e104]
+            - cell [ref=e105]
+            - cell "Clinique Rouge" [ref=e106]:
+              - generic [ref=e108]: Clinique Rouge
+            - cell "Admininistrateur structure" [ref=e109]
+            - cell [ref=e110]:
+              - generic [ref=e112]:
+                - img [ref=e113] [cursor=pointer]
+                - img [ref=e116] [cursor=pointer]
+          - row "SYLLA Sylvain Nuxt For Life Admininistrateur structure" [ref=e118]:
+            - cell "SYLLA" [ref=e119]
+            - cell "Sylvain" [ref=e120]
+            - cell [ref=e121]
+            - cell "Nuxt For Life" [ref=e122]:
+              - generic [ref=e124]: Nuxt For Life
+            - cell "Admininistrateur structure" [ref=e125]
+            - cell [ref=e126]:
+              - generic [ref=e128]:
+                - img [ref=e129] [cursor=pointer]
+                - img [ref=e132] [cursor=pointer]
+          - row "Rouge Admin Clinique Rouge Admininistrateur structure" [ref=e134]:
+            - cell "Rouge" [ref=e135]
+            - cell "Admin" [ref=e136]
+            - cell [ref=e137]
+            - cell "Clinique Rouge" [ref=e138]:
+              - generic [ref=e140]: Clinique Rouge
+            - cell "Admininistrateur structure" [ref=e141]
+            - cell [ref=e142]:
+              - generic [ref=e144]:
+                - img [ref=e145] [cursor=pointer]
+                - img [ref=e148] [cursor=pointer]
+          - row "SARR Moustapha Next For All Admininistrateur structure" [ref=e150]:
+            - cell "SARR" [ref=e151]
+            - cell "Moustapha" [ref=e152]
+            - cell [ref=e153]
+            - cell "Next For All" [ref=e154]:
+              - generic [ref=e156]: Next For All
+            - cell "Admininistrateur structure" [ref=e157]
+            - cell [ref=e158]:
+              - generic [ref=e160]:
+                - img [ref=e161] [cursor=pointer]
+                - img [ref=e164] [cursor=pointer]
+      - list [ref=e168]:
+        - listitem [ref=e169]:
+          - button [ref=e170] [cursor=pointer]:
+            - img [ref=e171]
+        - listitem [ref=e174]:
+          - button "1" [ref=e175] [cursor=pointer]
+        - listitem [ref=e176]:
+          - button [ref=e177] [cursor=pointer]:
+            - img [ref=e178]
+```
