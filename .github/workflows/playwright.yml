@@ -1,8 +1,8 @@
 name: ICARE Automation Tests
 
 on:
-  schedule:
-    - cron: '0 3 * * *' # Tous les jours à 3h du matin (UTC)
+  # schedule:
+  #   - cron: '0 3 * * *' # Tous les jours à 3h du matin (UTC)
   push:
     branches: [ main, master ]
   pull_request:
