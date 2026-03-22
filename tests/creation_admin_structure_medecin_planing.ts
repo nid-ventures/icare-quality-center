@@ -1,6 +1,6 @@
 import { test, expect } from '@playwright/test';
 
-test('test', async ({ page }) => {
+test("Création d'un admin de structure d'un medecin et de son planinng", async ({ page }) => {
   await page.goto('https://rdv.pro-icare.com');
   await page.getByRole('textbox', { name: 'Nom d\'utilisateur' }).click();
   await page.getByRole('textbox', { name: 'Nom d\'utilisateur' }).fill('hi-nid@gmail.com');
