@@ -21,26 +21,13 @@ async function getConnection() {
  */
 export async function cleanupTestUsers(usernames: string[]) {
   const connection = await getConnection();
+  const usernamePlaceholders = usernames.map(() => '?').join(',');
 
   try {
-    // Récupérer les IDs des users par username
-    const [userRows] = await connection.execute<mysql.RowDataPacket[]>(
-      `SELECT id, username FROM user WHERE username IN (${usernames.map(() => '?').join(',')})`,
-      usernames,
-    );
-
-    if (userRows.length === 0) {
-      console.log('Aucun utilisateur de test trouvé, rien à nettoyer.');
-      return;
-    }
-
-    const userIds = userRows.map((r) => r.id);
-    const placeholders = userIds.map(() => '?').join(',');
-
-    // Chercher les prsnl liés à ces users (pour le médecin)
+    // 1-6. Nettoyer les prsnl et leurs dépendances (via prsnl.username)
     const [prsnlRows] = await connection.execute<mysql.RowDataPacket[]>(
-      `SELECT id FROM prsnl WHERE id IN (${placeholders})`,
-      userIds,
+      `SELECT id FROM prsnl WHERE username IN (${usernamePlaceholders})`,
+      usernames,
     );
     const prsnlIds = prsnlRows.map((r) => r.id);
 
@@ -96,21 +83,36 @@ export async function cleanupTestUsers(usernames: string[]) {
       console.log(`${prsnlIds.length} prsnl supprimé(s).`);
     }
 
-    // 7. Supprimer person
-    await connection.execute(
-      `DELETE FROM person WHERE id IN (${placeholders})`,
-      userIds,
+    // 7-8. Nettoyer user et person (via user.username)
+    const [userRows] = await connection.execute<mysql.RowDataPacket[]>(
+      `SELECT id FROM user WHERE username IN (${usernamePlaceholders})`,
+      usernames,
     );
-    console.log(`${userIds.length} person(s) supprimée(s).`);
+    const userIds = userRows.map((r) => r.id);
 
-    // 8. Supprimer user
-    await connection.execute(
-      `DELETE FROM user WHERE id IN (${placeholders})`,
-      userIds,
-    );
-    console.log(`${userIds.length} user(s) supprimé(s).`);
+    if (userIds.length > 0) {
+      const placeholders = userIds.map(() => '?').join(',');
 
-    console.log('Nettoyage terminé avec succès.');
+      // 7. Supprimer person
+      await connection.execute(
+        `DELETE FROM person WHERE id IN (${placeholders})`,
+        userIds,
+      );
+      console.log(`${userIds.length} person(s) supprimée(s).`);
+
+      // 8. Supprimer user
+      await connection.execute(
+        `DELETE FROM user WHERE id IN (${placeholders})`,
+        userIds,
+      );
+      console.log(`${userIds.length} user(s) supprimé(s).`);
+    }
+
+    if (prsnlIds.length === 0 && userIds.length === 0) {
+      console.log('Aucune donnée de test trouvée, rien à nettoyer.');
+    } else {
+      console.log('Nettoyage terminé avec succès.');
+    }
   } finally {
     await connection.end();
   }

@@ -31,6 +31,10 @@ const medecinData = {
 
 const planningDays = ['Lundi', 'Mardi', 'Mercredi', 'Jeudi', 'Vendredi'];
 
+test.beforeAll(async () => {
+  await cleanupTestUsers([adminData.username, medecinData.username]);
+});
+
 test.afterAll(async () => {
   await cleanupTestUsers([adminData.username, medecinData.username]);
 });
