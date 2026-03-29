@@ -1,0 +1,5 @@
+Aucune donnée de test trouvée, rien à nettoyer.
+2 prsnl supprimé(s).
+2 person(s) supprimée(s).
+2 user(s) supprimé(s).
+Nettoyage terminé avec succès.
