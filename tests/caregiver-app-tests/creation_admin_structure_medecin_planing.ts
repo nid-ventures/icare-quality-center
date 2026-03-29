@@ -4,6 +4,7 @@ import { DashboardPage } from '../../pages/dashboard.page';
 import { UtilisateursPage } from '../../pages/utilisateurs.page';
 import { MedecinsPage } from '../../pages/medecins.page';
 import { PlanningsPage } from '../../pages/plannings.page';
+import { cleanupTestUsers } from '../../utils/db.helper';
 import users from '../../test-data/users.json';
 
 const superadmin: any = users.find(item => item.role === 'SUPERADMIN');
@@ -29,6 +30,10 @@ const medecinData = {
 };
 
 const planningDays = ['Lundi', 'Mardi', 'Mercredi', 'Jeudi', 'Vendredi'];
+
+test.afterAll(async () => {
+  await cleanupTestUsers([adminData.username, medecinData.username]);
+});
 
 test("Création d'un admin, d'un médecin et de son planning", async ({ page }) => {
   const loginPage = new LoginPage(page);
