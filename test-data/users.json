@@ -1,8 +1,10 @@
 [
   {
-    "role": "Administrateur",
+    "role": "SUPERADMIN",
     "expectedName": "ADMINISTRATEUR NID",
     "expectedStructure": "Clinique Tests Auto",
-    "expectedUser": "AUTO"
+    "expectedUser": "AUTO",
+    "username":"hi-nid@gmail.com",
+    "password":"BcIsX7V&ZRh7"
   }
 ]

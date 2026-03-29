@@ -1,12 +1,13 @@
 import { test } from '@playwright/test';
-import { LoginPage } from '../pages/login.page';
-import { DashboardPage } from '../pages/dashboard.page';
-import { MedecinsPage } from '../pages/medecins.page';
-import { StructuresPage } from '../pages/structures.page';
-import { UtilisateursPage } from '../pages/utilisateurs.page';
-import users from '../test-data/users.json';
+import { DashboardPage } from '../../pages/dashboard.page';
+import { MedecinsPage } from '../../pages/medecins.page';
+import { StructuresPage } from '../../pages/structures.page';
+import { UtilisateursPage } from '../../pages/utilisateurs.page';
+import users from '../../test-data/users.json';
+import { LoginPage } from '../../pages/login.page';
 
-for (const user of users) {
+
+const user : any = users.find(item => item.role === "SUPERADMIN" )
  
   test(`Vérification des modules de l'application par l'utilisateur ${user.expectedName}`, async ({ page }) => {
     const loginPage = new LoginPage(page);
@@ -19,7 +20,7 @@ for (const user of users) {
       await loginPage.goto();
      })
     await test.step('connexion', async()=> { 
-      await loginPage.login(process.env.USER_EMAIL!, process.env.USER_PASSWORD!);
+      await loginPage.login(user.username, user.password);
      })
 
     await test.step('Vérification du module médecins', async()=> {
@@ -37,4 +38,3 @@ for (const user of users) {
       await utilisateursPage.expectUserVisible(user.expectedUser);      
     })
   });
-}
