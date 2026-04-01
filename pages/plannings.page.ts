@@ -15,7 +15,7 @@ export class PlanningsPage {
 
   async selectMedecin(name: string) {
     await this.medecinDropdown.click();
-    await this.page.getByRole('option', { name }).click();
+    await this.page.getByRole('option', { name }).first().click();
   }
 
   async modifierCreneau() {
