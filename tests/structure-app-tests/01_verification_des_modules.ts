@@ -1,24 +1,26 @@
 import { test, expect } from '@playwright/test';
+import { LoginPage } from '../../pages/structure/login.page';
 
-test('test', async ({ page }) => {
-  // Étape 1 : Connexion à l'application
-  await page.goto('https://pro-icare.com/auth/login');
+// Données de test
+const adminUser = {
+  username: 'hi-admin',
+  hicode:'NEST',
+  password: 'BcIsX7V&ZRh7',
+  role:'Administrateur'
+};
 
-  // Remplir le champ identifiant
-  await page.getByRole('textbox', { name: 'Votre identifiant' }).click();
-  await page.getByRole('textbox', { name: 'Votre identifiant' }).fill('hi-admin');
 
-  // Remplir le champ HI CODE
-  await page.getByRole('textbox', { name: 'Votre HI CODE' }).click();
-  await page.getByRole('textbox', { name: 'Votre HI CODE' }).fill('NEST');
 
-  // Remplir le champ mot de passe
-  await page.getByRole('textbox', { name: 'Votre mot de passe' }).click();
-  await page.getByRole('textbox', { name: 'Votre mot de passe' }).fill('BcIsX7V&ZRh7');
-
-  // Cliquer sur le bouton de connexion
-  await page.getByRole('button', { name: 'Connexion' }).click();
-
+test(`Vérification des modules de l'application par l'utilisateur ${adminUser.role}`, async ({ page }) => {
+  const loginPage = new LoginPage(page);
+  
+  await test.step('Ouverture de la page de connexion', async()=> {
+    await loginPage.goto();
+  })
+  await test.step('connexion', async()=> { 
+    await loginPage.login(adminUser.username,adminUser.hicode, adminUser.password);
+  })
+  
   // Vérifier que la page d'accueil affiche les trois sections principales
   await expect(page.getByRole('heading', { name: 'Patients' })).toBeVisible();
   await expect(page.getByRole('heading', { name: 'Médecins' })).toBeVisible();
