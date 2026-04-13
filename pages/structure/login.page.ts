@@ -12,7 +12,7 @@ export class LoginPage {
     this.x_hi_codeField = page.getByRole('textbox', { name: 'Votre HI CODE' });
     this.passwordField = page.getByRole('textbox', { name: 'Votre mot de passe' });
     this.loginButton = page.getByRole('button', { name: 'Connexion' });
-    this.menuButton = page.getByText('Menu').nth(3);
+    this.menuButton = page.getByText('Menu').nth(1);
 
   }
   async goto() {

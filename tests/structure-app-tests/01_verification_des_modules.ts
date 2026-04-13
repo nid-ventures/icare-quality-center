@@ -24,8 +24,7 @@ test(`Vérification des modules de l'application par l'utilisateur ${adminUser.r
   })
   await test.step("Vérifier que le  dashboard affiche les statistiques ", async()=> {
     await dashboardPage.statisticIsVisible();
-  }) 
-  
+  })  
 
   await test.step("Vérifier que le  module dashboard", async()=> {
     await dashboardPage.modulesDashboardIsVisible();
@@ -50,9 +49,7 @@ test(`Vérification des modules de l'application par l'utilisateur ${adminUser.r
   })
 
   // Cliquer sur l'icône utilisateur pour ouvrir le menu de profil
-  await page.locator('i').nth(1).click();
-
- 
+  await page.locator('i').nth(1).click(); 
 
   console.log('\n✅ Test terminé avec succès');
 });
