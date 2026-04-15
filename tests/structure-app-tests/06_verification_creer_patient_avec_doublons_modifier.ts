@@ -1,53 +1,51 @@
 import { test, expect } from '@playwright/test';
+import { DashboardPage } from '../../pages/structure/dashboard.page';
+import { PatientPage } from '../../pages/structure/patient.page';
+import { LoginPage } from '../../pages/structure/login.page';
+import { PatientData, PatientDataGenerator } from '../../pages/structure/data-generator';
+// Données de test
+const adminUser = {
+  username: 'hi-admin',
+  hicode: 'NEST',
+  password: 'BcIsX7V&ZRh7',
+  role: 'Administrateur'
+};
+test('Créer un patient avec  les doublons en choisissant l\'option modification ', async ({ page }) => {
+  const dashboardPage = new DashboardPage(page);
+  const patientPage = new PatientPage(page);
+  const loginPage = new LoginPage(page);
 
-test('test', async ({ page }) => {
-  await page.goto('https://pro-icare.com/auth/login');
-  await page.getByRole('textbox', { name: 'Votre mot de passe' }).click();
-  await page.getByRole('textbox', { name: 'Votre mot de passe' }).fill('BcIsX7V&ZRh7');
-  await page.getByRole('textbox', { name: 'Votre HI CODE' }).click();
-  await page.getByRole('textbox', { name: 'Votre HI CODE' }).fill('NEST');
-  await page.getByRole('textbox', { name: 'Votre identifiant' }).click();
-  await page.getByRole('textbox', { name: 'Votre identifiant' }).fill('hi-admin');
-  await page.getByRole('button', { name: 'Connexion' }).click();
-  await page.getByText('Menu').nth(3).click();
-  await page.getByRole('link', { name: ' Patients' }).click();
-  await page.goto('https://pro-icare.com/patient/patients');
-  await page.getByRole('button', { name: ' Nouveau patient' }).click();
-  await page.getByRole('textbox', { name: 'Numéro Dossier' }).click();
-  await page.getByRole('textbox', { name: 'Numéro Dossier' }).fill('P20269090');
-  await page.locator('select[name="sex"]').selectOption('1');
-  await page.locator('#lastName').click();
-  await page.locator('#lastName').fill('MAMADOU');
-  await page.locator('#firstName').click();
-  await page.locator('#firstName').fill('TOURE');
-  await page.locator('#collapseOne_create input[name="doB"]').fill('2026-03-28');
-  await page.getByRole('textbox', { name: 'Email', exact: true }).click();
-  await page.getByRole('textbox', { name: 'Email', exact: true }).fill('sanouarouna90@gmail.com');
-  await page.getByRole('textbox', { name: 'Entrez le numéro' }).nth(1).click();
-  await page.getByRole('textbox', { name: 'Entrez le numéro' }).nth(1).fill('767878780');
-  await page.locator('#phone1').getByRole('textbox', { name: 'Entrez le numéro' }).click();
-  await page.locator('#phone1').getByRole('textbox', { name: 'Entrez le numéro' }).fill('765432210');
-  await page.locator('#address').click();
-  await page.locator('#address').fill('Dakar');
-  await page.locator('#street').click();
-  await page.locator('#street').fill('33x56');
-  await page.locator('.ng-select-searchable.ng-select-clearable.ng-select.ng-select-single.ng-untouched.ng-pristine.ng-invalid > .ng-select-container > .ng-value-container > .ng-input > input').click();
-  await page.locator('.ng-select-searchable.ng-select-clearable.ng-select.ng-select-single.ng-untouched.ng-pristine.ng-invalid > .ng-select-container > .ng-value-container > .ng-input > input').fill('daka');
-  await page.getByRole('option', { name: 'DAKAR' }).click();
-  await page.locator('#state > .ng-select-container > .ng-value-container > .ng-input > input').click();
-  await page.locator('#state > .ng-select-container > .ng-value-container > .ng-input > input').fill('dak');
-  await page.locator('.ng-option-label').click();
-  await page.locator('#country > .ng-select-container > .ng-value-container > .ng-input > input').click();
-  await page.getByRole('option', { name: 'SENEGAL' }).click();
-  await page.locator('#nationality > .ng-select-container > .ng-value-container > .ng-input > input').click();
-  await page.getByText('NIGERIEN(NE)').click();
-  await page.locator('#hiConfigId > .ng-select-container > .ng-value-container > .ng-input > input').click();
-  await page.locator('div').filter({ hasText: /^×Activé$/ }).first().click();
-  await page.getByRole('option', { name: 'Désactivé' }).click();
-  await page.getByRole('button', { name: 'Enregistrer' }).click();
-  await page.getByRole('button', { name: 'Confirmer' }).click();
-  await expect(page.getByRole('button', { name: 'Listes des duplicatats' })).toBeVisible();
-  await page.locator('#flexRadioDefault1').check();
-  await page.getByRole('button', { name: 'Valider le choix' }).click();
-  await page.getByRole('button', { name: 'Confirmer' }).click();
+  await test.step('Ouverture de la page de connexion', async () => {
+    await loginPage.goto();
+  })
+  await test.step('connexion', async () => {
+    await loginPage.login(adminUser.username, adminUser.hicode, adminUser.password);
+  })
+  await test.step("Vérifier que le  dashboard affiche les statistiques ", async () => {
+    await dashboardPage.statisticIsVisible();
+  })
+  await test.step("Visiter la page de la liste des patients ", async () => {
+    await patientPage.gotoPatientsList();
+  })
+  await test.step("Ouvrir le popup de création de patient ", async () => {
+    await patientPage.openCreationModal();
+  })
+  await test.step("Générer des données de patient  ", async () => {
+    // 1. Récupérer les données du premier patient affiché
+    const originalDob = await patientPage.getFirstPatientDob();
+    const originalPhone = await patientPage.getFirstPatientPhone();
+    // 2. Créer un objet PatientData partiel (seulement dob et phonePrimary sont nécessaires)
+    const originalData = { dob: originalDob, phonePrimary: originalPhone } as PatientData;
+    // 3. Générer le doublon
+    const duplicateData = PatientDataGenerator.generateDuplicateFrom(originalData);
+    await patientPage.fillCreationForm('Désactivé', duplicateData);
+  })
+  await test.step("Enregistrer les données générées  ", async () => {
+    await patientPage.saveAndConfirm();
+  })
+  await test.step("Modifier le duplicats ", async () => {
+    await patientPage.updateDuplicatAndConfirm();
+  })
+
+
 });

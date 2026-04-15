@@ -1,24 +1,39 @@
 import { test, expect } from '@playwright/test';
+import { LoginPage } from '../../pages/structure/login.page';
+import { DashboardPage } from '../../pages/structure/dashboard.page';
+import { PatientPage } from '../../pages/structure/patient.page';
+import { DetailPatientPage } from '../../pages/structure/detail_administratif';
 
-test('test', async ({ page }) => {
-  await page.goto('https://pro-icare.com/auth/login');
-  await page.getByRole('textbox', { name: 'Votre mot de passe' }).click();
-  await page.getByRole('textbox', { name: 'Votre mot de passe' }).fill('BcIsX7V&ZRh7');
-  await page.getByRole('textbox', { name: 'Votre HI CODE' }).click();
-  await page.getByRole('textbox', { name: 'Votre HI CODE' }).fill('NEST');
-  await page.getByRole('textbox', { name: 'Votre identifiant' }).click();
-  await page.getByRole('textbox', { name: 'Votre identifiant' }).fill('hi-admin');
-  await page.getByRole('button', { name: 'Connexion' }).click();
-  await page.getByText('Menu').nth(3).click();
-  await page.getByRole('link', { name: ' Patients' }).click();
-  await page.goto('https://pro-icare.com/patient/patients');
-  
-  // Cliquer sur la première ligne (dashboard patient)
-  const firstRow = page.locator('.table-striped tbody tr:first-child');
-  await firstRow.click();
-  await page.getByRole('link', { name: 'Voir Détails Administratifs' }).click();
-  await page.getByRole('tab', { name: ' Personne à contacter' }).click();
-  await page.getByRole('button', { name: 'Action' }).first().click();
-  await page.getByRole('link', { name: 'Supprimer' }).click();
-  await page.getByRole('button', { name: 'Supprimer' }).click();
+const adminUser = {
+  username: 'hi-admin',
+  hicode: 'NEST',
+  password: 'BcIsX7V&ZRh7',
+};
+
+test('Supprimer une personne à contacter', async ({ page }) => {
+  const loginPage = new LoginPage(page);
+  const patientPage = new PatientPage(page);
+  const detailPatientPage = new DetailPatientPage(page);
+
+  await test.step('Connexion', async () => {
+    await loginPage.goto();
+    await loginPage.login(adminUser.username, adminUser.hicode, adminUser.password);
+  });
+
+  await test.step('Sélectionner le premier patient', async () => {
+    await patientPage.chooseFirstPatient();
+  });
+
+  await test.step('Accéder aux détails administratifs', async () => {
+    await detailPatientPage.gotoDetailsPatient();
+  });
+
+  await test.step('Onglet Personne à contacter', async () => {
+    await detailPatientPage.goToPersonContactTab();
+  });
+
+  await test.step('Supprimer la première personne à contacter', async () => {
+    await detailPatientPage.deleteFirstContactPerson();
+
+  });
 });

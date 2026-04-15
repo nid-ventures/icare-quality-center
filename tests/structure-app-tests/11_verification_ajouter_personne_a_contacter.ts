@@ -1,44 +1,51 @@
 import { test, expect } from '@playwright/test';
+import { LoginPage } from '../../pages/structure/login.page';
+import { DashboardPage } from '../../pages/structure/dashboard.page';
+import { PatientPage } from '../../pages/structure/patient.page';
+import { DetailPatientPage, ContactPersonData } from '../../pages/structure/detail_administratif';
+import { ContactPersonGenerator } from '../../pages/structure/contact-person-generator';
 
-test('test', async ({ page }) => {
-  await page.goto('https://pro-icare.com/auth/login');
-  await page.getByRole('textbox', { name: 'Votre HI CODE' }).click();
-  await page.getByRole('textbox', { name: 'Votre mot de passe' }).click();
-  await page.getByRole('textbox', { name: 'Votre mot de passe' }).fill('BcIsX7V&ZRh7');
-  await page.getByRole('textbox', { name: 'Votre HI CODE' }).click();
-  await page.getByRole('textbox', { name: 'Votre HI CODE' }).fill('NEST');
-  await page.getByRole('textbox', { name: 'Votre identifiant' }).click();
-  await page.getByRole('textbox', { name: 'Votre identifiant' }).fill('hi-admin');
-  await page.getByRole('button', { name: 'Connexion' }).click();
-  await page.getByText('Menu').nth(3).click();
-  await page.getByRole('link', { name: ' Patients' }).click();
-  await page.goto('https://pro-icare.com/patient/patients');
-  await page.getByText('+221 76 543 22 11/+221 76 787 87').click();
-  await page.locator('#content-page').click();
-  await page.getByRole('link', { name: 'Voir Détails Administratifs' }).click();
-  await page.getByRole('tab', { name: ' Personne à contacter' }).click();
-  await expect(page.getByRole('link', { name: 'Ajouter une personne à' })).toBeVisible();
-  await page.getByRole('link', { name: 'Ajouter une personne à' }).click();
-  await expect(page.getByText('Ajouter personne à contacter×')).toBeVisible();
-  await page.locator('#ctfirstName').click();
-  await page.locator('#ctfirstName').fill('TRAORE');
-  await page.locator('#ctlastName').click();
-  await page.locator('#ctlastName').fill('MARUIS');
-  await page.getByRole('textbox', { name: 'Entrez le numéro' }).first().click();
-  await page.getByRole('textbox', { name: 'Entrez le numéro' }).first().fill('787878787');
-  await page.getByRole('textbox', { name: 'Entrez le numéro' }).nth(1).click();
-  await page.getByRole('textbox', { name: 'Entrez le numéro' }).nth(1).fill('778899889');
-  await page.locator('#ctlinkType').selectOption('17');
-  await page.locator('#ctsexe').selectOption('1');
-  await page.locator('#ctdoB').fill('2026-04-09');
-  await page.locator('#ctrue').click();
-  await page.locator('#ctrue').fill('78X78');
-  await page.locator('#ctaddress').click();
-  await page.locator('#ctaddress').fill('dakar');
-  await page.locator('#ctville').selectOption('71');
-  await page.locator('#ctregion').selectOption('52');
-  await page.locator('#ctpays').selectOption('109');
-  await page.locator('#ctnationalite').selectOption('35');
-  await page.getByRole('button', { name: 'Enregistrer' }).click();
-  await expect(page.getByRole('button', { name: 'Action' })).toBeVisible();
+const adminUser = {
+  username: 'hi-admin',
+  hicode: 'NEST',
+  password: 'BcIsX7V&ZRh7',
+};
+
+test('Ajouter une personne à contacter pour un patient', async ({ page }) => {
+  const loginPage = new LoginPage(page);
+  const patientPage = new PatientPage(page);
+  const detailPatientPage = new DetailPatientPage(page);
+
+  // Génération des données dynamiques
+  const contactData: ContactPersonData = ContactPersonGenerator.generate();
+
+  await test.step('Connexion', async () => {
+    await loginPage.goto();
+    await loginPage.login(adminUser.username, adminUser.hicode, adminUser.password);
+  });
+
+  await test.step('Sélectionner le premier patient', async () => {
+    await patientPage.chooseFirstPatient();
+  });
+
+  await test.step('Accéder aux détails administratifs', async () => {
+    await detailPatientPage.gotoDetailsPatient();
+  });
+
+  await test.step('Onglet Personne à contacter', async () => {
+    await detailPatientPage.goToPersonContactTab();
+  });
+
+  await test.step('Ouvrir le modal d’ajout', async () => {
+    await detailPatientPage.openAddPersonModal();
+  });
+
+  await test.step('Remplir le formulaire avec des données dynamiques', async () => {
+    await detailPatientPage.fillPersonContactForm(contactData);
+  });
+
+  await test.step('Sauvegarder et vérifier l’ajout', async () => {
+    await detailPatientPage.savePersonContact();
+
+  });
 });
