@@ -44,6 +44,14 @@ export class PatientCarePage {
 
     // En-têtes du tableau (vérifications)
     private readonly columnHeaders: { [key: string]: Locator };
+    // Sélecteurs pour le modal de modification
+    private readonly modifyModalHeading: Locator;
+    private readonly modifyInsurerSelect: Locator;   // #minsurerid
+    private readonly modifyEndingDateInput: Locator; // #mendingDate
+    private readonly modifyButton: Locator;          // bouton "Modifier"
+
+    private readonly viewModalHeading: Locator;
+    private readonly viewCloseButton: Locator;
 
     constructor(page: Page) {
         this.page = page;
@@ -81,6 +89,12 @@ export class PatientCarePage {
             plafond: page.getByRole('columnheader', { name: 'Plafond (FCFA)' }),
             actions: page.getByRole('columnheader', { name: 'Actions' }),
         };
+        this.modifyModalHeading = page.getByRole('heading', { name: 'Modifier prise en charge' });
+        this.modifyInsurerSelect = page.locator('#minsurerid').getByRole('textbox');
+        this.modifyEndingDateInput = page.locator('#mendingDate');
+        this.modifyButton = page.getByRole('button', { name: 'Modifier' });
+        this.viewModalHeading = page.getByRole('heading', { name: 'Voir prise en charge' });
+        this.viewCloseButton = page.getByRole('button', { name: 'Fermer' });
     }
 
     /**
@@ -208,10 +222,55 @@ export class PatientCarePage {
      */
     async deleteFirstCare() {
         const firstRow = await this.getFirstCareRow();
-        const actionButton = firstRow.locator('button[aria-label="Action"]'); // adaptez si besoin
+        const actionButton = firstRow.locator('button:has-text("Action")')
         await actionButton.click();
         await this.page.getByRole('link', { name: 'Supprimer' }).click();
         await this.page.getByRole('button', { name: 'Supprimer' }).click();
         await expect(this.page.getByText('Prise en charge supprimée avec succès')).toBeVisible();
+    }
+    /**
+ * Modifie la première prise en charge de la liste
+ * @param newInsurerName - Nouvel assureur (ex: 'Ascoma Assurance (ASSURANCE)')
+ * @param newEndingDate - Nouvelle date de fin (format YYYY-MM-DD)
+ */
+    async modifyFirstCare(newInsurerName: string, newEndingDate: string) {
+        // Récupérer la première ligne
+        const firstRow = await this.getFirstCareRow();
+        // Cliquer sur le bouton Action de cette ligne
+        const actionButton = firstRow.locator('button:has-text("Action")');
+        ;
+        await actionButton.click();
+        // Cliquer sur Modifier
+        await this.page.getByRole('link', { name: 'Modifier' }).click();
+        // Vérifier que le modal de modification est visible
+        await expect(this.modifyModalHeading).toBeVisible();
+        // Modifier l'assureur
+        await this.modifyInsurerSelect.click();
+        await this.page.getByRole('option', { name: newInsurerName }).click();
+        // Modifier la date de fin
+        await this.modifyEndingDateInput.fill(newEndingDate);
+        // Cliquer sur Modifier (bouton de confirmation)
+        await this.modifyButton.click();
+        // Attendre la fermeture du modal
+        await expect(this.modifyModalHeading).not.toBeVisible({ timeout: 5000 });
+
+    }
+    /**
+ * Ouvre les détails de la première prise en charge (Voir les détails)
+ */
+    async viewFirstCareDetails() {
+        const firstRow = await this.getFirstCareRow();
+        const actionButton = firstRow.getByRole('button', { name: 'Action' });
+        await actionButton.click();
+        await this.page.getByRole('link', { name: 'Voir les détails' }).click();
+        await expect(this.viewModalHeading).toBeVisible();
+    }
+
+    /**
+     * Ferme le modal de visualisation
+     */
+    async closeViewModal() {
+        await this.viewCloseButton.click();
+        await expect(this.viewModalHeading).not.toBeVisible();
     }
 }

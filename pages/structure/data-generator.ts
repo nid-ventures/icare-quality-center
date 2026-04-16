@@ -57,13 +57,18 @@ export class PatientDataGenerator {
         const validPrefixes = ['70', '71', '75', '76', '77', '78'];
         const secondaryPrefix = faker.helpers.arrayElement(validPrefixes);
         const phoneSecondary = `+221${secondaryPrefix}${faker.string.numeric(7)}`;
-
+        // S'assurer que la date est au format YYYY-MM-DD (au cas où original.dob serait différent)
+        let formattedDob = original.dob;
+        if (formattedDob && formattedDob.includes('/')) {
+            const [day, month, year] = formattedDob.split('/');
+            formattedDob = `${year}-${month}-${day}`;
+        }
         return {
             folderOrder: faker.string.alphanumeric(8).toUpperCase(),
             sex,
             lastName: faker.person.lastName(),
             firstName: faker.person.firstName(),
-            dob: original.dob,
+            dob: formattedDob,
             email: faker.internet.email(),
             phonePrimary: original.phonePrimary,
             phoneSecondary,

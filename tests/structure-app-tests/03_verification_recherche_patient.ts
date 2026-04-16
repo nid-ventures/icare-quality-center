@@ -9,6 +9,7 @@ const adminUser = {
   password: 'BcIsX7V&ZRh7',
   role: 'Administrateur'
 };
+
 test('Recherche Patients - tests individuels par champ', async ({ page }) => {
   const dashboardPage = new DashboardPage(page);
   const patientPage = new PatientPage(page);
