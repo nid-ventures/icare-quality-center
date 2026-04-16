@@ -1,8 +1,8 @@
 import { test, expect } from '@playwright/test';
-import { LoginPage } from '../../pages/structure/login.page';
-import { DashboardPage } from '../../pages/structure/dashboard.page';
-import { PatientPage } from '../../pages/structure/patient.page';
-import { DetailPatientPage } from '../../pages/structure/detail_administratif';
+import { LoginPage } from '../../../pages/structure/patient/login.page';
+import { DashboardPage } from '../../../pages/structure/patient/dashboard.page';
+import { PatientPage } from '../../../pages/structure/patient/patient.page';
+import { RenseignementsGenerauxPage } from '../../../pages/structure/patient/renseignements_generaux_patient.page';
 // Données de test
 const adminUser = {
   username: 'hi-admin',
@@ -10,11 +10,12 @@ const adminUser = {
   password: 'BcIsX7V&ZRh7',
   role: 'Administrateur'
 };
-test('Verification de modification de details patients', async ({ page }) => {
+
+test(`Vérification la modifiaction du renseignements généraux du patient de l'application par l'utilisateur ${adminUser.role}`, async ({ page }) => {
   const loginPage = new LoginPage(page);
   const dashboardPage = new DashboardPage(page);
   const patientPage = new PatientPage(page);
-  const detailPatientPage = new DetailPatientPage(page);
+  const renseignementsGenerauxPage = new RenseignementsGenerauxPage(page);
 
   await test.step('Ouverture de la page de connexion', async () => {
     await loginPage.goto();
@@ -28,14 +29,8 @@ test('Verification de modification de details patients', async ({ page }) => {
   await test.step("Choisir le premier patient de la liste des patients", async () => {
     await patientPage.chooseFirstPatient();
   })
-  await test.step("Voir la page détails administratifs ", async () => {
-    await detailPatientPage.gotoDetailsPatient();
-  })
-  await test.step("Vérifier que la page des détails administratifs est chargée ", async () => {
-    await detailPatientPage.checkIfPageLoad();
-  })
-  await test.step("Saisir et enregistrer les mise à jour éffectuées ", async () => {
-    await detailPatientPage.updateData();
+  await test.step("Saisir et modifier les information du renseignements généraux", async () => {
+    await renseignementsGenerauxPage.updateRenseignementGenerauxForms();
   })
 
 });

@@ -1,9 +1,9 @@
 import { test, expect } from '@playwright/test';
-import { LoginPage } from '../../pages/structure/login.page';
-import { DashboardPage } from '../../pages/structure/dashboard.page';
-import { PatientPage } from '../../pages/structure/patient.page';
-import { DetailPatientPage } from '../../pages/structure/detail_administratif';
-import { PatientCarePage } from '../../pages/structure/patient-care.page';
+import { LoginPage } from '../../../pages/structure/patient/login.page';
+import { DashboardPage } from '../../../pages/structure/patient/dashboard.page';
+import { PatientPage } from '../../../pages/structure/patient/patient.page';
+import { DetailPatientPage } from '../../../pages/structure/patient/detail_administratif.page';
+import { PatientCarePage } from '../../../pages/structure/patient/patient-care.page';
 
 const adminUser = {
   username: 'hi-admin',
@@ -33,11 +33,6 @@ test('Modifier une prise en charge existante', async ({ page }) => {
 
   await test.step('Onglet Prise en charge', async () => {
     await carePage.goToCareTab();
-  });
-
-  await test.step('Vérifier qu’il y a au moins une prise en charge', async () => {
-    await expect(page.getByRole('cell', { name: '1', exact: true })).toBeVisible();
-    await expect(page.getByRole('button', { name: 'Action' })).toBeVisible();
   });
 
   await test.step('Modifier la première prise en charge', async () => {

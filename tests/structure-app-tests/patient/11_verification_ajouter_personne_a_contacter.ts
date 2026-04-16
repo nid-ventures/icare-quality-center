@@ -1,10 +1,8 @@
 import { test, expect } from '@playwright/test';
-import { LoginPage } from '../../pages/structure/login.page';
-import { DashboardPage } from '../../pages/structure/dashboard.page';
-import { PatientPage } from '../../pages/structure/patient.page';
-import { DetailPatientPage, ContactPersonData } from '../../pages/structure/detail_administratif';
-import { ContactPersonGenerator } from '../../pages/structure/contact-person-generator';
-
+import { LoginPage } from '../../../pages/structure/patient/login.page';
+import { PatientPage } from '../../../pages/structure/patient/patient.page';
+import { ContactPersonData, DetailPatientPage } from '../../../pages/structure/patient/detail_administratif.page';
+import { ContactPersonGenerator } from '../../../pages/structure/generator/contact-person-generator';
 const adminUser = {
   username: 'hi-admin',
   hicode: 'NEST',

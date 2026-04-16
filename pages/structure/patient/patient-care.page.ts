@@ -40,7 +40,7 @@ export class PatientCarePage {
     // Boutons
     private readonly closeButton: Locator;
     private readonly saveButton: Locator;
-    private readonly confirmButton?: Locator;      // s'il y a une confirmation après enregistrement
+    private readonly actionButtonFirst: Locator;      // s'il y a une confirmation après enregistrement
 
     // En-têtes du tableau (vérifications)
     private readonly columnHeaders: { [key: string]: Locator };
@@ -52,6 +52,8 @@ export class PatientCarePage {
 
     private readonly viewModalHeading: Locator;
     private readonly viewCloseButton: Locator;
+
+
 
     constructor(page: Page) {
         this.page = page;
@@ -95,6 +97,8 @@ export class PatientCarePage {
         this.modifyButton = page.getByRole('button', { name: 'Modifier' });
         this.viewModalHeading = page.getByRole('heading', { name: 'Voir prise en charge' });
         this.viewCloseButton = page.getByRole('button', { name: 'Fermer' });
+        this.actionButtonFirst = page.getByRole('button', { name: 'Action' }).first();
+
     }
 
     /**
@@ -234,12 +238,8 @@ export class PatientCarePage {
  * @param newEndingDate - Nouvelle date de fin (format YYYY-MM-DD)
  */
     async modifyFirstCare(newInsurerName: string, newEndingDate: string) {
-        // Récupérer la première ligne
-        const firstRow = await this.getFirstCareRow();
         // Cliquer sur le bouton Action de cette ligne
-        const actionButton = firstRow.locator('button:has-text("Action")');
-        ;
-        await actionButton.click();
+        await this.actionButtonFirst.click();
         // Cliquer sur Modifier
         await this.page.getByRole('link', { name: 'Modifier' }).click();
         // Vérifier que le modal de modification est visible

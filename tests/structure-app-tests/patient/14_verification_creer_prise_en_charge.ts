@@ -1,10 +1,9 @@
 import { test, expect } from '@playwright/test';
-import { LoginPage } from '../../pages/structure/login.page';
-import { DashboardPage } from '../../pages/structure/dashboard.page';
-import { PatientPage } from '../../pages/structure/patient.page';
-import { DetailPatientPage } from '../../pages/structure/detail_administratif';
-import { PatientCarePage, CareData } from '../../pages/structure/patient-care.page';
-import { CareDataGenerator } from '../../pages/structure/care-data-generator';
+import { LoginPage } from '../../../pages/structure/patient/login.page';
+import { PatientPage } from '../../../pages/structure/patient/patient.page';
+import { DetailPatientPage } from '../../../pages/structure/patient/detail_administratif.page';
+import { CareData, PatientCarePage } from '../../../pages/structure/patient/patient-care.page';
+import { CareDataGenerator } from '../../../pages/structure/generator/care-data-generator';
 
 const adminUser = {
   username: 'hi-admin',
@@ -14,7 +13,6 @@ const adminUser = {
 
 test('Ajouter une prise en charge pour un patient', async ({ page }) => {
   const loginPage = new LoginPage(page);
-  const dashboardPage = new DashboardPage(page);
   const patientPage = new PatientPage(page);
   const detailPatientPage = new DetailPatientPage(page);
   const carePage = new PatientCarePage(page);
@@ -39,9 +37,15 @@ test('Ajouter une prise en charge pour un patient', async ({ page }) => {
     await carePage.goToCareTab();
   });
 
-  await test.step('Ajouter une prise en charge', async () => {
+  await test.step('Ouvrir modal une prise en charge', async () => {
     await carePage.openAddCareModal();
+
+  });
+  await test.step('Saisir modal une prise en charge', async () => {
     await carePage.fillCareForm(careData);
+  });
+  await test.step('Enregistrer une prise en charge', async () => {
+
     await carePage.saveCare();
   });
 

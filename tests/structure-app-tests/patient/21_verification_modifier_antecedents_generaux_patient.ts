@@ -1,8 +1,8 @@
 import { test, expect } from '@playwright/test';
-import { PatientPage } from '../../pages/structure/patient.page';
-import { RenseignementsGenerauxPage } from '../../pages/structure/renseignements_generaux_patient.page';
-import { LoginPage } from '../../pages/structure/login.page';
-import { DashboardPage } from '../../pages/structure/dashboard.page';
+import { LoginPage } from '../../../pages/structure/patient/login.page';
+import { DashboardPage } from '../../../pages/structure/patient/dashboard.page';
+import { PatientPage } from '../../../pages/structure/patient/patient.page';
+import { AntecedentPage } from '../../../pages/structure/patient/antecedant_patient.page';
 // Données de test
 const adminUser = {
   username: 'hi-admin',
@@ -10,12 +10,11 @@ const adminUser = {
   password: 'BcIsX7V&ZRh7',
   role: 'Administrateur'
 };
-
-test(`Vérification la modifiaction du renseignements généraux du patient de l'application par l'utilisateur ${adminUser.role}`, async ({ page }) => {
+test('test', async ({ page }) => {
   const loginPage = new LoginPage(page);
   const dashboardPage = new DashboardPage(page);
   const patientPage = new PatientPage(page);
-  const renseignementsGenerauxPage = new RenseignementsGenerauxPage(page);
+  const antecedentPage = new AntecedentPage(page);
 
   await test.step('Ouverture de la page de connexion', async () => {
     await loginPage.goto();
@@ -29,8 +28,17 @@ test(`Vérification la modifiaction du renseignements généraux du patient de l
   await test.step("Choisir le premier patient de la liste des patients", async () => {
     await patientPage.chooseFirstPatient();
   })
-  await test.step("Saisir et modifier les information du renseignements généraux", async () => {
-    await renseignementsGenerauxPage.updateRenseignementGenerauxForms();
+
+
+  await test.step("Vérifier la conformité  du formulaire antécédant généraux", async () => {
+    await antecedentPage.checkAntecedentFormulaire();
   })
+
+
+  await test.step("Modifier les informations d'antécédants généraux du 1er patient", async () => {
+    await antecedentPage.updateAntecedantGeneraux();
+  })
+
+
 
 });

@@ -1,7 +1,7 @@
 import { test, expect } from '@playwright/test';
-import { DashboardPage } from '../../pages/structure/dashboard.page';
-import { PatientPage } from '../../pages/structure/patient.page';
-import { LoginPage } from '../../pages/structure/login.page';
+import { LoginPage } from '../../../pages/structure/patient/login.page';
+import { DashboardPage } from '../../../pages/structure/patient/dashboard.page';
+import { PatientPage } from '../../../pages/structure/patient/patient.page';
 // Données de test
 const adminUser = {
   username: 'hi-admin',

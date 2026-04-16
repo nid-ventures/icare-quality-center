@@ -1,8 +1,7 @@
 import { test, expect } from '@playwright/test';
-import { LoginPage } from '../../pages/structure/login.page';
-import { DashboardPage } from '../../pages/structure/dashboard.page';
-import { PatientPage } from '../../pages/structure/patient.page';
-import { DetailPatientPage } from '../../pages/structure/detail_administratif';
+import { LoginPage } from '../../../pages/structure/patient/login.page';
+import { PatientPage } from '../../../pages/structure/patient/patient.page';
+import { DetailPatientPage } from '../../../pages/structure/patient/detail_administratif.page';
 
 const adminUser = {
   username: 'hi-admin',
@@ -10,7 +9,7 @@ const adminUser = {
   password: 'BcIsX7V&ZRh7',
 };
 
-test('Supprimer une personne à contacter', async ({ page }) => {
+test('Modifier une personne à contacter (région et nationalité)', async ({ page }) => {
   const loginPage = new LoginPage(page);
   const patientPage = new PatientPage(page);
   const detailPatientPage = new DetailPatientPage(page);
@@ -32,8 +31,7 @@ test('Supprimer une personne à contacter', async ({ page }) => {
     await detailPatientPage.goToPersonContactTab();
   });
 
-  await test.step('Supprimer la première personne à contacter', async () => {
-    await detailPatientPage.deleteFirstContactPerson();
-
+  await test.step('Modifier la première personne à contacter', async () => {
+    await detailPatientPage.modifyFirstContactPerson('50', '32');
   });
 });

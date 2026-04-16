@@ -1,8 +1,8 @@
 import { test, expect } from '@playwright/test';
-import { DashboardPage } from '../../pages/structure/dashboard.page';
-import { PatientPage } from '../../pages/structure/patient.page';
-import { LoginPage } from '../../pages/structure/login.page';
-import { PatientDataGenerator } from '../../pages/structure/data-generator';
+import { LoginPage } from '../../../pages/structure/patient/login.page';
+import { DashboardPage } from '../../../pages/structure/patient/dashboard.page';
+import { PatientPage } from '../../../pages/structure/patient/patient.page';
+import { PatientData, PatientDataGenerator } from '../../../pages/structure/generator/data-generator';
 // Données de test
 const adminUser = {
   username: 'hi-admin',
@@ -10,7 +10,7 @@ const adminUser = {
   password: 'BcIsX7V&ZRh7',
   role: 'Administrateur'
 };
-test('Créer un patient sans tester les doublons ni consentements', async ({ page }) => {
+test('Créer un patient avec  les doublons en choisissant l\'option modification ', async ({ page }) => {
   const dashboardPage = new DashboardPage(page);
   const patientPage = new PatientPage(page);
   const loginPage = new LoginPage(page);
@@ -31,14 +31,21 @@ test('Créer un patient sans tester les doublons ni consentements', async ({ pag
     await patientPage.openCreationModal();
   })
   await test.step("Générer des données de patient  ", async () => {
-    const patientData = PatientDataGenerator.generate();
-    await patientPage.fillCreationForm('Désactivé', patientData);
+    // 1. Récupérer les données du premier patient affiché
+    const originalDob = await patientPage.getFirstPatientDob();
+    const originalPhone = await patientPage.getFirstPatientPhone();
+    // 2. Créer un objet PatientData partiel (seulement dob et phonePrimary sont nécessaires)
+    const originalData = { dob: originalDob, phonePrimary: originalPhone } as PatientData;
+    // 3. Générer le doublon
+    const duplicateData = PatientDataGenerator.generateDuplicateFrom(originalData);
+    await patientPage.fillCreationForm('Désactivé', duplicateData);
   })
   await test.step("Enregistrer les données générées  ", async () => {
     await patientPage.saveAndConfirm();
   })
-
-
+  await test.step("Modifier le duplicats ", async () => {
+    await patientPage.ignoreDuplicatAndConfirm();
+  })
 
 
 });

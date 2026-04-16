@@ -1,5 +1,5 @@
 import { faker } from '@faker-js/faker';
-import { CareData } from './patient-care.page';
+import { CareData } from '../patient/patient-care.page';
 
 export class CareDataGenerator {
     static generate(): CareData {

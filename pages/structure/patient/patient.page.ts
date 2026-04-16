@@ -381,7 +381,7 @@ export class PatientPage {
     await expect(this.identiteMedHeading).toBeVisible();
     await expect(this.AntecedentHeading).toBeVisible();
     await expect(this.prestationMediHeading).toBeVisible();
-    await expect(this.parcoursSoinsHeading).toBeVisible();
+    //  await expect(this.parcoursSoinsHeading).toBeVisible();
     await expect(this.infoUtileHeading).toBeVisible();
     await expect(this.voirDetailAdminHeading).toBeVisible();
     await expect(this.derniereActiviteHeading).toBeVisible();

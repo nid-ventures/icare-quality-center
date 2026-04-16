@@ -1,5 +1,5 @@
 import { faker } from '@faker-js/faker';
-import { ContactPersonData } from './detail_administratif';
+import { ContactPersonData } from '../patient/detail_administratif.page';
 
 export class ContactPersonGenerator {
     static generate(): ContactPersonData {
