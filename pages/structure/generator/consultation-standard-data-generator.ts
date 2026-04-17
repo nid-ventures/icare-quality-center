@@ -16,11 +16,10 @@ export interface ConsultationData {
     acts: string[];              // liste des actes sélectionnés
 }
 
-export class ConsultationDataGenerator {
+export class ConsultationStandardDataGenerator {
     // Liste réelle des médecins (basée sur les données de l'API)
     private static readonly realCaregivers = [
         'Médecin Saré',
-        'Diariétou KEBE',
         'Diane Benao',
         'Medecin TEST',
         'SANOU AROUNA'
@@ -57,6 +56,17 @@ export class ConsultationDataGenerator {
                 'CHAMBRE CATÉGORIE 2',
                 'PHARMACIE'
             ], { min: 1, max: 3 })
+        };
+    }
+    // consultation-data-generator.ts
+    static generateUpdatedData(): Partial<ConsultationData> {
+        return {
+            report: faker.lorem.sentence(12) + ' (modifié)',
+            summary: faker.lorem.sentence(6) + ' (modifié)',
+            prescription: faker.lorem.sentence(9) + ' (modifié)',
+            acts: faker.helpers.arrayElements([
+                "ECG"
+            ], { min: 1, max: 2 })
         };
     }
 }

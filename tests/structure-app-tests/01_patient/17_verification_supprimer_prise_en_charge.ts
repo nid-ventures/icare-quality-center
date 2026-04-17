@@ -1,3 +1,4 @@
+// tests/structure-app-tests/17_verification_supprimer_prise_en_charge.ts
 import { test, expect } from '@playwright/test';
 import { LoginPage } from '../../../pages/structure/patient/login.page';
 import { DashboardPage } from '../../../pages/structure/patient/dashboard.page';
@@ -11,7 +12,7 @@ const adminUser = {
   password: 'BcIsX7V&ZRh7',
 };
 
-test('Modifier une prise en charge existante', async ({ page }) => {
+test('Supprimer une prise en charge existante', async ({ page }) => {
   const loginPage = new LoginPage(page);
   const dashboardPage = new DashboardPage(page);
   const patientPage = new PatientPage(page);
@@ -35,7 +36,26 @@ test('Modifier une prise en charge existante', async ({ page }) => {
     await carePage.goToCareTab();
   });
 
-  await test.step('Modifier la première prise en charge', async () => {
-    await carePage.modifyFirstCare('Ascoma Assurance (ASSURANCE)', '2026-05-10');
+  await test.step('Supprimer la première prise en charge', async () => {
+    // Ouvrir le menu Action de la première ligne
+    const firstRow = await carePage.getFirstCareRow();
+    const actionButton = firstRow.getByRole('button', { name: 'Action' });
+    await actionButton.click();
+
+    // Cliquer sur "Supprimer" dans le menu déroulant
+    await page.getByRole('link', { name: 'Supprimer' }).click();
+
+    // Vérifier le modal de confirmation
+    await expect(page.getByRole('heading', { name: 'Suppression' })).toBeVisible();
+    await expect(page.getByText('Êtes-vous sûr de vouloir')).toBeVisible();
+    await expect(page.getByRole('button', { name: 'Supprimer' })).toBeVisible();
+    await expect(page.getByRole('button', { name: 'Fermer' })).toBeVisible();
+
+    // Confirmer la suppression
+    await page.getByRole('button', { name: 'Supprimer' }).click();
+    await page.waitForTimeout(2000);
+
+
+
   });
 });

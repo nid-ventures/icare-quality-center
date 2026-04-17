@@ -1,6 +1,6 @@
 // tests/structure-app-tests/22_verification_creer_consultation.ts
 import { test, expect } from '@playwright/test';
-import { ConsultationData, ConsultationDataGenerator } from '../../../pages/structure/generator/consultation-data-generator';
+import { ConsultationData, ConsultationStandardDataGenerator } from '../../../pages/structure/generator/consultation-standard-data-generator';
 import { LoginPage } from '../../../pages/structure/patient/login.page';
 import { DashboardPage } from '../../../pages/structure/patient/dashboard.page';
 import { PatientPage } from '../../../pages/structure/patient/patient.page';
@@ -18,7 +18,7 @@ test('Créer une consultation pour un patient', async ({ page }) => {
     const patientPage = new PatientPage(page);
     const consultationPage = new ConsultationPage(page);
 
-    const consultationData: ConsultationData = ConsultationDataGenerator.generate();
+    const consultationData: ConsultationData = ConsultationStandardDataGenerator.generate();
 
     await test.step('Ouverture de la page de connexion', async () => {
         await loginPage.goto();

@@ -1,41 +1,41 @@
 // tests/pages/consultation.page.ts
 import { type Page, type Locator, expect } from '@playwright/test';
-import { ConsultationData } from '../generator/consultation-data-generator';
+import { ConsultationData } from '../generator/consultation-standard-data-generator';
 
 export class ConsultationPage {
-  private readonly page: Page;
+  page: Page;
 
   // Onglet Consultation (à adapter selon votre application)
-  private readonly consultationTab: Locator;
-  private readonly consultationLink: Locator;
+  consultationTab: Locator;
+  consultationLink: Locator;
 
   // Liste des consultations
-  private readonly consultationsHeading: Locator;
-  private readonly newConsultationButton: Locator;
-  private readonly filterByTypeText: Locator;
+  consultationsHeading: Locator;
+  newConsultationButton: Locator;
+  filterByTypeText: Locator;
 
   // Modal Nouvelle consultation
-  private readonly newConsultationModalHeading: Locator;
-  private readonly specialtySelect: Locator;
-  private readonly consultationTypeSelect: Locator;
-  private readonly createConsultationButton: Locator;
-  private readonly cancelButton: Locator;
+  newConsultationModalHeading: Locator;
+  specialtySelect: Locator;
+  consultationTypeSelect: Locator;
+  createConsultationButton: Locator;
+  cancelButton: Locator;
 
   // Formulaire consultation médicale
-  private readonly medicalConsultationHeading: Locator;
-  private readonly caregiverSelect: Locator;
-  private readonly weightInput: Locator;
-  private readonly heightInput: Locator;
-  private readonly temperatureInput: Locator;
-  private readonly tensionInput: Locator;
-  private readonly pulseInput: Locator;
-  private readonly reportInput: Locator;
-  private readonly summaryInput: Locator;
-  private readonly prescriptionInput: Locator;
-  private readonly actsSelect: Locator;        // ng-select pour les actes
-  private readonly saveConsultationButton: Locator;
-  private readonly confirmButton: Locator;
-  private readonly annulerButton: Locator;
+  medicalConsultationHeading: Locator;
+  caregiverSelect: Locator;
+  weightInput: Locator;
+  heightInput: Locator;
+  temperatureInput: Locator;
+  tensionInput: Locator;
+  pulseInput: Locator;
+  reportInput: Locator;
+  summaryInput: Locator;
+  prescriptionInput: Locator;
+  actsSelect: Locator;        // ng-select pour les actes
+  saveConsultationButton: Locator;
+  confirmButton: Locator;
+  annulerButton: Locator;
 
   constructor(page: Page) {
     this.page = page;
@@ -64,10 +64,15 @@ export class ConsultationPage {
     this.temperatureInput = page.locator('#temperature');
     this.tensionInput = page.locator('#tension');
     this.pulseInput = page.locator('#pulse');
-    this.reportInput = page.getByRole('textbox', { name: 'Décrivez le compte-rendu dé' });
-    this.summaryInput = page.getByRole('textbox', { name: 'Synthèse et points clés de la' });
-    this.prescriptionInput = page.getByRole('textbox', { name: 'Prescriptions médicamenteuses' });
-    this.actsSelect = page.locator('ng-select').filter({ hasText: 'Sélectionnez les actes à' }).locator('input[type="text"]');
+    this.reportInput = page.getByRole('textbox', { name: /Décrivez le compte-rendu dé/i });
+    this.summaryInput = page.getByRole('textbox', { name: /Synthèse et points clés de la/i });
+    this.prescriptionInput = page.getByRole('textbox', { name: /Prescriptions médicamenteuses/i });
+    // Nouveau sélecteur (cible le premier input non désactivé)
+    this.actsSelect = page
+      .locator('ng-select')
+      .filter({ hasText: /Sélectionnez les actes à/i })
+      .locator('input[type="text"]:not([disabled])')
+      .first();
     this.saveConsultationButton = page.getByRole('button', { name: ' Enregistrer la consultation' });
     this.confirmButton = page.getByRole('button', { name: 'Confirmer' });
     this.annulerButton = page.getByRole('button', { name: ' Annuler' });
@@ -101,13 +106,28 @@ export class ConsultationPage {
   /**
    * Remplit la première partie du formulaire (spécialité et type)
    */
-  async fillConsultationBasics(data: ConsultationData) {
-    await this.specialtySelect.click();
-    await this.page.getByText(data.specialty, { exact: true }).click();
+  // consultation.page.ts
 
+  async fillConsultationBasics(data: { specialty: string; consultationType: string }) {
+    // Sélection de la spécialité
+    await this.specialtySelect.click();
+    await this.page.waitForSelector('.ng-dropdown-panel .ng-option', { timeout: 5000 });
+    const specialtyOption = this.page
+      .locator('.ng-dropdown-panel .ng-option')
+      .filter({ hasText: new RegExp(data.specialty, 'i') })
+      .first();
+    await specialtyOption.click();
+
+    // Sélection du type de consultation
     await this.consultationTypeSelect.click();
-    await this.page.getByText(data.consultationType, { exact: true }).click();
+    await this.page.waitForSelector('.ng-dropdown-panel .ng-option', { timeout: 5000 });
+    const typeOption = this.page
+      .locator('.ng-dropdown-panel .ng-option')
+      .filter({ hasText: new RegExp(data.consultationType, 'i') })
+      .first();
+    await typeOption.click();
   }
+
 
   /**
    * Crée la consultation (bouton "Créer la consultation") et attend le formulaire détaillé
@@ -169,5 +189,85 @@ export class ConsultationPage {
     await filterSelect.click();
     await this.page.getByRole('option', { name: type.toUpperCase() }).click();
 
+  }
+  /**
+   * Sélectionne la première consultation dans la liste (filtre préalable possible)
+   * Retourne le bouton de la consultation pour cliquer dessus
+   */
+  async selectFirstConsultation() {
+    const firstConsultationButton = this.page
+      .locator('app-consultations button')
+      .filter({ hasText: /Consultation/ })
+      .first();
+    await firstConsultationButton.click();
+  }
+
+  /**
+   * Active le formulaire de modification (bouton "Activer")
+   */
+  async activateForm() {
+    const activateButton = this.page.getByRole('button', { name: ' Activer' });
+    await expect(activateButton).toBeVisible();
+    await activateButton.click();
+
+    // Attendre que le champ soit enabled
+    await expect(this.reportInput).toBeEnabled({ timeout: 10000 });
+    await expect(this.summaryInput).toBeEnabled();
+  }
+  /**
+   * Remplit les champs modifiables avec de nouvelles données
+   */
+  async fillUpdatedForm(data: Partial<ConsultationData>) {
+    if (data.report) await this.reportInput.fill(data.report);
+    if (data.summary) await this.summaryInput.fill(data.summary);
+    if (data.prescription) await this.prescriptionInput.fill(data.prescription);
+    if (data.acts && data.acts.length > 0) {
+      // Pour les actes, il faut peut-être d'abord supprimer ceux existants
+      // Ici on suppose qu'on peut en ajouter d'autres (à adapter selon l'UI)
+      for (const act of data.acts) {
+        await this.actsSelect.click();
+        await this.page.getByRole('option', { name: act }).click();
+      }
+    }
+  }
+
+  /**
+   * Sauvegarde la modification (bouton "Mettre à jour")
+   */
+  async updateConsultation() {
+    const updateButton = this.page.getByRole('button', { name: ' Mettre à jour la' });
+    await updateButton.click();
+    await expect(this.confirmButton).toBeVisible();
+    await this.confirmButton.click();
+
+  }
+  // consultation.page.ts
+
+  /**
+   * Supprime la consultation actuellement ouverte (après l'avoir sélectionnée)
+   */
+  async deleteConsultation() {
+    const deleteButton = this.page.getByRole('button', { name: ' Supprimer' });
+    await expect(deleteButton).toBeVisible();
+    await deleteButton.click();
+
+    await expect(this.page.getByText('Voulez-vous supprimer cette')).toBeVisible();
+    await expect(this.confirmButton).toBeVisible();
+
+    // Masquer le filtre qui intercepte les clics
+    await this.page.locator('.filter-container').evaluate(el => el.style.display = 'none');
+    await this.confirmButton.click();
+
+  }
+
+  /**
+   * Ouvre la première consultation de la liste (après filtre éventuel)
+   */
+  async openFirstConsultation() {
+    const firstConsultationButton = this.page
+      .locator('app-consultations button')
+      .filter({ hasText: /Consultation/ })
+      .first();
+    await firstConsultationButton.click();
   }
 }
