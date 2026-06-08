@@ -26,7 +26,8 @@ export class ConsultationDentairePage extends ConsultationPage {
         this.temperatureInput = this.container.locator('#temperature');
         this.tensionInput = this.container.locator('#tension');
         this.pulseInput = this.container.locator('#pulse');
-        this.caregiverSelect = this.container.locator('#caregiverId').getByRole('textbox');
+        //  this.caregiverSelect = this.container.locator('#caregiverId').getByRole('textbox');
+        this.caregiverSelect = this.container.locator('#caregiverId'); // ng-select lui-même
         this.actsSelect = this.container.locator('ng-select[formControlName="billableActs"] input[type="text"]').first();
 
         // Champs dentaires
@@ -51,8 +52,8 @@ export class ConsultationDentairePage extends ConsultationPage {
     async fillDentaireConsultationForm(data: ConsultationDentaireData) {
         // Soignant
         await this.caregiverSelect.click();
-        await this.page.locator('.ng-dropdown-panel .ng-option').filter({ hasText: data.caregiver }).first().click();
-
+        //  await this.page.locator('.ng-dropdown-panel .ng-option').filter({ hasText: data.caregiver }).first().click();
+        await this.selectNgOption(this.caregiverSelect, data.caregiver);
         // Signes vitaux
         await this.weightInput.fill(data.weight);
         await this.heightInput.fill(data.height);
@@ -76,6 +77,32 @@ export class ConsultationDentairePage extends ConsultationPage {
                 await this.page.getByRole('option', { name: act }).click();
             }
         }
+    }
+    protected async selectNgOption(ngSelect: Locator, value: string) {
+        await ngSelect.click();
+        const panel = this.page.locator('.ng-dropdown-panel:visible');
+        await panel.waitFor({ state: 'visible', timeout: 5000 });
+        const options = this.page.locator('.ng-dropdown-panel .ng-option');
+
+        // Normalisation des espaces
+        const normalizedValue = value.replace(/\s+/g, ' ').trim();
+        let found = false;
+        const count = await options.count();
+        for (let i = 0; i < count; i++) {
+            const option = options.nth(i);
+            const text = await option.textContent();
+            const normalizedText = text?.replace(/\s+/g, ' ').trim();
+            if (normalizedText?.toLowerCase() === normalizedValue.toLowerCase()) {
+                await option.click();
+                found = true;
+                break;
+            }
+        }
+        if (!found) {
+            const allTexts = await options.allTextContents();
+            throw new Error(`Option "${value}" non trouvée dans le dropdown. Disponibles : ${JSON.stringify(allTexts)}`);
+        }
+        await this.page.locator('.ng-dropdown-panel:visible').waitFor({ state: 'hidden', timeout: 3000 });
     }
 
     private async addTooth(tooth: { toothNumber: string; diagnostic: string; treatment: string; surfaces: string[]; observations: string }) {

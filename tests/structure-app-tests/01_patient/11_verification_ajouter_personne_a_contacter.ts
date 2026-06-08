@@ -4,11 +4,11 @@ import { PatientPage } from '../../../pages/structure/patient/patient.page';
 import { ContactPersonData, DetailPatientPage } from '../../../pages/structure/patient/detail_administratif.page';
 import { ContactPersonGenerator } from '../../../pages/structure/generator/contact-person-generator';
 const adminUser = {
-  username: 'hi-admin',
-  hicode: 'NEST',
+  username: 'hi-admin@gmail.com',
+  hi: 'NEST FOR ALL',
   password: 'BcIsX7V&ZRh7',
+  role: 'Administrateur'
 };
-
 test('Ajouter une personne à contacter pour un patient', async ({ page }) => {
   const loginPage = new LoginPage(page);
   const patientPage = new PatientPage(page);
@@ -17,9 +17,15 @@ test('Ajouter une personne à contacter pour un patient', async ({ page }) => {
   // Génération des données dynamiques
   const contactData: ContactPersonData = ContactPersonGenerator.generate();
 
-  await test.step('Connexion', async () => {
+  await test.step('Ouverture de la page de connexion', async () => {
     await loginPage.goto();
-    await loginPage.login(adminUser.username, adminUser.hicode, adminUser.password);
+  })
+  await test.step('connexion', async () => {
+    await loginPage.login(adminUser.username, adminUser.password);
+
+  })
+  await test.step('Sélection de la structure', async () => {
+    await loginPage.selectStructure(adminUser.hi);
   });
 
   await test.step('Sélectionner le premier patient', async () => {

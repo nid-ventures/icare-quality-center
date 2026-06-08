@@ -5,8 +5,8 @@ import { PatientPage } from '../../../pages/structure/patient/patient.page';
 import { PatientDataGenerator } from '../../../pages/structure/generator/data-generator';
 // Données de test
 const adminUser = {
-  username: 'hi-admin',
-  hicode: 'NEST',
+  username: 'hi-admin@gmail.com',
+  hi: 'NEST FOR ALL',
   password: 'BcIsX7V&ZRh7',
   role: 'Administrateur'
 };
@@ -19,8 +19,12 @@ test('Créer un patient sans tester les doublons ni consentements', async ({ pag
     await loginPage.goto();
   })
   await test.step('connexion', async () => {
-    await loginPage.login(adminUser.username, adminUser.hicode, adminUser.password);
+    await loginPage.login(adminUser.username, adminUser.password);
+
   })
+  await test.step('Sélection de la structure', async () => {
+    await loginPage.selectStructure(adminUser.hi);
+  });
   await test.step("Vérifier que le  dashboard affiche les statistiques ", async () => {
     await dashboardPage.statisticIsVisible();
   })

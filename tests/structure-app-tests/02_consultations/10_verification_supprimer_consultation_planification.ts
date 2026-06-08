@@ -1,10 +1,9 @@
-// tests/structure-app-tests/consultations/06_verification_supprimer_consultation_pediatrique.ts
+// tests/structure-app-tests/02_consultations/10_verification_supprimer_consultation_planification.ts
 import { test, expect } from '@playwright/test';
-import { DashboardPage } from '../../../pages/structure/patient/dashboard.page';
 import { LoginPage } from '../../../pages/structure/patient/login.page';
+import { DashboardPage } from '../../../pages/structure/patient/dashboard.page';
 import { PatientPage } from '../../../pages/structure/patient/patient.page';
-import { ConsultationPediatriquePage } from '../../../pages/structure/consultation/consultation-pediatrique.page';
-
+import { ConsultationPlanificationPage } from '../../../pages/structure/consultation/consultation-planification.page';
 
 const adminUser = {
     username: 'hi-admin@gmail.com',
@@ -15,32 +14,33 @@ const adminUser = {
 
 test.setTimeout(60000);
 
-test('Supprimer la première consultation pédiatrique d’un patient', async ({ page }) => {
+test('Supprimer la première consultation de planification familiale d’un patient', async ({ page }) => {
     const loginPage = new LoginPage(page);
     const dashboardPage = new DashboardPage(page);
     const patientPage = new PatientPage(page);
-    const consultationPage = new ConsultationPediatriquePage(page);
+    const consultationPage = new ConsultationPlanificationPage(page);
 
     await test.step('Ouverture de la page de connexion', async () => {
         await loginPage.goto();
         await loginPage.login(adminUser.username, adminUser.password);
         await loginPage.selectStructure(adminUser.hi);
+    });
 
-    })
-    await test.step("Vérifier que le  dashboard affiche les statistiques ", async () => {
+    await test.step("Vérifier que le dashboard affiche les statistiques", async () => {
         await dashboardPage.statisticIsVisible();
-    })
+    });
+
     await test.step("Choisir le premier patient de la liste des patients", async () => {
         await patientPage.chooseFirstPatient();
-    })
+    });
 
     await test.step('Onglet Consultation', async () => {
         await consultationPage.goToConsultationTab();
         await consultationPage.expectConsultationsListLoaded();
     });
 
-    await test.step('Filtrer les consultations pédiatriques', async () => {
-        await consultationPage.filterByConsultationType('CONSULTATION PÉDIATRIQUE');
+    await test.step('Filtrer les consultations de planification familiale', async () => {
+        await consultationPage.filterByConsultationType('CONSULTATION PLANIFICATION');
         await page.waitForTimeout(2000);
     });
 
@@ -55,9 +55,9 @@ test('Supprimer la première consultation pédiatrique d’un patient', async ({
         await page.reload();
         await consultationPage.expectConsultationsListLoaded();
     });
-    await test.step('Filtrer les consultations pédiatriques', async () => {
-        await consultationPage.filterByConsultationType('CONSULTATION PÉDIATRIQUE');
+
+    await test.step('Filtrer les consultations de planification familiale', async () => {
+        await consultationPage.filterByConsultationType('CONSULTATION PLANIFICATION');
         await page.waitForTimeout(2000);
     });
-
 });

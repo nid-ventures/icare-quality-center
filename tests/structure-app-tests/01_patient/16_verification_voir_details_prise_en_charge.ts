@@ -7,9 +7,10 @@ import { DetailPatientPage } from '../../../pages/structure/patient/detail_admin
 import { PatientCarePage } from '../../../pages/structure/patient/patient-care.page';
 
 const adminUser = {
-  username: 'hi-admin',
-  hicode: 'NEST',
+  username: 'hi-admin@gmail.com',
+  hi: 'NEST FOR ALL',
   password: 'BcIsX7V&ZRh7',
+  role: 'Administrateur'
 };
 
 test('Visualiser les détails d\'une prise en charge', async ({ page }) => {
@@ -19,10 +20,12 @@ test('Visualiser les détails d\'une prise en charge', async ({ page }) => {
   const detailPatientPage = new DetailPatientPage(page);
   const carePage = new PatientCarePage(page);
 
-  await test.step('Connexion', async () => {
+  await test.step('Ouverture de la page de connexion', async () => {
     await loginPage.goto();
-    await loginPage.login(adminUser.username, adminUser.hicode, adminUser.password);
-  });
+    await loginPage.login(adminUser.username, adminUser.password);
+    await loginPage.selectStructure(adminUser.hi);
+
+  })
 
   await test.step('Sélectionner le premier patient', async () => {
     await patientPage.chooseFirstPatient();

@@ -3,10 +3,12 @@ import { LoginPage } from '../../../pages/structure/patient/login.page';
 import { PatientPage } from '../../../pages/structure/patient/patient.page';
 import { DetailPatientPage } from '../../../pages/structure/patient/detail_administratif.page';
 
+
 const adminUser = {
-  username: 'hi-admin',
-  hicode: 'NEST',
+  username: 'hi-admin@gmail.com',
+  hi: 'NEST FOR ALL',
   password: 'BcIsX7V&ZRh7',
+  role: 'Administrateur'
 };
 
 test('Supprimer une personne à contacter', async ({ page }) => {
@@ -14,10 +16,12 @@ test('Supprimer une personne à contacter', async ({ page }) => {
   const patientPage = new PatientPage(page);
   const detailPatientPage = new DetailPatientPage(page);
 
-  await test.step('Connexion', async () => {
+  await test.step('Ouverture de la page de connexion', async () => {
     await loginPage.goto();
-    await loginPage.login(adminUser.username, adminUser.hicode, adminUser.password);
-  });
+    await loginPage.login(adminUser.username, adminUser.password);
+    await loginPage.selectStructure(adminUser.hi);
+
+  })
 
   await test.step('Sélectionner le premier patient', async () => {
     await patientPage.chooseFirstPatient();
