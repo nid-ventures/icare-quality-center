@@ -9,17 +9,18 @@ export interface ToothData {
 }
 
 export interface ConsultationDentaireData {
-    specialty: string;           // 'dentiste'
-    consultationType: string;    // 'CONSULTATION dentaire'
-    caregiver: string;           // Nom du dentiste (liste réelle)
+    specialty: string;
+    consultationType: string;
+    caregiver: string;
     weight: string;
     height: string;
     temperature: string;
     tension: string;
     pulse: string;
-    conclusion: string;          // synthèse / conclusion
+    conclusion: string;
     acts: string[];
-    teeth: ToothData[];          // au moins 1 dent
+    teeth: ToothData[];
+    patientType: 'adult' | 'child';  // Ajouté
 }
 
 export class ConsultationDentaireDataGenerator {
@@ -46,53 +47,44 @@ export class ConsultationDentaireDataGenerator {
         'PAP'
     ];
 
-    private static readonly surfaces = [
-        'OOcclusale',
-        'MMésiale',
-        'DDistale',
-        'Vestibulaire',
-        'Mésiale',
-        'Distale'
-    ];
+    // Surfaces attendues par l'interface : O, M, D, V, L (codes courts)
+    private static readonly surfaces = ['O', 'M', 'D', 'V', 'L'];
 
-    // Numéros de dents courants (notation FDI)
-    private static readonly toothNumbers = [
+    // Dents adultes (permanentes)
+    private static readonly adultToothNumbers = [
         '11', '12', '13', '14', '15', '16', '17', '18',
         '21', '22', '23', '24', '25', '26', '27', '28',
         '31', '32', '33', '34', '35', '36', '37', '38',
         '41', '42', '43', '44', '45', '46', '47', '48'
     ];
 
+    // Dents enfants (temporaires)
+    private static readonly childToothNumbers = [
+        '51', '52', '53', '54', '55',
+        '61', '62', '63', '64', '65',
+        '71', '72', '73', '74', '75',
+        '81', '82', '83', '84', '85'
+    ];
+
     static generate(): ConsultationDentaireData {
+        const patientType = faker.helpers.arrayElement(['adult', 'child']);
+        const toothNumbers = patientType === 'adult' ? this.adultToothNumbers : this.childToothNumbers;
         const numberOfTeeth = faker.number.int({ min: 1, max: 3 });
         const teeth: ToothData[] = [];
 
         for (let i = 0; i < numberOfTeeth; i++) {
             teeth.push({
-                toothNumber: faker.helpers.arrayElement(this.toothNumbers),
+                toothNumber: faker.helpers.arrayElement(toothNumbers),
                 diagnostic: faker.helpers.arrayElement(this.diagnostics),
                 treatment: faker.helpers.arrayElement(this.treatments),
-                surfaces: faker.helpers.arrayElements(this.surfaces, { min: 1, max: 2 }),
+                surfaces: faker.helpers.arrayElements(this.surfaces, { min: 1, max: 3 }),
                 observations: faker.lorem.sentence(5)
             });
         }
 
         return {
-
-            specialty: faker.helpers.arrayElement([
-                // 'anesthésie-réanimation',
-                //   'cardiologie',
-                //   'dermatologie',
-                //    'gynécologie',
-                'dentiste'
-            ]),
-            consultationType: faker.helpers.arrayElement([
-                //'CONSULTATION anesthésique',
-                //     'CONSULTATION cardiologique',
-                //     'CONSULTATION dermatologique',
-                //     'CONSULTATION gynécologique',
-                'CONSULTATION dentaire'
-            ]),
+            specialty: 'dentiste',
+            consultationType: 'CONSULTATION dentaire',
             caregiver: faker.helpers.arrayElement(this.realCaregivers),
             weight: faker.number.int({ min: 40, max: 120 }).toString(),
             height: faker.number.int({ min: 140, max: 200 }).toString(),
@@ -107,7 +99,8 @@ export class ConsultationDentaireDataGenerator {
                 'CHAMBRE CATÉGORIE 2',
                 'PHARMACIE'
             ], { min: 1, max: 2 }),
-            teeth
+            teeth,
+            patientType
         };
     }
 
