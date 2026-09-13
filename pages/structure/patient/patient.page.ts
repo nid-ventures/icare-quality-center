@@ -8,7 +8,6 @@ interface Field {
 }
 
 export class PatientPage {
-  private readonly page: Page;
   private readonly firstChildRowTablePatient: Locator;
   private readonly patientLink: Locator;
   private readonly patientHeading: Locator;
@@ -56,7 +55,6 @@ export class PatientPage {
   private readonly emailInput: Locator;
   private readonly dateCreationInput: Locator;
   private readonly dateNaissanceInput: Locator;
-  private readonly tabbleRow: Locator;
   private readonly buttonRechercherHelper: Locator;
   // Propriétés pour le modal de création
   private readonly modalCreate: Locator;
@@ -92,8 +90,9 @@ export class PatientPage {
   private readonly voirDetailAdminHeading: Locator;
   private readonly derniereActiviteHeading: Locator;
 
-  constructor(page: Page) {
-    this.page = page;
+  constructor(private readonly page: Page) {
+    // .compact-table est une table HTML classique sans rôles ARIA dédiés par ligne/cellule,
+    // d'où l'usage de sélecteurs CSS pour cibler les lignes du tableau des patients.
     this.firstChildRowTablePatient = page.locator('.compact-table tbody tr:first-child');
     this.patientHeading = page.getByRole('heading', { name: 'Patients' });
     this.patientLink = page.getByRole('link', { name: ' Patients' });
@@ -108,19 +107,22 @@ export class PatientPage {
     this.nomLabel = page.locator('label').filter({ hasText: /^Nom$/ });
     this.nomInput = page.getByRole('textbox', { name: 'Nom...', exact: true });
     this.dateNaissanceLabel = page.locator('label').filter({ hasText: /^Date de naissance$/ });
+    // Champ date natif sans label associé exploitable par getByLabel/getByRole -> ciblage CSS par name.
     this.dateNaissanceInput = page.locator('form.search-form input[name="doB"]');
-    this.emailLabel = page.locator('label').filter({ hasText: /^Email$/ });
+    this.emailLabel = page.locator('form.search-form label').filter({ hasText: /^Email$/ });
     this.emailInput = page.getByPlaceholder('Email...');
     this.sexeLabel = page.locator('label').filter({ hasText: /^Sexe$/ });
     this.villeLabel = page.locator('label').filter({ hasText: /^Ville$/ });
     this.assuranceLabel = page.locator('label').filter({ hasText: /^Assurance$/ });
     this.dateCreationLabel = page.locator('label').filter({ hasText: 'Date de création' });
+    // Champ date natif sans label associé exploitable par getByLabel/getByRole -> ciblage CSS par name.
     this.dateCreationInput = page.locator('input[type="date"][name="createdDate"]');
     this.telephoneLabel = page.locator('label').filter({ hasText: /^Téléphone$/ });
     this.listeHeading = page.getByRole('heading', { name: 'Liste des patients' });
     this.buttonInit = page.getByRole('button', { name: ' Réinitialiser' });
     this.buttonRechercher = page.getByRole('button', { name: ' Rechercher' });
-    this.comboboxTaille = page.locator('ng-select').filter({ hasText: '× 20' }).getByRole('combobox');
+    // ng-select (Angular) : ciblage CSS + hasText car plusieurs ng-select existent sur la page sans nom accessible distinct.
+    this.comboboxTaille = page.locator('ng-select.compact-select');
     this.buttonNouveau = page.getByRole('button', { name: ' Nouveau patient' });
     this.columnheaderIdentifiant = page.getByRole('columnheader', { name: 'Identifiant' });
     this.columnheaderNDossier = page.getByRole('columnheader', { name: 'N° Dossier' });
@@ -138,17 +140,18 @@ export class PatientPage {
     this.suivantLabel = page.getByText('Suivant');
     this.numeroPhone = page.getByRole('textbox', { name: 'Entrez le numéro' });
     this.buttonResetForms = page.getByRole('button', { name: 'Réinitialiser' });
-    this.tabbleRow = page.locator('.compact-table tbody tr');
     this.buttonRechercherHelper = page.getByRole('button', { name: 'Rechercher' });
 
-    // Modal de création
+    // Modal de création : sélecteurs CSS par id/name, les champs du formulaire n'exposent pas
+    // tous un rôle ARIA ou un label exploitable via getByRole/getByLabel.
     this.modalCreate = page.locator('#bd-example-modal-lg');
     this.folderOrderInput = this.modalCreate.getByRole('textbox', { name: 'Numéro Dossier' });
     this.sexSelect = this.modalCreate.locator('select[name="sex"]');
     this.lastNameInput = this.modalCreate.locator('#lastName');
     this.firstNameInput = this.modalCreate.locator('#firstName');
     this.dobCreateInput = this.modalCreate.locator('#collapseOne_create input[name="doB"]');
-    this.emailCreateInput = this.modalCreate.getByRole('textbox', { name: 'Email', exact: true });
+    // Icône précédant le libellé -> nom accessible réel " Email" (avec espace) : pas de correspondance exacte.
+    this.emailCreateInput = this.modalCreate.getByRole('textbox', { name: 'Email' });
     this.phonePrimaryInput = this.modalCreate.locator('app-intl-tel-input').first().locator('input[type="tel"]');
     this.phoneSecondaryInput = this.modalCreate.locator('app-intl-tel-input').nth(1).locator('input[type="tel"]');
     this.addressInput = this.modalCreate.locator('#address');
@@ -160,23 +163,26 @@ export class PatientPage {
     this.hiConfigSelect = this.modalCreate.locator('ng-select#hiConfigId');
     this.saveButton = this.modalCreate.getByRole('button', { name: 'Enregistrer' });
     this.confirmButton = page.getByRole('button', { name: 'Confirmer' });
-    this.buttonWiewDuplicat = page.getByRole('button', { name: 'Listes des duplicatats' });
+    this.buttonWiewDuplicat = page.locator('.duplicate-alert-header');
     this.buttonIgnoreAndCreate = page.getByRole('button', { name: 'Ignorer et créer le patient' });
-    this.radioOptionDuplicat = page.locator('table tbody tr:first-child input[type="radio"]');
+    // Carte de doublon (label.duplicate-card), sans nom accessible -> ciblage CSS.
+    this.radioOptionDuplicat = page.locator('.duplicate-card').first().locator('input[type="radio"]');
     this.buttonValiderChoix = page.getByRole('button', { name: 'Valider le choix' });
     this.buttonConfirmValiderChoix = page.getByRole('button', { name: 'Confirmer' });
-    this.buttonSupprimerPatient = page.locator('.compact-table tbody tr:first-child .btn-danger').first();
+    // Bouton d'action dans une cellule de .compact-table, sans nom accessible -> ciblage CSS.
+    this.buttonSupprimerPatient = page.locator('.compact-table tbody tr:first-child .btn-danger-modern').first();
 
     // Dashboard patient
     this.infosAdminHeading = page.getByRole('heading', { name: 'Informations Administratives' });
     this.identiteMedHeading = page.getByRole('heading', { name: 'Identité Médicale' });
-    this.AntecedentHeading = page.getByRole('heading', { name: 'Antécédents' });
+    // Titre de la sous-carte "Antécédents" du dashboard : div .sub-card-title, pas un heading ARIA.
+    this.AntecedentHeading = page.locator('.sub-card-title').filter({ hasText: 'Antécédents' });
     this.prestationMediHeading = page.getByRole('heading', { name: 'Prestation Médicale' });
     this.parcoursSoinsHeading = page.getByRole('heading', { name: 'Parcours de soins' });
 
     this.infoUtileHeading = page.getByRole('heading', { name: 'Informations Utiles' });
     this.voirDetailAdminHeading = page.getByRole('link', { name: 'Voir Détails Administratifs' });
-    this.derniereActiviteHeading = page.getByRole('columnheader', { name: 'Dernières activités' });
+    this.derniereActiviteHeading = page.getByRole('heading', { name: 'Dernières activités' });
   }
 
   // ======================== MÉTHODES DE RÉCUPÉRATION DES DONNÉES DU PREMIER PATIENT ========================
@@ -439,16 +445,6 @@ export class PatientPage {
     await this.page.waitForTimeout(100);
   }
 
-  async logResult() {
-    const rows = this.tabbleRow;
-    const rowCount = await rows.count();
-    console.log(`📊 Résultat : ${rowCount} patient(s) trouvé(s)`);
-    if (rowCount > 0) {
-      const firstRowCells = await rows.first().locator('td').allTextContents();
-      console.log(`   Premier patient : ${firstRowCells.slice(0, 5).join(' | ')}`);
-    }
-  }
-
   async definitionChamps(page: Page) {
     await expect(this.patientHeading).toBeVisible();
     await this.patientLink.click();
@@ -579,22 +575,17 @@ export class PatientPage {
     }
 
     const n = fields.length;
-    console.log(`Nombre de champs à tester : ${n}`);
 
     for (let i = 0; i < n; i++) {
       await this.resetForm();
       await fields[i].fill(fields[i].value);
-      console.log(`\n🔍 Test du champ : ${fields[i].name} = "${fields[i].displayValue}"`);
       await this.buttonRechercherHelper.click();
       await page.waitForTimeout(300);
-      await this.logResult();
 
-      try {
-        await page.waitForSelector(`.compact-table tbody tr td:first-child:has-text("${patientId}")`, { timeout: 1000 });
-        console.log('✅ Patient de référence trouvé');
-      } catch {
-        console.log('⚠️ Patient de référence NON trouvé dans les résultats');
-      }
+      // Vérifie que le patient de référence est bien retrouvé pour ce critère de recherche.
+      await expect(
+        this.page.locator(`.compact-table tbody tr td:first-child:has-text("${patientId}")`)
+      ).toBeVisible({ timeout: 1000 });
     }
   }
 }

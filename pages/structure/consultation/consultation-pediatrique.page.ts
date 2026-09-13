@@ -1,4 +1,4 @@
-// tests/pages/consultation-pediatrique.page.ts
+// pages/structure/consultation/consultation-pediatrique.page.ts
 import { type Page, type Locator, expect } from '@playwright/test';
 import { ConsultationPage } from './consultation.page';
 import { ConsultationPediatriqueData } from '../generator/consultation-pediatrique-data-generator';
@@ -29,7 +29,9 @@ export class ConsultationPediatriquePage extends ConsultationPage {
         // Champs pédiatriques spécifiques
         this.pcInput = this.container.locator('#pc');
         this.pbInput = this.container.locator('#pb');
-        this.pediatriqueHeading = page.getByRole('heading', { name: /Consultation Médicale Pé/i });
+        // Le titre du formulaire d'édition ("Édition de Consultation Médicale") ne contient pas
+        // "Pédiatrique", contrairement à celui de création ("Consultation Médicale Pédiatrique").
+        this.pediatriqueHeading = page.getByRole('heading', { name: /Consultation Médicale/i });
     }
 
     async expectPediatriqueFormLoaded() {

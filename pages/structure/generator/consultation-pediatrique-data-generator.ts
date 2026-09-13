@@ -1,4 +1,4 @@
-// tests/pages/consultation-pediatrique-data-generator.ts
+// pages/structure/generator/consultation-pediatrique-data-generator.ts
 import { faker } from '@faker-js/faker';
 
 export interface ConsultationPediatriqueData {
@@ -19,29 +19,20 @@ export interface ConsultationPediatriqueData {
 }
 
 export class ConsultationPediatriqueDataGenerator {
+    // Liste réelle des soignants (basée sur les données actuelles de l'environnement de test).
     private static readonly realCaregivers = [
-        'Médecin Saré',
-        'Diane Benao',
-        'Medecin TEST',
-        'SANOU AROUNA'
+        'KANE AMADOU',
+        'BOL@ KARIM',
+        'KADER Abdallah',
+        'KONATE 12 ALY 12',
+        'NANO ADO',
+        'SERELA ANAIS'
     ];
 
     static generate(): ConsultationPediatriqueData {
         return {
-            specialty: faker.helpers.arrayElement([
-                // 'anesthésie-réanimation',
-                //   'cardiologie',
-                //   'dermatologie',
-                //    'gynécologie',
-                'pédiatrie'
-            ]),
-            consultationType: faker.helpers.arrayElement([
-                //'CONSULTATION anesthésique',
-                //     'CONSULTATION cardiologique',
-                //     'CONSULTATION dermatologique',
-                //     'CONSULTATION gynécologique',
-                'CONSULTATION pédiatrique'
-            ]),
+            specialty: 'pédiatrie',
+            consultationType: 'CONSULTATION pédiatrique',
             caregiver: faker.helpers.arrayElement(this.realCaregivers),
             weight: faker.number.int({ min: 5, max: 50 }).toString(),
             height: faker.number.int({ min: 50, max: 150 }).toString(),
@@ -54,11 +45,11 @@ export class ConsultationPediatriqueDataGenerator {
             summary: faker.lorem.sentence(5),
             prescription: faker.lorem.sentence(8),
             acts: faker.helpers.arrayElements([
-                "SALLE D'ACCOUCHEMENT",
-                'CHAMBRE CATÉGORIE 1',
-                'ACCOUCHEMENT - HONORAIRES GYN',
-                'CHAMBRE CATÉGORIE 2',
-                'PHARMACIE'
+                'INJECTION INTRA-MUSCULAIRE',
+                'INJECTION INTRA-VEINEUSE DIRECTE',
+                'ANTIGÈNE HBS',
+                'GLYCÉMIE',
+                'PRÉLÈVEMENT'
             ], { min: 1, max: 2 })
         };
     }
@@ -69,8 +60,7 @@ export class ConsultationPediatriqueDataGenerator {
             summary: faker.lorem.sentence(6) + ' (modifié)',
             prescription: faker.lorem.sentence(9) + ' (modifié)',
             acts: faker.helpers.arrayElements([
-                "ECG"
-
+                'GLYCÉMIE'
             ], { min: 1, max: 2 })
         };
     }

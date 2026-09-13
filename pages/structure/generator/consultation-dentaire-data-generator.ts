@@ -24,11 +24,14 @@ export interface ConsultationDentaireData {
 }
 
 export class ConsultationDentaireDataGenerator {
+    // Liste réelle des soignants (basée sur les données actuelles de l'environnement de test).
     private static readonly realCaregivers = [
-        'Médecin Saré',
-        'Diane Benao',
-        'Medecin TEST',
-        'SANOU AROUNA'
+        'KANE AMADOU',
+        'BOL@ KARIM',
+        'KADER Abdallah',
+        'KONATE 12 ALY 12',
+        'NANO ADO',
+        'SERELA ANAIS'
     ];
 
     private static readonly diagnostics = [
@@ -93,11 +96,11 @@ export class ConsultationDentaireDataGenerator {
             pulse: faker.number.int({ min: 60, max: 100 }).toString(),
             conclusion: faker.lorem.sentence(8),
             acts: faker.helpers.arrayElements([
-                "SALLE D'ACCOUCHEMENT",
-                'CHAMBRE CATÉGORIE 1',
-                'ACCOUCHEMENT - HONORAIRES GYN',
-                'CHAMBRE CATÉGORIE 2',
-                'PHARMACIE'
+                'INJECTION INTRA-MUSCULAIRE',
+                'INJECTION INTRA-VEINEUSE DIRECTE',
+                'ANTIGÈNE HBS',
+                'GLYCÉMIE',
+                'PRÉLÈVEMENT'
             ], { min: 1, max: 2 }),
             teeth,
             patientType
@@ -107,7 +110,7 @@ export class ConsultationDentaireDataGenerator {
     static generateUpdatedData(): Partial<ConsultationDentaireData> {
         return {
             conclusion: faker.lorem.sentence(10) + ' (modifié)',
-            acts: faker.helpers.arrayElements(['ECG'], { min: 1, max: 2 })
+            acts: faker.helpers.arrayElements(['GLYCÉMIE'], { min: 1, max: 2 })
         };
     }
 }

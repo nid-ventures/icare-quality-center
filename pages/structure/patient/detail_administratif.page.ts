@@ -46,22 +46,28 @@ export class DetailPatientPage {
 
 
   constructor(private readonly page: Page) {
+    // Bouton sans rôle/nom accessible exploitable -> ciblage CSS par id.
     this.buttonVOirDetails = page.locator('#button_details');
     this.detailTab = page.getByRole('tab', { name: ' Détails' });
     this.PersonContactTab = page.getByRole('tab', { name: ' Personne à contacter' });
     this.PriseEnChargeTab = page.getByRole('tab', { name: 'Prise en charge' });
     this.buttonActiveTab = page.getByRole('button', { name: 'Activer le formulaire' });
+    // Champ date natif sans label associé exploitable par getByLabel/getByRole -> ciblage CSS par name.
     this.dateNaissanceInput = page.locator('input[name="doB"]');
-    this.optionFirst = page.locator('ng-select').first();
+    // Angular ng-select ne rend pas de rôle ARIA accessible sur son conteneur -> ciblage CSS par id.
+    // (l'ordre des ng-select dans le DOM a changé : Nationalité précède désormais Ville, d'où le ciblage par id plutôt que .first()).
+    this.optionFirst = page.locator('ng-select#city');
     this.optionCity = page.getByRole('option', { name: 'SAINT-LOUIS' });
-    this.optionState = page.locator('#state');
+    this.optionState = page.locator('ng-select#state');
     this.optionStateValue = page.getByRole('option', { name: 'KÉDOUGOU' });
     this.buttonEnregistrer = page.getByRole('button', { name: 'Enregistrer' });
     this.buttonConfirmer = page.getByRole('button', { name: 'Confirmer' });
     // Initialisations pour Personne à contacter
     this.personContactTabLink = page.getByRole('tab', { name: ' Personne à contacter' });
     this.addPersonButton = page.getByRole('link', { name: 'Ajouter une personne à' });
-    this.modalTitle = page.getByText('Ajouter personne à contacter×');
+    this.modalTitle = page.getByRole('heading', { name: 'Ajouter personne à contacter' });
+    // Champs du modal "Personne à contacter" : ciblage CSS par id, ces champs n'exposent pas
+    // tous un label ou un rôle ARIA exploitable via getByRole/getByLabel.
     this.firstNameInput = page.locator('#ctfirstName');
     this.lastNameInput = page.locator('#ctlastName');
     this.phonePrimaryInput = page.getByRole('textbox', { name: 'Entrez le numéro' }).first();
@@ -80,6 +86,7 @@ export class DetailPatientPage {
     this.actionButtonFirst = page.getByRole('button', { name: 'Action' }).first();
     this.modifyLink = page.getByRole('link', { name: 'Modifier' });
     this.modifyModalHeading = page.getByRole('heading', { name: 'Détails une personne à' });
+    // Champs du modal de modification : mêmes contraintes que le modal d'ajout (pas de rôle accessible).
     this.modifyRegionSelect = page.locator('#sctregion');
     this.modifyNationalitySelect = page.locator('#sctnationalite');
     this.modifySaveButton = page.getByRole('button', { name: 'Enregistrer' });

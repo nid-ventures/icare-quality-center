@@ -1,4 +1,4 @@
-// tests/pages/structure/generator/consultation-planification-data-generator.ts
+// pages/structure/generator/consultation-planification-data-generator.ts
 import { faker } from '@faker-js/faker';
 
 export interface ConsultationPlanificationData {
@@ -26,11 +26,14 @@ export interface ConsultationPlanificationData {
 }
 
 export class ConsultationPlanificationDataGenerator {
+    // Liste réelle des soignants (basée sur les données actuelles de l'environnement de test).
     private static readonly realConsultants = [
-        'Médecin Saré',
-        'Diane Benao',
-        'Medecin TEST',
-        'SANOU AROUNA'
+        'KANE AMADOU',
+        'BOL@ KARIM',
+        'KADER Abdallah',
+        'KONATE 12 ALY 12',
+        'NANO ADO',
+        'SERELA ANAIS'
     ];
 
     private static readonly contraceptionOptions = [
@@ -42,13 +45,14 @@ export class ConsultationPlanificationDataGenerator {
         'Pilule'
     ];
 
+    // Liste réelle des actes médicaux (basée sur les données actuelles de l'environnement de test).
     private static readonly billingActs = [
-        "SALLE D'ACCOUCHEMENT",
-        "CHAMBRE CATÉGORIE 1",
-        "ACCOUCHEMENT - HONORAIRES GYN",
-        "CHAMBRE CATÉGORIE 2",
-        "PHARMACIE",
-        "ECG"
+        'INJECTION INTRA-MUSCULAIRE',
+        'INJECTION INTRA-VEINEUSE DIRECTE',
+        'ANTIGÈNE HBS',
+        'GLYCÉMIE',
+        'GROUPAGE SANGUIN & RHÉSUS (GSRH)',
+        'PRÉLÈVEMENT'
     ];
 
     static generate(): ConsultationPlanificationData {

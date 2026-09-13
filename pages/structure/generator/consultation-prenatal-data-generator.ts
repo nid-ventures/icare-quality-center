@@ -1,4 +1,4 @@
-// tests/pages/structure/generator/consultation-prenatal-data-generator.ts
+// pages/structure/generator/consultation-prenatal-data-generator.ts
 import { faker } from '@faker-js/faker';
 
 export interface ExamenCliniqueItem {
@@ -58,8 +58,9 @@ export interface ConsultationPrenatalData {
 }
 
 export class ConsultationPrenatalDataGenerator {
+    // Liste réelle des soignants (basée sur les données actuelles de l'environnement de test).
     private static readonly realConsultants = [
-        'Médecin Saré', 'Diane Benao', 'Medecin TEST', 'SANOU AROUNA'
+        'KANE AMADOU', 'BOL@ KARIM', 'KADER Abdallah', 'KONATE 12 ALY 12', 'NANO ADO', 'SERELA ANAIS'
     ];
 
     // Valeurs exactes du test brut
@@ -89,8 +90,9 @@ export class ConsultationPrenatalDataGenerator {
         'Activité physique adaptée'
     ];
 
+    // Acte réel (basé sur les données actuelles de l'environnement de test).
     private static readonly billingActs = [
-        "SALLE D'ACCOUCHEMENT"
+        'GLYCÉMIE'
     ];
 
     static generate(): ConsultationPrenatalData {
@@ -167,7 +169,7 @@ export class ConsultationPrenatalDataGenerator {
             bloodPressure: '110/70',
             signeParticulier: 'modifié',
             monitoringEndPregnancy: 'surveillance modifiée',
-            acts: ["SALLE D'ACCOUCHEMENT"]
+            acts: ['GLYCÉMIE']
         };
     }
 }

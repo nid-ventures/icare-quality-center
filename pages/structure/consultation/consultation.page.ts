@@ -1,10 +1,8 @@
-// tests/pages/consultation.page.ts
+// pages/structure/consultation/consultation.page.ts
 import { type Page, type Locator, expect } from '@playwright/test';
 import { ConsultationData } from '../generator/consultation-standard-data-generator';
 
 export class ConsultationPage {
-  page: Page;
-
   // Onglet Consultation (à adapter selon votre application)
   consultationTab: Locator;
   consultationLink: Locator;
@@ -37,17 +35,17 @@ export class ConsultationPage {
   confirmButton: Locator;
   annulerButton: Locator;
 
-  constructor(page: Page) {
-    this.page = page;
-
+  constructor(protected readonly page: Page) {
     // Onglet / lien Consultation
-    this.consultationTab = page.getByRole('link', { name: 'Consultation', exact: true }).first();
-    this.consultationLink = page.getByRole('link', { name: 'Consultation', exact: true }).first();
+    // Le lien porte une icône générant un espace insécable avant le texte
+    // (nom accessible réel : " Consultation") -> pas de correspondance exacte.
+    this.consultationTab = page.getByRole('link', { name: 'Consultation' }).first();
+    this.consultationLink = page.getByRole('link', { name: 'Consultation' }).first();
 
     // Liste des consultations
     this.consultationsHeading = page.getByRole('heading', { name: 'Liste des consultations' });
     this.newConsultationButton = page.getByRole('button', { name: ' Nouvelle consultation' });
-    this.filterByTypeText = page.getByText('Filtrer par type :');
+    this.filterByTypeText = page.locator('.consultation-filter ng-select');
 
     // Modal Nouvelle consultation
     this.newConsultationModalHeading = page.getByRole('heading', { name: 'Nouvelle consultation' });
@@ -67,7 +65,8 @@ export class ConsultationPage {
     this.reportInput = page.getByRole('textbox', { name: /Décrivez le compte-rendu dé/i });
     this.summaryInput = page.getByRole('textbox', { name: /Synthèse et points clés de la/i });
     this.prescriptionInput = page.getByRole('textbox', { name: /Prescriptions médicamenteuses/i });
-    // Nouveau sélecteur (cible le premier input non désactivé)
+    // ng-select n'expose pas de rôle accessible standard : on cible son input interne
+    // (le premier non désactivé) via CSS.
     this.actsSelect = page
       .locator('ng-select')
       .filter({ hasText: /Sélectionnez les actes à/i })
@@ -106,8 +105,6 @@ export class ConsultationPage {
   /**
    * Remplit la première partie du formulaire (spécialité et type)
    */
-  // consultation.page.ts
-
   async fillConsultationBasics(data: { specialty: string; consultationType: string }) {
     await this.selectAndVerify(this.specialtySelect, data.specialty, 'spécialité');
     await this.selectAndVerify(this.consultationTypeSelect, data.consultationType, 'type de consultation');
@@ -186,7 +183,6 @@ export class ConsultationPage {
     await this.saveConsultationButton.click();
     await expect(this.confirmButton).toBeVisible();
     await this.confirmButton.click();
-
   }
 
   /**
@@ -203,7 +199,6 @@ export class ConsultationPage {
     const filterSelect = this.page.locator('app-consultations').getByRole('textbox');
     await filterSelect.click();
     await this.page.getByRole('option', { name: type.toUpperCase() }).click();
-
   }
   /**
    * Sélectionne la première consultation dans la liste (filtre préalable possible)
@@ -211,8 +206,8 @@ export class ConsultationPage {
    */
   async selectFirstConsultation() {
     const firstConsultationButton = this.page
-      .locator('app-consultations button')
-      .filter({ hasText: /Consultation/ })
+      .locator('app-consultations')
+      .getByRole('button', { name: /Consultation/ })
       .first();
     await firstConsultationButton.click();
   }
@@ -254,9 +249,7 @@ export class ConsultationPage {
     await updateButton.click();
     await expect(this.confirmButton).toBeVisible();
     await this.confirmButton.click();
-
   }
-  // consultation.page.ts
 
   /**
    * Supprime la consultation actuellement ouverte (après l'avoir sélectionnée)
@@ -269,10 +262,12 @@ export class ConsultationPage {
     await expect(this.page.getByText('Voulez-vous supprimer cette')).toBeVisible();
     await expect(this.confirmButton).toBeVisible();
 
-    // Masquer le filtre qui intercepte les clics
-    await this.page.locator('.filter-container').evaluate(el => el.style.display = 'none');
+    // Le `.consultation-filter` (filtres de la liste des consultations, positionné en overlay)
+    // intercepte le clic sur le bouton de confirmation même quand la modale est au-dessus.
+    // On le masque temporairement via evaluate() pour contourner ce bug de superposition,
+    // le temps de cliquer sur "Confirmer".
+    await this.page.locator('.consultation-filter').evaluate(el => (el as HTMLElement).style.display = 'none').catch(() => { });
     await this.confirmButton.click();
-
   }
 
   /**
@@ -280,8 +275,8 @@ export class ConsultationPage {
    */
   async openFirstConsultation() {
     const firstConsultationButton = this.page
-      .locator('app-consultations button')
-      .filter({ hasText: /Consultation/ })
+      .locator('app-consultations')
+      .getByRole('button', { name: /Consultation/ })
       .first();
     await firstConsultationButton.click();
   }

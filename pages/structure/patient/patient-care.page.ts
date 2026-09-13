@@ -18,8 +18,6 @@ export interface CareData {
 }
 
 export class PatientCarePage {
-    private readonly page: Page;
-
     // Onglet Prise en charge
     private readonly priseEnChargeTab: Locator;
     private readonly addCareLink: Locator;
@@ -55,9 +53,7 @@ export class PatientCarePage {
 
 
 
-    constructor(page: Page) {
-        this.page = page;
-
+    constructor(private readonly page: Page) {
         // Onglet et bouton d'ajout
         this.priseEnChargeTab = page.getByRole('tab', { name: 'Prise en charge' });
         this.addCareLink = page.getByRole('link', { name: 'Ajouter une prise en charge' });
@@ -142,48 +138,30 @@ export class PatientCarePage {
         await this.coverageRateInput.fill(data.coverageRate);
         await this.paymentCapInput.fill(data.paymentCap);
 
-        // Ajout des prestations (bénéfices)
-        /*     for (const benefit of data.benefits) {
-                 // Ajouter la prestation via le ng-select multiple
-                 //  await this.benefitsSelect.click();
-                 await this.page.locator(benefit.locator);
-                 await this.page.getByRole('option', { name: benefit.name }).click();
-     
-                 // Remplir les champs taux et montant si fournis
-                 // Les IDs sont dynamiques, ex: "1-HOSPITALISATIONROOMT" pour le taux
-                 // On construit l'ID à partir du nom (en majuscules, sans accents, espaces remplacés par rien)
-                 const benefitKey = benefit.name
-                     .toUpperCase()
-                     .normalize('NFD').replace(/[\u0300-\u036f]/g, '')
-                     .replace(/[^A-Z0-9]/g, '');
-     
-                 if (benefit.taux) {
-                     const tauxInput = this.page.locator(`#1-${benefitKey}T`);
-                     await tauxInput.fill(benefit.taux);
-                 }
-                 if (benefit.montant) {
-                     const montantInput = this.page.locator(`#1-${benefitKey}M`);
-                     await montantInput.fill(benefit.montant);
-                 }
-             } */
+        // Ajout des prestations (bénéfices) : le catalogue d'actes proposé varie selon le patient/la
+        // structure (constaté en pratique), donc on sélectionne dynamiquement les 3 premières options
+        // réellement disponibles plutôt que des libellés figés en dur.
+        // Angular ng-select ne rend pas de rôle ARIA accessible pour son input interne,
+        // d'où l'usage d'un sélecteur CSS stable (formcontrolname) ci-dessous ; on reclique
+        // le même ng-select à chaque sélection pour ajouter les valeurs suivantes (multi-select).
+        const benefitsMultiSelect = this.page.locator('#formAddPriseEnCharge ng-select[formcontrolname="billableActs"]');
+        await benefitsMultiSelect.click();
+        const availableOptions = this.page.locator('.ng-dropdown-panel .ng-option:not(.ng-option-disabled)');
+        await availableOptions.first().waitFor({ state: 'visible' });
+        const optionCount = Math.min(3, await availableOptions.count());
+        for (let i = 0; i < optionCount; i++) {
+            if (i > 0) await benefitsMultiSelect.click();
+            await this.page.locator('.ng-dropdown-panel .ng-option:not(.ng-option-disabled)').first().click();
+        }
 
-        await this.page.locator('.ng-touched > .modal-dialog > .modal-content > .modal-body > div:nth-child(3) > .col-md-12 > .ng-select-multiple > .ng-select-container > .ng-value-container > .ng-input > input').click();
-        await this.page.getByRole('option', { name: 'SALLE D\'ACCOUCHEMENT' }).click();
-        await this.page.locator('.ng-select-multiple.ng-select-searchable.ng-select-clearable.ng-select.ng-valid.ng-select-focused > .ng-select-container > .ng-value-container > .ng-input > input').click();
-        await this.page.getByRole('option', { name: 'CHAMBRE CATÉGORIE 2' }).click();
-        await this.page.locator('.ng-touched > .modal-dialog > .modal-content > .modal-body > div:nth-child(4) > div > .ng-select-multiple > .ng-select-container > .ng-value-container > .ng-input > input').click();
-        await this.page.getByRole('option', { name: 'CHAMBRE CATÉGORIE' }).click();
-        await this.page.locator('.ng-select-multiple.ng-select-searchable.ng-select-clearable.ng-select.ng-valid.ng-select-focused > .ng-select-container > .ng-value-container > .ng-input > input').click();
-        await this.page.getByRole('option', { name: 'PHARMACIE' }).click();
-        await this.page.locator('[id="1-HOSPITALISATIONROOMT"]').click();
-        await this.page.locator('[id="1-HOSPITALISATIONROOMT"]').fill('10');
-        await this.page.locator('[id="1-HOSPITALISATIONROOMM"]').click();
-        await this.page.locator('[id="1-HOSPITALISATIONROOMM"]').fill('4000');
-        await this.page.locator('[id="1-PHARMACIET"]').click();
-        await this.page.locator('[id="1-PHARMACIET"]').fill('15');
-        await this.page.locator('[id="1-PHARMACIEM"]').click();
-        await this.page.locator('[id="1-PHARMACIEM"]').fill('2000');
-
+        // Renseigne taux et plafond pour chaque acte ajouté au tableau, quelle que soit sa ligne exacte.
+        const tauxInputs = this.page.locator('#formAddPriseEnCharge #table input[type="number"]');
+        const montantInputs = this.page.locator('#formAddPriseEnCharge #table input[type="text"].text-end');
+        const rowCount = await tauxInputs.count();
+        for (let i = 0; i < rowCount; i++) {
+            await tauxInputs.nth(i).fill('10');
+            await montantInputs.nth(i).fill('4000');
+        }
     }
 
     /**
@@ -230,7 +208,7 @@ export class PatientCarePage {
         await actionButton.click();
         await this.page.getByRole('link', { name: 'Supprimer' }).click();
         await this.page.getByRole('button', { name: 'Supprimer' }).click();
-        await expect(this.page.getByText('Prise en charge supprimée avec succès')).toBeVisible();
+        await expect(this.page.getByText('La suppression a réussi avec succès')).toBeVisible();
     }
     /**
  * Modifie la première prise en charge de la liste

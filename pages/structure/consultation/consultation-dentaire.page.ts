@@ -1,3 +1,4 @@
+// pages/structure/consultation/consultation-dentaire.page.ts
 import { type Page, type Locator, expect } from '@playwright/test';
 import { ConsultationPage } from './consultation.page';
 import { ConsultationDentaireData } from '../generator/consultation-dentaire-data-generator';
@@ -39,13 +40,21 @@ export class ConsultationDentairePage extends ConsultationPage {
         this.patientTypeChildButton = this.container.getByRole('button', { name: /Enfant/ });
 
         // Champs dentaires
+        // CSS utilisé ici : ces <select> natifs n'ont pas de libellé accessible fiable
+        // dans l'odontogramme, on les cible donc par leur contenu.
         this.diagnosticSelect = this.container.locator('select').filter({ hasText: /Diagnostic/i }).first();
         this.treatmentSelect = this.container.locator('select').filter({ hasText: /Traitement/i }).first();
+        // Boutons de surface (O/M/D/V/L) sans rôle accessible dédié : ciblage par classe CSS.
         this.surfaceOptions = this.container.locator('.surface-selector-grid .surface-btn');
         this.observationsInput = this.container.locator('.tooth-detail-card textarea').first();
-        this.addToothRecordButton = this.container.getByRole('button', { name: /Enregistrer/ }).last();
+        // Le texte ("Enregistrer" en création, "Valider" en édition) est instable, contrairement à
+        // la classe .btn-success (click)="saveToothDetails()" qui distingue ce bouton du bouton de
+        // soumission globale du formulaire ("Enregistrer la consultation", lui aussi matché par /Enregistrer/).
+        this.addToothRecordButton = this.container.locator('button.btn-success').last();
         this.conclusionInput = this.container.locator('#conclusion');
 
+        // Cases de l'odontogramme (schéma dentaire) : pas de rôle accessible, ciblage par
+        // classe CSS et numéro de dent affiché.
         this.toothButtons = (toothNumber: string) =>
             this.container.locator(`.tooth:has-text("${toothNumber}")`).first();
     }
@@ -156,8 +165,7 @@ export class ConsultationDentairePage extends ConsultationPage {
         }
     }
 
-    // Ajoutez ces méthodes à la classe ConsultationDentairePage
-
+    // Surcharges pour la modification (odontogramme) : libellés de boutons propres à cet écran
     async activateForm() {
         const activateButton = this.page.getByRole('button', { name: 'Activer' });
         await expect(activateButton).toBeVisible();

@@ -39,19 +39,21 @@ export class RenseignementsGenerauxPage {
 
 
   constructor(private readonly page: Page) {
-    this.renseignementsGenerauxHeading = page.getByRole('heading', { name: 'Renseignements généraux' });
-    this.poidsHeading = page.getByRole('heading', { name: 'Poids' });
-    this.tailleHeading = page.getByRole('heading', { name: 'Taille' });
-    this.imcHeading = page.getByRole('heading', { name: 'I.M.C' });
-    this.groupsanguinHeading =page.getByRole('heading', { name: 'G.Sanguin' });
-    this.rhHeading = page.getByRole('heading', { name: 'Rhésus' });
+    this.renseignementsGenerauxHeading = page.locator('.sub-card-title').filter({ hasText: 'Renseignements généraux' });
+    this.poidsHeading = page.locator('.vital .label').filter({ hasText: 'Poids' });
+    this.tailleHeading = page.locator('.vital .label').filter({ hasText: 'Taille' });
+    this.imcHeading = page.locator('.vital .label').filter({ hasText: 'I.M.C' });
+    this.groupsanguinHeading = page.locator('.vital .label').filter({ hasText: 'G.Sanguin' });
+    this.rhHeading = page.locator('.vital .label').filter({ hasText: 'Rhésus' });
     this.voirPlusHeading = page.getByRole('link', { name: 'Voir +' }).first();
-    this.retourHeading = page.locator('div').filter({ hasText: /^RetourRenseignements généraux$/ }).first();
+    // Bloc de titre/fil d'Ariane sans rôle ARIA dédié -> ciblage CSS par contenu textuel du conteneur.
+    this.retourHeading = page.locator('.header-left').filter({ hasText: 'Retour' }).filter({ hasText: 'Renseignements généraux' }).first();
     this.buttonRetour = page.getByRole('button', { name: ' Retour' });
-    this.infoGeneralHeading = page.getByRole('heading', { name: 'Informations générales' });
+    this.infoGeneralHeading = page.getByRole('heading', { name: 'Informations Personnelles' });
     this.conjointeHeading = page.getByRole('heading', { name: 'Conjoint/Conjointe' });
     this.parentHeading = page.getByRole('heading', { name: 'Parents' });
     this.buttonHeading = page.getByRole('button', { name: 'Activer le formulaire' });
+    // Conteneur de mise en page (boutons d'action) sans rôle accessible propre -> ciblage CSS.
     this.contentHeading = page.locator('.d-flex.justify-content-end.mt-4');
     this.buttonActiverForms = page.getByRole('button', { name: 'Activer le formulaire' });
     this.poidsFieldForm = page.getByRole('spinbutton', { name: 'Poids (kg)' });
@@ -60,9 +62,11 @@ export class RenseignementsGenerauxPage {
     this.situationMatrimonialLabelFieldForm = page.getByLabel('Situation matrimoniale');
     this.groupeSanguinLabelFieldForm = page.getByLabel('Groupe sanguin *');
     this.rhLabelFieldForm = page.getByLabel('Rhésus *');
-    this.geTextBoxFieldForm = page.getByRole('textbox', { name: 'ge' });
+    // Champ "Âge (ans)" toujours en lecture seule (calculé automatiquement) -> non renseigné en test.
+    this.geTextBoxFieldForm = page.locator('#dob');
     this.profConjointFieldForm = page.getByPlaceholder('Profession du conjoint');
     this.nbreEpouseLabelFieldForm = page.getByRole('textbox', { name: 'Nombre d\'épouse(s)' });
+    // Angular ng-select identifié par id (pas de label exploitable pour ce champ) -> ciblage CSS.
     this.nationaliteConjoint = page.locator('#nationaliteConjoint').getByRole('textbox');
     this.nationaliteConjointOption = page.getByRole('option', { name: 'NIGERIEN(NE)' });
     this.pereLabelFieldForm = page.getByRole('textbox', { name: 'Père' });
@@ -108,8 +112,6 @@ export class RenseignementsGenerauxPage {
     await this.situationMatrimonialLabelFieldForm.selectOption('Célibataire');
     await this.groupeSanguinLabelFieldForm.selectOption('AB');
     await this.rhLabelFieldForm.selectOption('NEGATIF');
-    await this.geTextBoxFieldForm.click();
-    await this.geTextBoxFieldForm.fill('18');
     await this.profConjointFieldForm.click();
     await this.profConjointFieldForm.fill('menagere');
     await this.nbreEpouseLabelFieldForm.click();

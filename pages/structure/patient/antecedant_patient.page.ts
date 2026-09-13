@@ -54,48 +54,55 @@ export class AntecedentPage {
 
 
   constructor(private readonly page: Page) {
-    this.antecedantHeading = page.getByRole('heading', { name: 'Antécédents' });
-    this.asthmeHeading = page.getByRole('heading', { name: 'Asthme' });
-    this.diabeteHeading = page.getByRole('heading', { name: 'Diabète' });
-    this.avrHeading = page.getByRole('heading', { name: 'ARV' });
-    this.cardiopathieHeading =page.getByRole('heading', { name: 'Cardiopathie' });
-    this.tuberculoseHeading = page.getByRole('heading', { name: 'Tuberculose' });
+    this.antecedantHeading = page.locator('.sub-card-title').filter({ hasText: 'Antécédents' });
+    this.asthmeHeading = page.locator('.tag').filter({ hasText: 'Asthme' });
+    this.diabeteHeading = page.locator('.tag').filter({ hasText: 'Diabète' });
+    this.avrHeading = page.locator('.tag').filter({ hasText: 'ARV' });
+    this.cardiopathieHeading = page.locator('.tag').filter({ hasText: 'Cardiopathie' });
+    this.tuberculoseHeading = page.locator('.tag').filter({ hasText: 'Tuberculose' });
     this.voirPlusHeading = page.getByRole('link', { name: 'Voir +' }).nth(1);
-    this.retourHeading = page.locator('div').filter({ hasText: /^RetourAntécédents médicaux$/ }).first();
+    // Bloc de titre/fil d'Ariane sans rôle ARIA dédié -> ciblage CSS par contenu textuel du conteneur.
+    this.retourHeading = page.locator('.header-left').filter({ hasText: 'Retour' }).filter({ hasText: 'Antécédents médicaux' }).first();
     this.patientHeading = page.getByRole('tab', { name: ' Patient' });
     this.familiauxHeading = page.getByRole('tab', { name: ' Familiaux' });
     this.conjointeHeading = page.getByRole('tab', { name: ' Conjoint(e)' }); 
       // ANTECEDANTS GENERAUX
     this.generauxHeading = page.getByRole('tab', { name: 'Généraux' }); 
     this.buttonActiver = page.getByRole('button', { name: 'Activer le formulaire' }); 
-    this.medicalGenerauxHeading = page.getByRole('heading', { name: 'Antécédents Médicaux Généraux' }); 
+    this.medicalGenerauxHeading = page.locator('.instructions-text').filter({ hasText: 'Antécédents médicaux généraux' });
     this.pathologiesHeading = page.getByText('Pathologies', { exact: true }); 
     this.autrePathologiesHeading = page.getByText('Autres pathologies (pré'); 
     this.allergiesConnuesHeading = page.getByText('Allergies connues'); 
-    this.medicamenteuseConnuesHeading = page.getByText('💊 Médicamenteuses'); 
-    this.respiratoiresHeading = page.getByText('🌬️ Respiratoires'); 
-    this.alimentairesConnuesHeading = page.getByText('🍽️ Alimentaires'); 
-    this.autresAllergiesPreHeading = page.getByText('📝 Autres allergies (pré'); 
+    this.medicamenteuseConnuesHeading = page.locator('.allergy-category-title').filter({ hasText: 'Médicamenteuses' });
+    this.respiratoiresHeading = page.locator('.allergy-category-title').filter({ hasText: 'Respiratoires' });
+    this.alimentairesConnuesHeading = page.locator('.allergy-category-title').filter({ hasText: 'Alimentaires' });
+    this.autresAllergiesPreHeading = page.locator('.allergy-category-title').filter({ hasText: 'Autres (pré' });
     this.tabacHeading = page.getByText('Tabac'); 
     this.toxiCondConnuesHeading = page.getByText('Toxicomanie / Conduites à'); 
-    this.footerHeading = page.locator('.col-sm-12 > form > .modal-content > .modal-footer').first(); 
-    this.pathologiesTextBox = page.locator('ng-select').filter({ hasText: 'Sélectionnez les pathologies' }).getByRole('textbox'); 
+    // Pied de formulaire sans rôle accessible propre -> ciblage CSS structurel.
+    this.footerHeading = page.locator('#pills-mere-fill .d-flex.justify-content-end.mt-3').first();
+    // Angular ng-select : ciblage CSS + hasText, plusieurs ng-select coexistent sans nom accessible distinct.
+    this.pathologiesTextBox = page.locator('ng-select').filter({ hasText: 'Sélectionnez les pathologies' }).getByRole('textbox');
     this.drepanocytoseOption = page.getByRole('option', { name: 'Drépanocytose' }); 
     this.cardiopathieOption = page.getByRole('option', { name: 'Cardiopathie' }); 
-    this.bodyPatho = page.locator('.ng-untouched.ng-valid > .modal-content > .modal-body'); 
+    // Corps de la modale, ciblage CSS structurel (pas de rôle accessible dédié).
+    this.bodyPatho = page.locator('#pills-mere-fill .pathologies .section-header');
     this.autresPathologiesTextBox = page.getByRole('textbox', { name: 'Autres pathologies (pré' }); 
     this.allergiesTexbox = page.locator('ng-select').filter({ hasText: 'Sélectionnez les allergies mé' }).getByRole('textbox'); 
     this.cephalosporinesOption =  page.getByRole('option', { name: 'Céphalosporines' }); 
     this.pathologiesSelect =page.getByRole('option', { name: 'Cardiopathie' }) ; 
     this.aspirineOption = page.getByRole('option', { name: 'Aspirine' }); 
-    this.retourDiv = page.locator('div').filter({ hasText: 'RetourAntécédents médicaux' }).nth(4); 
-    this.allergiesSelect = page.locator('.ng-select-multiple.ng-select-searchable.ng-select-clearable.ng-select.ng-untouched > .ng-select-container > .ng-arrow-wrapper').first(); 
+    // Bloc de titre/fil d'Ariane sans rôle ARIA dédié -> ciblage CSS par contenu textuel du conteneur.
+    this.retourDiv = page.locator('.header-left').filter({ hasText: 'Retour' }).filter({ hasText: 'Antécédents médicaux' }).first();
+    // Angular ng-select : la flèche du multi-select n'a pas de rôle accessible -> ciblage CSS structurel.
+    this.allergiesSelect = page.locator('.ng-select-multiple.ng-select-searchable.ng-select-clearable.ng-select.ng-untouched > .ng-select-container > .ng-arrow-wrapper').first();
     this.allergiesRespiSelect = page.locator('ng-select').filter({ hasText: 'Sélectionnez les allergies respiratoires...' }).getByRole('textbox'); 
     this.acariensOption = page.getByRole('option', { name: 'Acariens' }); 
     this.allergiesAlimSelect = page.locator('ng-select').filter({ hasText: 'Sélectionnez les allergies alimentaires...' }).getByRole('textbox'); 
     this.laitOption = page.getByRole('option', { name: 'Lait' }); 
     this.autresAlergieTextBox = page.getByRole('textbox', { name: 'Ajoutez d\'autres allergies' }); 
-    this.selectTabac = page.locator('.ng-select-searchable.ng-select-clearable.ng-select.ng-select-single > .ng-select-container > .ng-value-container > .ng-input > input').first(); 
+    // Angular ng-select : input interne sans nom accessible distinct -> ciblage CSS structurel.
+    this.selectTabac = page.locator('.ng-select-searchable.ng-select-clearable.ng-select.ng-select-single > .ng-select-container > .ng-value-container > .ng-input > input').first();
     this.fumeurRegulierOption = page.getByRole('option', { name: 'Fumeur régulier' });
     this.toxiConduitTextBox = page.getByRole('textbox', { name: 'Toxicomanie / Conduites à' }); 
     this.buttonEnregister = page.getByRole('button', { name: 'Enregistrer' }); 
@@ -152,7 +159,8 @@ export class AntecedentPage {
   await this.pathologiesTextBox.click();
   await this.drepanocytoseOption.click();
   await this.cardiopathieOption.click();
-  await this.bodyPatho.click();
+  // Ferme le panneau ng-dropdown resté ouvert (ses options interceptent les clics suivants).
+  await this.page.keyboard.press('Escape');
   await this.autresPathologiesTextBox.click();
   await this.autresPathologiesTextBox.fill('rhume');
   await this.allergiesTexbox.click();
