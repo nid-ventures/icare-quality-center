@@ -1,4 +1,4 @@
-// tests/structure-app-tests/02_consultations/14_verification_creer_consultation_dentaire.ts
+// tests/structure-app-tests/02_consultations/13_verification_creer_consultation_dentaire.ts
 import { test, expect } from '@playwright/test';
 import { LoginPage } from '../../../pages/structure/patient/login.page';
 import { DashboardPage } from '../../../pages/structure/patient/dashboard.page';
@@ -38,7 +38,7 @@ test('Créer une consultation dentaire pour un patient', async ({ page }) => {
         await consultationPage.goToConsultationTab();
         await consultationPage.expectConsultationsListLoaded();
         await consultationPage.filterByConsultationType('CONSULTATION DENTAIRE');
-        await page.waitForTimeout(2000);
+        await expect(page.locator('.ng-dropdown-panel')).toBeHidden();
     });
 
     await test.step('Ouvrir modal nouvelle consultation', async () => {
@@ -67,6 +67,6 @@ test('Créer une consultation dentaire pour un patient', async ({ page }) => {
 
     await test.step('Filtrer pour afficher la consultation créée', async () => {
         await consultationPage.filterByConsultationType('CONSULTATION DENTAIRE');
-        await page.waitForTimeout(2000);
+        await expect(page.locator('app-consultations').getByRole('button', { name: /Consultation/ }).first()).toBeVisible();
     });
 });

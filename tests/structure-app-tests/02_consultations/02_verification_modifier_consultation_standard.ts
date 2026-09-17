@@ -1,7 +1,8 @@
+// tests/structure-app-tests/02_consultations/02_verification_modifier_consultation_standard.ts
 import { test, expect } from '@playwright/test';
 import { LoginPage } from '../../../pages/structure/patient/login.page';
-import { PatientPage } from '../../../pages/structure/patient/patient.page';
 import { DashboardPage } from '../../../pages/structure/patient/dashboard.page';
+import { PatientPage } from '../../../pages/structure/patient/patient.page';
 import { ConsultationPage } from '../../../pages/structure/consultation/consultation.page';
 import { ConsultationStandardDataGenerator } from '../../../pages/structure/generator/consultation-standard-data-generator';
 
@@ -27,11 +28,12 @@ test('Modifier la première consultation d’un patient', async ({ page }) => {
         await loginPage.goto();
         await loginPage.login(adminUser.username, adminUser.password);
         await loginPage.selectStructure(adminUser.hi);
-
     })
-    await test.step("Vérifier que le  dashboard affiche les statistiques ", async () => {
+
+    await test.step("Vérifier que le dashboard affiche les statistiques", async () => {
         await dashboardPage.statisticIsVisible();
     })
+
     await test.step("Choisir le premier patient de la liste des patients", async () => {
         await patientPage.chooseFirstPatient();
     })
@@ -41,34 +43,27 @@ test('Modifier la première consultation d’un patient', async ({ page }) => {
         await consultationPage.expectConsultationsListLoaded();
     });
 
-    await test.step('Filtrer pour afficher les consultations (optionnel)', async () => {
-        // Exemple : filtrer par type de consultation (selon votre UI)
+    await test.step('Filtrer pour afficher les consultations', async () => {
         await consultationPage.filterByConsultationType('CONSULTATION ANESTHÉSIQUE');
-        await page.waitForTimeout(2000);
+        await expect(page.locator('app-consultations').getByRole('button', { name: /Consultation/ }).first()).toBeVisible();
     });
 
     await test.step('Sélectionner la première consultation', async () => {
         await consultationPage.selectFirstConsultation();
-        await page.waitForTimeout(2000);
-
+        await expect(consultationPage.reportInput).toBeVisible();
     });
 
     await test.step('Activer le formulaire de modification', async () => {
+        // activateForm() attend déjà que le champ compte-rendu devienne modifiable.
         await consultationPage.activateForm();
-        await page.waitForTimeout(2000);
-
     });
 
     await test.step('Modifier les champs avec des données générées', async () => {
         await consultationPage.fillUpdatedForm(updatedData);
-        await page.waitForTimeout(2000);
-
     });
 
     await test.step('Enregistrer les modifications', async () => {
         await consultationPage.updateConsultation();
-        await page.waitForTimeout(2000);
-
+        await expect(consultationPage.confirmButton).not.toBeVisible();
     });
-
 });

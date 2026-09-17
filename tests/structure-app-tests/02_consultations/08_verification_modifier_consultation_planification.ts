@@ -44,29 +44,30 @@ test('Modifier la première consultation de planification familiale d’un patie
 
     await test.step('Filtrer pour afficher les consultations de planification familiale', async () => {
         await consultationPage.filterByConsultationType('CONSULTATION PLANIFICATION');
-        await page.waitForTimeout(2000);
+        await expect(page.locator('app-consultations').getByRole('button', { name: /Consultation/ }).first()).toBeVisible();
     });
 
     await test.step('Ouvrir la première consultation', async () => {
         await consultationPage.openFirstConsultation();
+        await expect(consultationPage.heightInput).toBeVisible();
     });
 
     await test.step('Activer le formulaire', async () => {
+        // activateForm() attend déjà que le champ observations devienne modifiable.
         await consultationPage.activateForm();
     });
 
     await test.step('Modifier les champs', async () => {
         await consultationPage.fillUpdatedPlanificationForm(updatedData);
-        await page.waitForTimeout(2000);
     });
 
     await test.step('Sauvegarder', async () => {
         await consultationPage.updateConsultation();
-        await page.waitForTimeout(2000);
+        await expect(consultationPage.confirmButton).not.toBeVisible();
     });
 
     await test.step('Filtrer pour afficher les consultations modifiées', async () => {
         await consultationPage.filterByConsultationType('CONSULTATION PLANIFICATION');
-        await page.waitForTimeout(2000);
+        await expect(page.locator('app-consultations').getByRole('button', { name: /Consultation/ }).first()).toBeVisible();
     });
 });

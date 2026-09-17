@@ -1,4 +1,4 @@
-// tests/structure-app-tests/02_consultations/15_verification_modifier_consultation_dentaire.ts
+// tests/structure-app-tests/02_consultations/14_verification_modifier_consultation_dentaire.ts
 import { test, expect } from '@playwright/test';
 import { LoginPage } from '../../../pages/structure/patient/login.page';
 import { DashboardPage } from '../../../pages/structure/patient/dashboard.page';
@@ -40,29 +40,30 @@ test('Modifier la première consultation dentaire d’un patient', async ({ page
         await consultationPage.goToConsultationTab();
         await consultationPage.expectConsultationsListLoaded();
         await consultationPage.filterByConsultationType('CONSULTATION DENTAIRE');
-        await page.waitForTimeout(2000);
+        await expect(page.locator('app-consultations').getByRole('button', { name: /Consultation/ }).first()).toBeVisible();
     });
 
     await test.step('Ouvrir la première consultation', async () => {
         await consultationPage.openFirstConsultation();
+        await consultationPage.expectDentaireFormLoaded();
     });
 
     await test.step('Activer le formulaire', async () => {
+        // activateForm() attend déjà que le champ conclusion devienne modifiable.
         await consultationPage.activateForm();
     });
 
     await test.step('Modifier les champs', async () => {
         await consultationPage.fillUpdatedDentaireForm(updatedData);
-        await page.waitForTimeout(2000);
     });
 
     await test.step('Sauvegarder', async () => {
         await consultationPage.updateConsultation();
-        await page.waitForTimeout(2000);
+        await expect(consultationPage.confirmButton).not.toBeVisible();
     });
 
     await test.step('Filtrer pour afficher les consultations modifiées', async () => {
         await consultationPage.filterByConsultationType('CONSULTATION DENTAIRE');
-        await page.waitForTimeout(2000);
+        await expect(page.locator('app-consultations').getByRole('button', { name: /Consultation/ }).first()).toBeVisible();
     });
 });

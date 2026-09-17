@@ -3,6 +3,7 @@ import { LoginPage } from '../../../pages/structure/patient/login.page';
 import { DashboardPage } from '../../../pages/structure/patient/dashboard.page';
 import { PatientPage } from '../../../pages/structure/patient/patient.page';
 import { AntecedentPage } from '../../../pages/structure/patient/antecedant_patient.page';
+
 // Données de test
 const adminUser = {
   username: 'hi-admin@gmail.com',
@@ -10,7 +11,8 @@ const adminUser = {
   password: 'BcIsX7V&ZRh7',
   role: 'Administrateur'
 };
-test('test', async ({ page }) => {
+
+test('Vérification des informations des antécédents du patient', async ({ page }) => {
   const loginPage = new LoginPage(page);
   const dashboardPage = new DashboardPage(page);
   const patientPage = new PatientPage(page);
@@ -20,18 +22,14 @@ test('test', async ({ page }) => {
     await loginPage.goto();
     await loginPage.login(adminUser.username, adminUser.password);
     await loginPage.selectStructure(adminUser.hi);
-
   })
-  await test.step("Vérifier que le  dashboard affiche les statistiques ", async () => {
+  await test.step('Vérifier que le dashboard affiche les statistiques', async () => {
     await dashboardPage.statisticIsVisible();
   })
-  await test.step("Choisir le premier patient de la liste des patients", async () => {
+  await test.step('Choisir le premier patient de la liste des patients', async () => {
     await patientPage.chooseFirstPatient();
   })
-  await test.step("Vérifier les informations des antécédants", async () => {
+  await test.step('Vérifier les informations des antécédents', async () => {
     await antecedentPage.checkAntecedentInfos();
   })
-
-
-
 });

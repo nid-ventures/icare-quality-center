@@ -2,6 +2,7 @@ import { test, expect } from '@playwright/test';
 import { LoginPage } from '../../../pages/structure/patient/login.page';
 import { DashboardPage } from '../../../pages/structure/patient/dashboard.page';
 import { PatientPage } from '../../../pages/structure/patient/patient.page';
+
 // Données de test
 const adminUser = {
   username: 'hi-admin@gmail.com',
@@ -10,27 +11,24 @@ const adminUser = {
   role: 'Administrateur'
 };
 
-
 test(`Vérification la conformité de la liste des patients ${adminUser.role}`, async ({ page }) => {
+  const loginPage = new LoginPage(page);
   const dashboardPage = new DashboardPage(page);
   const patientPage = new PatientPage(page);
-  const loginPage = new LoginPage(page);
 
   await test.step('Ouverture de la page de connexion', async () => {
     await loginPage.goto();
   })
   await test.step('connexion', async () => {
     await loginPage.login(adminUser.username, adminUser.password);
-
   })
   await test.step('Sélection de la structure', async () => {
     await loginPage.selectStructure(adminUser.hi);
   });
-  await test.step("Vérifier que le  dashboard affiche les statistiques ", async () => {
+  await test.step('Vérifier que le dashboard affiche les statistiques', async () => {
     await dashboardPage.statisticIsVisible();
   })
-  await test.step("Vérifications de la présence des éléments sur la page Patients ", async () => {
+  await test.step('Vérifications de la présence des éléments sur la page Patients', async () => {
     await patientPage.checkPatientsList();
   })
-
 });

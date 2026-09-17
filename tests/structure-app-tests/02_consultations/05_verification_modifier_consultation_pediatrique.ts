@@ -1,4 +1,4 @@
-// tests/structure-app-tests/consultations/05_verification_modifier_consultation_pediatrique.ts
+// tests/structure-app-tests/02_consultations/05_verification_modifier_consultation_pediatrique.ts
 import { test, expect } from '@playwright/test';
 import { LoginPage } from '../../../pages/structure/patient/login.page';
 import { DashboardPage } from '../../../pages/structure/patient/dashboard.page';
@@ -27,11 +27,12 @@ test('Modifier la première consultation pédiatrique d’un patient', async ({ 
         await loginPage.goto();
         await loginPage.login(adminUser.username, adminUser.password);
         await loginPage.selectStructure(adminUser.hi);
-
     })
-    await test.step("Vérifier que le  dashboard affiche les statistiques ", async () => {
+
+    await test.step("Vérifier que le dashboard affiche les statistiques", async () => {
         await dashboardPage.statisticIsVisible();
     })
+
     await test.step("Choisir le premier patient de la liste des patients", async () => {
         await patientPage.chooseFirstPatient();
     })
@@ -43,31 +44,30 @@ test('Modifier la première consultation pédiatrique d’un patient', async ({ 
 
     await test.step('Filtrer pour afficher les consultations pédiatriques', async () => {
         await consultationPage.filterByConsultationType('CONSULTATION PÉDIATRIQUE');
-        await page.waitForTimeout(2000);
+        await expect(page.locator('app-consultations').getByRole('button', { name: /Consultation/ }).first()).toBeVisible();
     });
 
     await test.step('Ouvrir la première consultation', async () => {
         await consultationPage.openFirstConsultation();
+        await consultationPage.expectPediatriqueFormLoaded();
     });
 
     await test.step('Activer le formulaire', async () => {
+        // activateForm() attend déjà que les champs deviennent modifiables.
         await consultationPage.activateForm();
     });
 
     await test.step('Modifier les champs', async () => {
         await consultationPage.fillUpdatedPediatriqueForm(updatedData);
-        await page.waitForTimeout(2000);
-
     });
 
     await test.step('Sauvegarder', async () => {
         await consultationPage.updateConsultation();
-        await page.waitForTimeout(2000);
-
+        await expect(consultationPage.confirmButton).not.toBeVisible();
     });
 
     await test.step('Filtrer pour afficher les consultations pédiatriques', async () => {
         await consultationPage.filterByConsultationType('CONSULTATION PÉDIATRIQUE');
-        await page.waitForTimeout(2000);
+        await expect(page.locator('app-consultations').getByRole('button', { name: /Consultation/ }).first()).toBeVisible();
     });
 });

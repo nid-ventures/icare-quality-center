@@ -19,7 +19,6 @@ test('Modifier une personne à contacter (région et nationalité)', async ({ pa
     await loginPage.goto();
     await loginPage.login(adminUser.username, adminUser.password);
     await loginPage.selectStructure(adminUser.hi);
-
   })
 
   await test.step('Sélectionner le premier patient', async () => {

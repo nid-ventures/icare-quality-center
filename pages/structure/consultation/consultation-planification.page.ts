@@ -1,4 +1,4 @@
-// tests/pages/structure/consultation/consultation-planification.page.ts
+// pages/structure/consultation/consultation-planification.page.ts
 import { type Page, type Locator, expect } from '@playwright/test';
 import { ConsultationPage } from './consultation.page';
 import { ConsultationPlanificationData } from '../generator/consultation-planification-data-generator';
@@ -23,6 +23,8 @@ export class ConsultationPlanificationPage extends ConsultationPage {
         this.planificationHeading = page.getByRole('heading', { name: /Modification Consultation Planification Familiale/i });
 
         // Consultant
+        // ng-select n'expose pas de rôle accessible standard sur son conteneur :
+        // on le repère par son texte de placeholder puis on cible son input interne.
         this.caregiverSelect = page
             .locator('ng-select')
             .filter({ hasText: /Sélectionner un consultant/i })
@@ -65,7 +67,7 @@ export class ConsultationPlanificationPage extends ConsultationPage {
         // Date prochain rendez-vous (3ème input date)
         this.nextAppointmentDateInput = page.locator('input[type="date"]').nth(2);
 
-        // Actes facturables
+        // Actes facturables (composant "modern-select" maison, sans rôle accessible dédié)
         this.actsSelect = page.locator('.modern-select.billing-select input[type="text"]').first();
     }
 

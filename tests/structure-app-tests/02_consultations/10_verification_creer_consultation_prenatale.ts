@@ -1,4 +1,4 @@
-// tests/structure-app-tests/02_consultations/11_verification_creer_consultation_prenatale.ts
+// tests/structure-app-tests/02_consultations/10_verification_creer_consultation_prenatale.ts
 import { test, expect } from '@playwright/test';
 import { LoginPage } from '../../../pages/structure/patient/login.page';
 import { DashboardPage } from '../../../pages/structure/patient/dashboard.page';
@@ -65,6 +65,6 @@ test('Créer une consultation prénatale pour un patient', async ({ page }) => {
 
     await test.step('Filtrer pour afficher la consultation créée', async () => {
         await consultationPage.filterByConsultationType('CONSULTATION PRÉNATALE');
-        await page.waitForTimeout(2000);
+        await expect(page.locator('app-consultations').getByRole('button', { name: /Consultation/ }).first()).toBeVisible();
     });
 });

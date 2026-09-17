@@ -1,4 +1,4 @@
-// tests/pages/structure/consultation/consultation-prenatal.page.ts
+// pages/structure/consultation/consultation-prenatal.page.ts
 import { type Page, type Locator, expect } from '@playwright/test';
 import { ConsultationPage } from './consultation.page';
 import { ConsultationPrenatalData } from '../generator/consultation-prenatal-data-generator';
@@ -37,6 +37,8 @@ export class ConsultationPrenatalPage extends ConsultationPage {
         const container = page.locator('.iq-card.consultation-prenatal-modern').first();
 
         this.prenatalHeading = container.getByRole('heading', { name: /Consultation Prénatale/i });
+        // ng-select n'expose pas de rôle accessible standard sur son conteneur :
+        // on le repère par son placeholder puis on cible son input interne.
         this.caregiverSelect = container
             .locator('ng-select[placeholder="Sélectionner un consultant"]')
             .getByRole('textbox')
@@ -63,6 +65,8 @@ export class ConsultationPrenatalPage extends ConsultationPage {
             .first();
         this.signeParticulierInput = container.locator('input[formcontrolname="signeParticulier"]');
         this.appearanceInput = container.locator('input[formcontrolname="appearance"]');
+        // Sélecteurs "modern-select" maison (examens, bandelette, traitements, actes) :
+        // composants sans rôle accessible dédié, ciblés par classe CSS + input interne.
         this.examensCliniquesSelect = container
             .locator('.modern-select.examens-select input[type="text"]')
             .first();

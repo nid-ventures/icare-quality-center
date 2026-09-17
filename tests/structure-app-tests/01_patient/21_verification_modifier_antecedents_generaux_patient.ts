@@ -3,6 +3,7 @@ import { LoginPage } from '../../../pages/structure/patient/login.page';
 import { DashboardPage } from '../../../pages/structure/patient/dashboard.page';
 import { PatientPage } from '../../../pages/structure/patient/patient.page';
 import { AntecedentPage } from '../../../pages/structure/patient/antecedant_patient.page';
+
 // Données de test
 const adminUser = {
   username: 'hi-admin@gmail.com',
@@ -10,7 +11,8 @@ const adminUser = {
   password: 'BcIsX7V&ZRh7',
   role: 'Administrateur'
 };
-test('test', async ({ page }) => {
+
+test('Vérification de la modification des antécédents généraux du patient', async ({ page }) => {
   const loginPage = new LoginPage(page);
   const dashboardPage = new DashboardPage(page);
   const patientPage = new PatientPage(page);
@@ -20,25 +22,19 @@ test('test', async ({ page }) => {
     await loginPage.goto();
     await loginPage.login(adminUser.username, adminUser.password);
     await loginPage.selectStructure(adminUser.hi);
-
   })
-  await test.step("Vérifier que le  dashboard affiche les statistiques ", async () => {
+  await test.step('Vérifier que le dashboard affiche les statistiques', async () => {
     await dashboardPage.statisticIsVisible();
   })
-  await test.step("Choisir le premier patient de la liste des patients", async () => {
+  await test.step('Choisir le premier patient de la liste des patients', async () => {
     await patientPage.chooseFirstPatient();
   })
 
-
-  await test.step("Vérifier la conformité  du formulaire antécédant généraux", async () => {
+  await test.step('Vérifier la conformité du formulaire des antécédents généraux', async () => {
     await antecedentPage.checkAntecedentFormulaire();
   })
 
-
-  await test.step("Modifier les informations d'antécédants généraux du 1er patient", async () => {
+  await test.step('Modifier les informations des antécédents généraux du premier patient', async () => {
     await antecedentPage.updateAntecedantGeneraux();
   })
-
-
-
 });

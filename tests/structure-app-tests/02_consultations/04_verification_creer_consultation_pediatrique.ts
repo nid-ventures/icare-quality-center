@@ -1,9 +1,9 @@
-// tests/structure-app-tests/consultations/04_verification_creer_consultation_pediatrique.ts
+// tests/structure-app-tests/02_consultations/04_verification_creer_consultation_pediatrique.ts
 import { test, expect } from '@playwright/test';
 import { LoginPage } from '../../../pages/structure/patient/login.page';
 import { DashboardPage } from '../../../pages/structure/patient/dashboard.page';
-import { ConsultationPediatriquePage } from '../../../pages/structure/consultation/consultation-pediatrique.page';
 import { PatientPage } from '../../../pages/structure/patient/patient.page';
+import { ConsultationPediatriquePage } from '../../../pages/structure/consultation/consultation-pediatrique.page';
 import { ConsultationPediatriqueData, ConsultationPediatriqueDataGenerator } from '../../../pages/structure/generator/consultation-pediatrique-data-generator';
 
 const adminUser = {
@@ -12,7 +12,6 @@ const adminUser = {
     password: 'BcIsX7V&ZRh7',
     role: 'Administrateur'
 };
-
 
 test('Créer une consultation pédiatrique pour un patient', async ({ page }) => {
     const loginPage = new LoginPage(page);
@@ -25,21 +24,24 @@ test('Créer une consultation pédiatrique pour un patient', async ({ page }) =>
         await loginPage.goto();
         await loginPage.login(adminUser.username, adminUser.password);
         await loginPage.selectStructure(adminUser.hi);
-
     })
-    await test.step("Vérifier que le  dashboard affiche les statistiques ", async () => {
+
+    await test.step("Vérifier que le dashboard affiche les statistiques", async () => {
         await dashboardPage.statisticIsVisible();
     })
+
     await test.step("Choisir le premier patient de la liste des patients", async () => {
         await patientPage.chooseFirstPatient();
     })
+
     await test.step('Onglet Consultation', async () => {
         await consultationPage.goToConsultationTab();
         await consultationPage.expectConsultationsListLoaded();
     });
-    await test.step('Filtrer pour afficher les consultations à nouveau après suppression .........', async () => {
+
+    await test.step('Filtrer la liste des consultations par type (pédiatrique)', async () => {
         await consultationPage.filterByConsultationType('CONSULTATION PÉDIATRIQUE');
-        await page.waitForTimeout(2000);
+        await expect(page.locator('.ng-dropdown-panel')).toBeHidden();
     });
 
     await test.step('Ouvrir modal nouvelle consultation', async () => {
@@ -47,7 +49,6 @@ test('Créer une consultation pédiatrique pour un patient', async ({ page }) =>
     });
 
     await test.step('Remplir spécialité et type (pédiatrie)', async () => {
-
         await consultationPage.fillConsultationBasics({
             specialty: consultationData.specialty,
             consultationType: consultationData.consultationType
@@ -60,18 +61,15 @@ test('Créer une consultation pédiatrique pour un patient', async ({ page }) =>
     });
 
     await test.step('Remplir le formulaire pédiatrique', async () => {
-
         await consultationPage.fillMedicalConsultationForm(consultationData);
     });
 
     await test.step('Enregistrer la consultation', async () => {
         await consultationPage.saveConsultation();
     });
-    await test.step('Filtrer pour afficher les consultations à nouveau après suppression .........', async () => {
-        // Exemple : filtrer par type
+
+    await test.step('Filtrer pour afficher la consultation créée', async () => {
         await consultationPage.filterByConsultationType('CONSULTATION PÉDIATRIQUE');
-        await page.waitForTimeout(2000);
+        await expect(page.locator('app-consultations').getByRole('button', { name: /Consultation/ }).first()).toBeVisible();
     });
-
-
 });

@@ -4,6 +4,7 @@ import { PatientPage } from '../../../pages/structure/patient/patient.page';
 import { DetailPatientPage } from '../../../pages/structure/patient/detail_administratif.page';
 import { CareData, PatientCarePage } from '../../../pages/structure/patient/patient-care.page';
 import { CareDataGenerator } from '../../../pages/structure/generator/care-data-generator';
+
 const adminUser = {
   username: 'hi-admin@gmail.com',
   hi: 'NEST FOR ALL',
@@ -23,7 +24,6 @@ test('Ajouter une prise en charge pour un patient', async ({ page }) => {
     await loginPage.goto();
     await loginPage.login(adminUser.username, adminUser.password);
     await loginPage.selectStructure(adminUser.hi);
-
   })
 
   await test.step('Sélectionner le premier patient', async () => {
@@ -34,24 +34,19 @@ test('Ajouter une prise en charge pour un patient', async ({ page }) => {
     await detailPatientPage.gotoDetailsPatient();
   });
 
-
   await test.step('Onglet Prise en charge', async () => {
     await carePage.goToCareTab();
   });
 
-  await test.step('Ouvrir modal une prise en charge', async () => {
+  await test.step('Ouvrir le modal d\'ajout d\'une prise en charge', async () => {
     await carePage.openAddCareModal();
-
   });
-  await test.step('Saisir modal une prise en charge', async () => {
+  await test.step('Saisir les informations de la prise en charge', async () => {
     await carePage.fillCareForm(careData);
   });
-  await test.step('Enregistrer une prise en charge', async () => {
-
+  await test.step('Enregistrer la prise en charge', async () => {
     await carePage.saveCare();
-    await page.waitForTimeout(4000);
-
+    // Attendre la fermeture du modal d'ajout, qui confirme l'enregistrement.
+    await expect(page.getByRole('heading', { name: 'Ajouter prise en charge' })).not.toBeVisible();
   });
-
-
 });

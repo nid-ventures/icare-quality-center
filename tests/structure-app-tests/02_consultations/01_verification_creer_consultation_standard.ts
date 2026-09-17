@@ -1,10 +1,10 @@
-// tests/structure-app-tests/22_verification_creer_consultation.ts
+// tests/structure-app-tests/02_consultations/01_verification_creer_consultation_standard.ts
 import { test, expect } from '@playwright/test';
-import { ConsultationData, ConsultationStandardDataGenerator } from '../../../pages/structure/generator/consultation-standard-data-generator';
 import { LoginPage } from '../../../pages/structure/patient/login.page';
 import { DashboardPage } from '../../../pages/structure/patient/dashboard.page';
 import { PatientPage } from '../../../pages/structure/patient/patient.page';
 import { ConsultationPage } from '../../../pages/structure/consultation/consultation.page';
+import { ConsultationData, ConsultationStandardDataGenerator } from '../../../pages/structure/generator/consultation-standard-data-generator';
 
 const adminUser = {
     username: 'hi-admin@gmail.com',
@@ -25,11 +25,12 @@ test('Créer une consultation pour un patient', async ({ page }) => {
         await loginPage.goto();
         await loginPage.login(adminUser.username, adminUser.password);
         await loginPage.selectStructure(adminUser.hi);
-
     })
-    await test.step("Vérifier que le  dashboard affiche les statistiques ", async () => {
+
+    await test.step("Vérifier que le dashboard affiche les statistiques", async () => {
         await dashboardPage.statisticIsVisible();
     })
+
     await test.step("Choisir le premier patient de la liste des patients", async () => {
         await patientPage.chooseFirstPatient();
     })
@@ -59,10 +60,8 @@ test('Créer une consultation pour un patient', async ({ page }) => {
         await consultationPage.saveConsultation();
     });
 
-    await test.step(`Vérifier que la consultation ${consultationData.consultationType} apparaît dans la liste (optionnel)`, async () => {
-        // Exemple : filtrer par type de consultation
+    await test.step(`Vérifier que la consultation ${consultationData.consultationType} apparaît dans la liste`, async () => {
         await consultationPage.filterByConsultationType(consultationData.consultationType);
-        // Pause de 5 secondes pour inspection visuelle
-        await page.waitForTimeout(5000);
+        await expect(page.locator('app-consultations').getByRole('button', { name: /Consultation/ }).first()).toBeVisible();
     });
 });

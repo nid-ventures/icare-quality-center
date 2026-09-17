@@ -1,8 +1,9 @@
-import { test, expect } from '@playwright/test'; import { LoginPage } from '../../../pages/structure/patient/login.page';
+// tests/structure-app-tests/02_consultations/03_verification_supprimer_consultation_standard.ts
+import { test, expect } from '@playwright/test';
+import { LoginPage } from '../../../pages/structure/patient/login.page';
 import { DashboardPage } from '../../../pages/structure/patient/dashboard.page';
 import { PatientPage } from '../../../pages/structure/patient/patient.page';
 import { ConsultationPage } from '../../../pages/structure/consultation/consultation.page';
-;
 
 const adminUser = {
     username: 'hi-admin@gmail.com',
@@ -23,11 +24,12 @@ test('Supprimer la première consultation d’un patient', async ({ page }) => {
         await loginPage.goto();
         await loginPage.login(adminUser.username, adminUser.password);
         await loginPage.selectStructure(adminUser.hi);
-
     })
-    await test.step("Vérifier que le  dashboard affiche les statistiques ", async () => {
+
+    await test.step("Vérifier que le dashboard affiche les statistiques", async () => {
         await dashboardPage.statisticIsVisible();
     })
+
     await test.step("Choisir le premier patient de la liste des patients", async () => {
         await patientPage.chooseFirstPatient();
     })
@@ -37,10 +39,9 @@ test('Supprimer la première consultation d’un patient', async ({ page }) => {
         await consultationPage.expectConsultationsListLoaded();
     });
 
-    await test.step('Filtrer pour afficher les consultations ', async () => {
-        // Exemple : filtrer par type
+    await test.step('Filtrer pour afficher les consultations', async () => {
         await consultationPage.filterByConsultationType('CONSULTATION ANESTHÉSIQUE');
-        await page.waitForTimeout(2000);
+        await expect(page.locator('app-consultations').getByRole('button', { name: /Consultation/ }).first()).toBeVisible();
     });
 
     await test.step('Ouvrir la première consultation', async () => {
@@ -49,18 +50,16 @@ test('Supprimer la première consultation d’un patient', async ({ page }) => {
 
     await test.step('Supprimer la consultation', async () => {
         await consultationPage.deleteConsultation();
-        await page.waitForTimeout(2000);
-
-
+        await expect(consultationPage.confirmButton).not.toBeVisible();
     });
+
     await test.step('Actualiser la page consultations', async () => {
         await page.reload();
         await consultationPage.expectConsultationsListLoaded();
     });
-    await test.step('Filtrer pour afficher les consultations à nouveau après suppression .........', async () => {
-        // Exemple : filtrer par type
-        await consultationPage.filterByConsultationType('CONSULTATION ANESTHÉSIQUE');
-        await page.waitForTimeout(2000);
-    });
 
+    await test.step('Filtrer pour afficher les consultations à nouveau après suppression', async () => {
+        await consultationPage.filterByConsultationType('CONSULTATION ANESTHÉSIQUE');
+        await expect(page.locator('.ng-dropdown-panel')).toBeHidden();
+    });
 });

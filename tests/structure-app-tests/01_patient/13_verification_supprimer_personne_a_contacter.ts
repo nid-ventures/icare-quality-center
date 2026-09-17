@@ -3,7 +3,6 @@ import { LoginPage } from '../../../pages/structure/patient/login.page';
 import { PatientPage } from '../../../pages/structure/patient/patient.page';
 import { DetailPatientPage } from '../../../pages/structure/patient/detail_administratif.page';
 
-
 const adminUser = {
   username: 'hi-admin@gmail.com',
   hi: 'NEST FOR ALL',
@@ -20,7 +19,6 @@ test('Supprimer une personne à contacter', async ({ page }) => {
     await loginPage.goto();
     await loginPage.login(adminUser.username, adminUser.password);
     await loginPage.selectStructure(adminUser.hi);
-
   })
 
   await test.step('Sélectionner le premier patient', async () => {
@@ -37,6 +35,5 @@ test('Supprimer une personne à contacter', async ({ page }) => {
 
   await test.step('Supprimer la première personne à contacter', async () => {
     await detailPatientPage.deleteFirstContactPerson();
-
   });
 });

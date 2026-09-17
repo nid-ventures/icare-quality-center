@@ -1,4 +1,4 @@
-// tests/structure-app-tests/consultations/05_verification_creer_consultation_planification.ts
+// tests/structure-app-tests/02_consultations/07_verification_creer_consultation_planification.ts
 import { test, expect } from '@playwright/test';
 import { LoginPage } from '../../../pages/structure/patient/login.page';
 import { DashboardPage } from '../../../pages/structure/patient/dashboard.page';
@@ -64,7 +64,6 @@ test('Créer une consultation de planification familiale pour un patient', async
 
     await test.step('Filtrer pour afficher la consultation créée', async () => {
         await consultationPage.filterByConsultationType('CONSULTATION PLANIFICATION');
-        await page.waitForTimeout(2000);
-
+        await expect(page.locator('app-consultations').getByRole('button', { name: /Consultation/ }).first()).toBeVisible();
     });
 });

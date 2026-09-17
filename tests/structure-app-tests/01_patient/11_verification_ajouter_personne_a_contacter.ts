@@ -3,12 +3,14 @@ import { LoginPage } from '../../../pages/structure/patient/login.page';
 import { PatientPage } from '../../../pages/structure/patient/patient.page';
 import { ContactPersonData, DetailPatientPage } from '../../../pages/structure/patient/detail_administratif.page';
 import { ContactPersonGenerator } from '../../../pages/structure/generator/contact-person-generator';
+
 const adminUser = {
   username: 'hi-admin@gmail.com',
   hi: 'NEST FOR ALL',
   password: 'BcIsX7V&ZRh7',
   role: 'Administrateur'
 };
+
 test('Ajouter une personne à contacter pour un patient', async ({ page }) => {
   const loginPage = new LoginPage(page);
   const patientPage = new PatientPage(page);
@@ -22,7 +24,6 @@ test('Ajouter une personne à contacter pour un patient', async ({ page }) => {
   })
   await test.step('connexion', async () => {
     await loginPage.login(adminUser.username, adminUser.password);
-
   })
   await test.step('Sélection de la structure', async () => {
     await loginPage.selectStructure(adminUser.hi);
@@ -40,7 +41,7 @@ test('Ajouter une personne à contacter pour un patient', async ({ page }) => {
     await detailPatientPage.goToPersonContactTab();
   });
 
-  await test.step('Ouvrir le modal d’ajout', async () => {
+  await test.step('Ouvrir le modal d\'ajout', async () => {
     await detailPatientPage.openAddPersonModal();
   });
 
@@ -48,8 +49,7 @@ test('Ajouter une personne à contacter pour un patient', async ({ page }) => {
     await detailPatientPage.fillPersonContactForm(contactData);
   });
 
-  await test.step('Sauvegarder et vérifier l’ajout', async () => {
+  await test.step('Sauvegarder et vérifier l\'ajout', async () => {
     await detailPatientPage.savePersonContact();
-
   });
 });

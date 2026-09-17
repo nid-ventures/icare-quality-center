@@ -1,4 +1,4 @@
-// tests/structure-app-tests/02_consultations/13_verification_supprimer_consultation_prenatale.ts
+// tests/structure-app-tests/02_consultations/12_verification_supprimer_consultation_prenatale.ts
 import { test, expect } from '@playwright/test';
 import { LoginPage } from '../../../pages/structure/patient/login.page';
 import { DashboardPage } from '../../../pages/structure/patient/dashboard.page';
@@ -41,7 +41,7 @@ test('Supprimer la première consultation prénatale d’un patient', async ({ p
 
     await test.step('Filtrer les consultations prénatales', async () => {
         await consultationPage.filterByConsultationType('CONSULTATION PRÉNATALE');
-        await page.waitForTimeout(2000);
+        await expect(page.locator('app-consultations').getByRole('button', { name: /Consultation/ }).first()).toBeVisible();
     });
 
     await test.step('Ouvrir la première consultation', async () => {
@@ -50,13 +50,13 @@ test('Supprimer la première consultation prénatale d’un patient', async ({ p
 
     await test.step('Supprimer la consultation', async () => {
         await consultationPage.deleteConsultation();
-        await page.waitForTimeout(2000);
+        await expect(consultationPage.confirmButton).not.toBeVisible();
         await page.reload();
         await consultationPage.expectConsultationsListLoaded();
     });
 
     await test.step('Filtrer les consultations prénatales', async () => {
         await consultationPage.filterByConsultationType('CONSULTATION PRÉNATALE');
-        await page.waitForTimeout(2000);
+        await expect(page.locator('.ng-dropdown-panel')).toBeHidden();
     });
 });

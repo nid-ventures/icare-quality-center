@@ -1,4 +1,4 @@
-// tests/structure-app-tests/02_consultations/16_verification_supprimer_consultation_dentaire.ts
+// tests/structure-app-tests/02_consultations/15_verification_supprimer_consultation_dentaire.ts
 import { test, expect } from '@playwright/test';
 import { LoginPage } from '../../../pages/structure/patient/login.page';
 import { DashboardPage } from '../../../pages/structure/patient/dashboard.page';
@@ -38,7 +38,7 @@ test('Supprimer la première consultation dentaire d’un patient', async ({ pag
         await consultationPage.goToConsultationTab();
         await consultationPage.expectConsultationsListLoaded();
         await consultationPage.filterByConsultationType('CONSULTATION DENTAIRE');
-        await page.waitForTimeout(2000);
+        await expect(page.locator('app-consultations').getByRole('button', { name: /Consultation/ }).first()).toBeVisible();
     });
 
     await test.step('Ouvrir la première consultation', async () => {
@@ -47,13 +47,13 @@ test('Supprimer la première consultation dentaire d’un patient', async ({ pag
 
     await test.step('Supprimer la consultation', async () => {
         await consultationPage.deleteConsultation();
-        await page.waitForTimeout(2000);
+        await expect(consultationPage.confirmButton).not.toBeVisible();
         await page.reload();
         await consultationPage.expectConsultationsListLoaded();
     });
 
     await test.step('Filtrer les consultations dentaires', async () => {
         await consultationPage.filterByConsultationType('CONSULTATION DENTAIRE');
-        await page.waitForTimeout(2000);
+        await expect(page.locator('.ng-dropdown-panel')).toBeHidden();
     });
 });

@@ -144,7 +144,12 @@ export class LaboratoryWorklistPage {
   }
 
   async selectRow(index: number) {
-    await this.tableRows.nth(index).locator('input[type="checkbox"]').check();
+    // Le flyout de la sidebar ("Imagerie") peut s'ouvrir au survol et rester affiché par-dessus
+    // la colonne de gauche : un clic positionnel (même forcé) atterrit sur le flyout, pas sur la
+    // checkbox. On invoque directement .click() sur l'élément DOM pour contourner le hit-test.
+    const checkbox = this.tableRows.nth(index).locator('input[type="checkbox"]');
+    await checkbox.evaluate((el: HTMLInputElement) => el.click());
+    await expect(checkbox).toBeChecked();
   }
 
   async selectAllVisible() {

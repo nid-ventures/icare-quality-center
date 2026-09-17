@@ -1,7 +1,8 @@
-import { test, expect, Page } from '@playwright/test';
+import { test, expect } from '@playwright/test';
 import { LoginPage } from '../../../pages/structure/patient/login.page';
 import { DashboardPage } from '../../../pages/structure/patient/dashboard.page';
 import { PatientPage } from '../../../pages/structure/patient/patient.page';
+
 // Données de test
 const adminUser = {
   username: 'hi-admin@gmail.com',
@@ -11,30 +12,30 @@ const adminUser = {
 };
 
 test('Recherche Patients - tests individuels par champ', async ({ page }) => {
+  const loginPage = new LoginPage(page);
   const dashboardPage = new DashboardPage(page);
   const patientPage = new PatientPage(page);
-  const loginPage = new LoginPage(page);
 
   await test.step('Ouverture de la page de connexion', async () => {
     await loginPage.goto();
   })
   await test.step('connexion', async () => {
     await loginPage.login(adminUser.username, adminUser.password);
-
   })
   await test.step('Sélection de la structure', async () => {
     await loginPage.selectStructure(adminUser.hi);
   });
-  await test.step("Vérifier que le  dashboard affiche les statistiques ", async () => {
+  await test.step('Vérifier que le dashboard affiche les statistiques', async () => {
     await dashboardPage.statisticIsVisible();
   })
-  await test.step("Définition des champs et recherche combinée ", async () => {
+  await test.step('Définition des champs et recherche combinée', async () => {
     await patientPage.definitionChamps(page);
   })
 
+  await test.step('Réinitialiser le formulaire de recherche', async () => {
+    await patientPage.resetForm();
+    await expect(page.getByPlaceholder('Identifiant...')).toHaveValue('');
+  });
 
-  // ======================== VÉRIFICATION FINALE ========================
-  await patientPage.resetForm();
-  await expect(page.getByPlaceholder('Identifiant...')).toHaveValue('');
   console.log('\n✅ Test terminé avec succès');
 });

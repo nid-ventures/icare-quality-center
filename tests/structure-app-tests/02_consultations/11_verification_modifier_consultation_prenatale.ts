@@ -1,4 +1,4 @@
-// tests/structure-app-tests/02_consultations/12_verification_modifier_consultation_prenatale.ts
+// tests/structure-app-tests/02_consultations/11_verification_modifier_consultation_prenatale.ts
 import { test, expect } from '@playwright/test';
 import { LoginPage } from '../../../pages/structure/patient/login.page';
 import { DashboardPage } from '../../../pages/structure/patient/dashboard.page';
@@ -44,29 +44,30 @@ test('Modifier la première consultation prénatale d’un patient', async ({ pa
 
     await test.step('Filtrer les consultations prénatales', async () => {
         await consultationPage.filterByConsultationType('CONSULTATION PRÉNATALE');
-        await page.waitForTimeout(2000);
+        await expect(page.locator('app-consultations').getByRole('button', { name: /Consultation/ }).first()).toBeVisible();
     });
 
     await test.step('Ouvrir la première consultation', async () => {
         await consultationPage.openFirstConsultation();
+        await consultationPage.expectPrenatalFormLoaded();
     });
 
     await test.step('Activer le formulaire', async () => {
+        // activateForm() attend déjà qu'un champ modifiable devienne actif.
         await consultationPage.activateForm();
     });
 
     await test.step('Modifier les champs', async () => {
         await consultationPage.fillUpdatedPrenatalForm(updatedData);
-        await page.waitForTimeout(2000);
     });
 
     await test.step('Sauvegarder', async () => {
         await consultationPage.updateConsultation();
-        await page.waitForTimeout(2000);
+        await expect(consultationPage.confirmButton).not.toBeVisible();
     });
 
     await test.step('Filtrer pour afficher les consultations modifiées', async () => {
         await consultationPage.filterByConsultationType('CONSULTATION PRÉNATALE');
-        await page.waitForTimeout(2000);
+        await expect(page.locator('app-consultations').getByRole('button', { name: /Consultation/ }).first()).toBeVisible();
     });
 });

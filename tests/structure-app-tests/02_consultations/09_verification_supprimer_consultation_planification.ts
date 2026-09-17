@@ -1,4 +1,4 @@
-// tests/structure-app-tests/02_consultations/10_verification_supprimer_consultation_planification.ts
+// tests/structure-app-tests/02_consultations/09_verification_supprimer_consultation_planification.ts
 import { test, expect } from '@playwright/test';
 import { LoginPage } from '../../../pages/structure/patient/login.page';
 import { DashboardPage } from '../../../pages/structure/patient/dashboard.page';
@@ -41,7 +41,7 @@ test('Supprimer la première consultation de planification familiale d’un pati
 
     await test.step('Filtrer les consultations de planification familiale', async () => {
         await consultationPage.filterByConsultationType('CONSULTATION PLANIFICATION');
-        await page.waitForTimeout(2000);
+        await expect(page.locator('app-consultations').getByRole('button', { name: /Consultation/ }).first()).toBeVisible();
     });
 
     await test.step('Ouvrir la première consultation', async () => {
@@ -50,7 +50,7 @@ test('Supprimer la première consultation de planification familiale d’un pati
 
     await test.step('Supprimer la consultation', async () => {
         await consultationPage.deleteConsultation();
-        await page.waitForTimeout(2000);
+        await expect(consultationPage.confirmButton).not.toBeVisible();
 
         await page.reload();
         await consultationPage.expectConsultationsListLoaded();
@@ -58,6 +58,6 @@ test('Supprimer la première consultation de planification familiale d’un pati
 
     await test.step('Filtrer les consultations de planification familiale', async () => {
         await consultationPage.filterByConsultationType('CONSULTATION PLANIFICATION');
-        await page.waitForTimeout(2000);
+        await expect(page.locator('.ng-dropdown-panel')).toBeHidden();
     });
 });
