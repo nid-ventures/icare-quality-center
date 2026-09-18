@@ -12,6 +12,8 @@ const adminUser = {
   role: 'Administrateur'
 };
 
+test.setTimeout(60000);
+
 test(`Vérification des textes des renseignements généraux du patient de l'application par l'utilisateur ${adminUser.role}`, async ({ page }) => {
   const loginPage = new LoginPage(page);
   const dashboardPage = new DashboardPage(page);

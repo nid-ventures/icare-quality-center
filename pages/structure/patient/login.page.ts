@@ -9,7 +9,6 @@ export class LoginPage {
   private readonly headingConnexion: Locator;
   private readonly identifiantText: Locator;
   private readonly passwordText: Locator;
-  private readonly menuButton: Locator;
 
   constructor(private readonly page: Page) {
     // Sélecteurs basés sur les rôles et textes, comme dans l'exemple
@@ -21,8 +20,6 @@ export class LoginPage {
     this.hiCodeField = page.getByRole('textbox', { name: 'Votre HI CODE' });
     this.passwordField = page.getByRole('textbox', { name: 'Mot de passe' });
     this.loginButton = page.getByRole('button', { name: 'Connexion' });
-    this.menuButton = page.getByText('Menu').nth(1);
-
   }
 
   async goto() {
@@ -81,9 +78,6 @@ export class LoginPage {
       .then(() => true)
       .catch(() => false);
     if (!modalAppeared) {
-      // Le clic sur "Menu" ouvre la barre latérale (hors-écran par défaut) : nécessaire
-      // même sans modale, sinon les liens de navigation restent inatteignables.
-      await this.menuButton.click();
       return;
     }
 
@@ -98,7 +92,5 @@ export class LoginPage {
     const validateButton = this.page.getByRole('button', { name: 'Valider et continuer' });
     await expect(validateButton).toBeVisible();
     await validateButton.click();
-    await this.menuButton.click();
-
   }
 }

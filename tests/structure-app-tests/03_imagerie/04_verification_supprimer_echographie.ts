@@ -24,8 +24,6 @@ test('Supprimer une échographie depuis le worklist', async ({ page }) => {
     const worklistPage = new ImagingWorklistPage(page);
 
     const echographieData = ImagingDataGenerator.generateEchographie();
-    let patientFirstName = '';
-    let patientLastName = '';
     let found: Awaited<ReturnType<typeof worklistPage.findFirstRowOfKind>> = null;
     let fingerprint = '';
 
@@ -37,12 +35,6 @@ test('Supprimer une échographie depuis le worklist', async ({ page }) => {
 
     await test.step('Vérifier que le dashboard affiche les statistiques', async () => {
         await dashboardPage.statisticIsVisible();
-    });
-
-    await test.step('Relever le nom du premier patient de la liste', async () => {
-        await patientPage.gotoPatientsList();
-        patientFirstName = await patientPage.getFirstPatientFirstName();
-        patientLastName = await patientPage.getFirstPatientLastName();
     });
 
     await test.step('Choisir le premier patient de la liste des patients', async () => {
@@ -62,11 +54,11 @@ test('Supprimer une échographie depuis le worklist', async ({ page }) => {
     });
 
     await test.step("Accéder au worklist d'imagerie", async () => {
+        // Pas de filtre par nom : le backend renvoie parfois les noms avec des espaces/
+        // tabulations parasites en fin de chaîne (cf. imaging-worklist.component.ts), ce qui
+        // peut faire échouer une recherche par nom exact. La liste est triée par date de
+        // création décroissante : l'échographie qu'on vient de créer est donc déjà en tête.
         await worklistPage.goto();
-    });
-
-    await test.step('Rechercher les actes du patient', async () => {
-        await worklistPage.searchByFirstAndLastName(patientFirstName, patientLastName);
     });
 
     await test.step('Déplier la première échographie trouvée', async () => {
@@ -81,8 +73,8 @@ test('Supprimer une échographie depuis le worklist', async ({ page }) => {
         await expect(worklistPage.confirmButton).not.toBeVisible();
     });
 
-    await test.step('Vérifier que cette échographie ne réapparaît plus dans la recherche', async () => {
-        await worklistPage.searchByFirstAndLastName(patientFirstName, patientLastName);
+    await test.step('Vérifier que cette échographie ne réapparaît plus dans la liste', async () => {
+        await worklistPage.goto();
         const remainingRowsWithFingerprint = page.locator('table.compact-table tbody tr.table-row', { hasText: fingerprint });
         await expect(remainingRowsWithFingerprint).toHaveCount(0);
     });

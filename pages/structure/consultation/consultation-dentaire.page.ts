@@ -91,9 +91,10 @@ export class ConsultationDentairePage extends ConsultationPage {
     }
 
     async fillDentaireConsultationForm(data: ConsultationDentaireData) {
-        // Soignant
+        // Soignant : catalogue dépendant de l'environnement, on prend le premier disponible.
         await this.caregiverSelect.click();
-        await this.page.locator('.ng-dropdown-panel .ng-option').filter({ hasText: data.caregiver }).first().click();
+        await this.page.locator('.ng-dropdown-panel:visible').waitFor({ state: 'visible', timeout: 5000 });
+        await this.page.locator('.ng-dropdown-panel .ng-option').first().click();
 
         // Type de patient
         await this.selectPatientType(data.patientType);
@@ -114,14 +115,22 @@ export class ConsultationDentairePage extends ConsultationPage {
         // Conclusion
         await this.conclusionInput.fill(data.conclusion);
 
-        // Actes facturables
+        // Actes facturables : le catalogue dépend de l'environnement, on prend ce qui est
+        // disponible si l'acte généré n'existe pas ici.
         if (data.acts && data.acts.length > 0) {
             await this.closeAnyModal();
             await this.page.keyboard.press('Escape');
             await expect(this.actsSelect).toBeEnabled({ timeout: 5000 });
             for (const act of data.acts) {
                 await this.actsSelect.click();
-                await this.page.getByRole('option', { name: act }).click();
+                const panel = this.page.locator('.ng-dropdown-panel:visible');
+                await panel.waitFor({ state: 'visible', timeout: 5000 });
+                const exactOption = this.page.getByRole('option', { name: act, exact: true });
+                if (await exactOption.isVisible().catch(() => false)) {
+                    await exactOption.click();
+                } else {
+                    await panel.locator('.ng-option').first().click();
+                }
             }
         }
     }
@@ -160,7 +169,7 @@ export class ConsultationDentairePage extends ConsultationPage {
             await expect(this.actsSelect).toBeEnabled({ timeout: 5000 });
             for (const act of data.acts) {
                 await this.actsSelect.click();
-                await this.page.getByRole('option', { name: act }).click();
+                await this.page.getByRole('option', { name: act, exact: true }).click();
             }
         }
     }

@@ -35,7 +35,9 @@ test('Modifier une prise en charge existante', async ({ page }) => {
   });
 
   await test.step('Modifier la première prise en charge', async () => {
+    // L'app exige une date de fin strictement postérieure à aujourd'hui.
+    const newEndingDate = new Date(Date.now() + 60 * 24 * 60 * 60 * 1000).toISOString().split('T')[0];
     // modifyFirstCare attend déjà la fermeture du modal de modification, pas besoin d'attente supplémentaire.
-    await carePage.modifyFirstCare('AFRIC MANAGEMENT (IPM)', '2026-05-10');
+    await carePage.modifyFirstCare('AFRIC MANAGEMENT (IPM)', newEndingDate);
   });
 });

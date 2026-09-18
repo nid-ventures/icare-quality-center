@@ -101,25 +101,40 @@ async rdvLinkIsVisible() {
   }
 
   // ======================== NAVIGATION FACTURATION ========================
-  // Le lien principal " Facturations " pointe lui-même vers /billing/billings-create
-  // (routerLink sur le <a> parent) tout en dépliant le sous-menu (Bootstrap collapse).
-  // Cliquer dessus une fois suffit donc à la fois pour atterrir sur l'assistant de création
-  // de facture et pour révéler les liens Factures-Patient / Factures-Garant du sous-menu.
+  // Le lien principal " Facturations " pointe vers /billing/billings-create (routerLink) tout
+  // en étant aussi le toggle Bootstrap (data-toggle="collapse") du sous-menu contenant
+  // Factures-Patient / Factures-Garant. Bug applicatif confirmé, non déterministe : la
+  // navigation Angular (routerLink) et le toggle jQuery du collapse se font concurremment sur
+  // le même clic, et selon l'issue de cette course le sous-menu s'ouvre parfois, parfois pas
+  // (vérifié en pollant la classe CSS du sous-menu après le clic : "show" apparaît ~20ms après
+  // dans certains runs, jamais dans d'autres, alors que la navigation elle-même aboutit à
+  // chaque fois). Un reclic une fois sur la page (navigation déjà faite, donc plus de course)
+  // ouvre le sous-menu de façon fiable.
   async goToFacturationCreate() {
     await expect(this.facturationLink).toBeVisible();
     await this.facturationLink.click();
     await this.page.waitForURL('**/billing/billings-create');
   }
 
-  async goToFacturationPatientList() {
+  private async ensureFacturationSubmenuOpen() {
     await this.goToFacturationCreate();
+    try {
+      await expect(this.facturationPatientLink).toBeVisible({ timeout: 2000 });
+    } catch {
+      await this.facturationLink.click();
+      await expect(this.facturationPatientLink).toBeVisible();
+    }
+  }
+
+  async goToFacturationPatientList() {
+    await this.ensureFacturationSubmenuOpen();
     await expect(this.facturationPatientLink).toBeVisible();
     await this.facturationPatientLink.click();
     await this.page.waitForURL('**/billing/billings-patients');
   }
 
   async goToFacturationGarantList() {
-    await this.goToFacturationCreate();
+    await this.ensureFacturationSubmenuOpen();
     await expect(this.facturationGarantLink).toBeVisible();
     await this.facturationGarantLink.click();
     await this.page.waitForURL('**/billing/billings-garants');

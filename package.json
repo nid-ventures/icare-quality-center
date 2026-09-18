@@ -5,6 +5,9 @@
   "main": "index.js",
   "scripts": {
     "test": "rimraf allure-results && npx playwright test",
+    "test:local": "rimraf allure-results && cross-env TEST_ENV=local npx playwright test",
+    "test:dev": "rimraf allure-results && cross-env TEST_ENV=dev npx playwright test",
+    "test:test": "rimraf allure-results && cross-env TEST_ENV=test npx playwright test",
     "report:branding": "node -e \"const fs=require('fs');const src='allure-branding/styles.css';const dst='node_modules/allure-commandline/dist/plugins/custom-logo-plugin/static/styles.css';fs.copyFileSync(src,dst);const cfg='node_modules/allure-commandline/dist/config/allure.yml';const c=fs.readFileSync(cfg,'utf8');if(!c.includes('custom-logo-plugin'))fs.appendFileSync(cfg,'  - custom-logo-plugin\\n');\"",
     "report:generate": "npm run report:branding && npx allure generate allure-results -o allure-report --clean --name \"ICARE QUALITY\"",
     "report:open": "npx allure open allure-report",
@@ -20,6 +23,7 @@
     "@types/node": "^25.3.5",
     "allure-commandline": "^2.38.0",
     "allure-playwright": "^3.6.0",
+    "cross-env": "^7.0.3",
     "dotenv": "^17.3.1",
     "mysql2": "^3.20.0",
     "rimraf": "^6.1.3",

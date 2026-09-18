@@ -171,8 +171,8 @@ export class PatientCarePage {
         await expect(this.closeButton).toBeVisible();
         await expect(this.saveButton).toBeVisible();
         await this.saveButton.click();
-
-
+        // L'enregistrement peut prendre plus de temps que le timeout par défaut sous charge.
+        await expect(this.modalHeading).toBeHidden({ timeout: 15000 });
     }
 
     /**
@@ -229,8 +229,8 @@ export class PatientCarePage {
         await this.modifyEndingDateInput.fill(newEndingDate);
         // Cliquer sur Modifier (bouton de confirmation)
         await this.modifyButton.click();
-        // Attendre la fermeture du modal
-        await expect(this.modifyModalHeading).not.toBeVisible({ timeout: 5000 });
+        // Attendre la fermeture du modal (l'enregistrement peut prendre plus de temps sous charge).
+        await expect(this.modifyModalHeading).not.toBeVisible({ timeout: 15000 });
 
     }
     /**

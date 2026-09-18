@@ -70,7 +70,7 @@ test('Voir le détail d\'une facture patient', async ({ page }) => {
         await expect(detailModal.getByText(reference.invoiceOrder)).toBeVisible();
         await expect(detailModal).toContainText(reference.nomPatient);
         await expect(detailModal).toContainText(reference.prenomPatient);
-        await expect(detailModal.getByText(/Total Facture/)).toBeVisible();
+        await expect(detailModal.getByText('Total Facture (F CFA)')).toBeVisible();
     });
 
     await test.step('Fermer la fenêtre de détail', async () => {

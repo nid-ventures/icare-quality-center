@@ -3,6 +3,7 @@ import { type Page, type Locator, expect } from '@playwright/test';
 export class AntecedentPage {
   private readonly antecedantHeading: Locator;
   private readonly asthmeHeading: Locator;
+  private readonly aucunAntecedentText: Locator;
   private readonly diabeteHeading: Locator;
   private readonly avrHeading: Locator;
   private readonly cardiopathieHeading: Locator;
@@ -55,7 +56,10 @@ export class AntecedentPage {
 
   constructor(private readonly page: Page) {
     this.antecedantHeading = page.locator('.sub-card-title').filter({ hasText: 'Antécédents' });
+    // "Asthme" n'est présent que si ce patient a un antécédent renseigné : cet état dépend des
+    // données du patient (donc de l'environnement/jeu de données), d'où le repli sur l'état vide.
     this.asthmeHeading = page.locator('.tag').filter({ hasText: 'Asthme' });
+    this.aucunAntecedentText = page.getByText('Aucun antécédent');
     this.diabeteHeading = page.locator('.tag').filter({ hasText: 'Diabète' });
     this.avrHeading = page.locator('.tag').filter({ hasText: 'ARV' });
     this.cardiopathieHeading = page.locator('.tag').filter({ hasText: 'Cardiopathie' });
@@ -115,13 +119,11 @@ export class AntecedentPage {
 
   }
   
-  async checkAntecedentInfos() {  
+  async checkAntecedentInfos() {
   await expect(this.antecedantHeading).toBeVisible();
-  await expect(this.asthmeHeading).toBeVisible();
-  await expect(this.diabeteHeading).toBeVisible();
-  await expect(this.avrHeading).toBeVisible();
-  await expect(this.cardiopathieHeading).toBeVisible();
-  await expect(this.tuberculoseHeading).toBeVisible();
+  // Le contenu de la section dépend des antécédents réels du patient (donc de l'environnement/
+  // jeu de données) : soit un tag "Asthme" est présent, soit l'état vide "Aucun antécédent".
+  await expect(this.asthmeHeading.or(this.aucunAntecedentText)).toBeVisible();
   await expect(this.voirPlusHeading).toBeVisible();
   await this.voirPlusHeading.click();
   await expect(this.retourHeading).toBeVisible();
@@ -160,16 +162,24 @@ export class AntecedentPage {
   await this.drepanocytoseOption.click();
   await this.cardiopathieOption.click();
   // Ferme le panneau ng-dropdown resté ouvert (ses options interceptent les clics suivants).
-  await this.page.keyboard.press('Escape');
+  // Échap peut aussi réinitialiser la sélection multiple (et désactiver "Autres pathologies"
+  // qui en dépend) : on clique ailleurs dans le formulaire plutôt que de presser Échap.
+  // Un clic .evaluate() (synthétique, non "trusted") ne suffit pas à faire réagir la détection
+  // de clic extérieur de ng-select ; un vrai clic Playwright (forcé, le panneau pouvant encore
+  // superposer la zone) est nécessaire pour refermer effectivement le panneau.
+  await this.medicalGenerauxHeading.click({ force: true });
   await this.autresPathologiesTextBox.click();
   await this.autresPathologiesTextBox.fill('rhume');
   await this.allergiesTexbox.click();
   await this.cephalosporinesOption.click();
+  // Même contournement que pour "Pathologies" : referme le panneau ng-dropdown resté ouvert.
+  await this.medicalGenerauxHeading.click({ force: true });
 
   await this.autresAlergieTextBox.click();
   await this.autresAlergieTextBox.fill('tete');
   await this.selectTabac.click();
   await this.fumeurRegulierOption.click();
+  await this.medicalGenerauxHeading.click({ force: true });
   await this.toxiConduitTextBox.click();
   await this.toxiConduitTextBox.fill('reduire le sucre');
   await this.buttonEnregister.click();

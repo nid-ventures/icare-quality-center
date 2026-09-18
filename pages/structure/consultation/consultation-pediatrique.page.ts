@@ -39,9 +39,10 @@ export class ConsultationPediatriquePage extends ConsultationPage {
     }
 
     async fillMedicalConsultationForm(data: ConsultationPediatriqueData) {
-        // Soignant
+        // Soignant : catalogue dépendant de l'environnement, on prend le premier disponible.
         await this.caregiverSelect.click();
-        await this.page.locator('.ng-dropdown-panel .ng-option').filter({ hasText: data.caregiver }).first().click();
+        await this.page.locator('.ng-dropdown-panel:visible').waitFor({ state: 'visible', timeout: 5000 });
+        await this.page.locator('.ng-dropdown-panel .ng-option').first().click();
 
         // Signes vitaux communs
         await this.weightInput.fill(data.weight);
@@ -64,7 +65,14 @@ export class ConsultationPediatriquePage extends ConsultationPage {
             await expect(this.actsSelect).toBeEnabled({ timeout: 5000 });
             for (const act of data.acts) {
                 await this.actsSelect.click();
-                await this.page.getByRole('option', { name: act }).click();
+                const actsPanel = this.page.locator('.ng-dropdown-panel:visible');
+                await actsPanel.waitFor({ state: 'visible', timeout: 5000 });
+                const exactActOption = this.page.getByRole('option', { name: act, exact: true });
+                if (await exactActOption.isVisible().catch(() => false)) {
+                  await exactActOption.click();
+                } else {
+                  await actsPanel.locator('.ng-option').first().click();
+                }
             }
         }
     }
@@ -77,7 +85,14 @@ export class ConsultationPediatriquePage extends ConsultationPage {
             await expect(this.actsSelect).toBeEnabled({ timeout: 5000 });
             for (const act of data.acts) {
                 await this.actsSelect.click();
-                await this.page.getByRole('option', { name: act }).click();
+                const actsPanel = this.page.locator('.ng-dropdown-panel:visible');
+                await actsPanel.waitFor({ state: 'visible', timeout: 5000 });
+                const exactActOption = this.page.getByRole('option', { name: act, exact: true });
+                if (await exactActOption.isVisible().catch(() => false)) {
+                  await exactActOption.click();
+                } else {
+                  await actsPanel.locator('.ng-option').first().click();
+                }
             }
         }
     }

@@ -22,8 +22,10 @@ export class HealthChecksListPage {
   private readonly successAlert: Locator;
 
   constructor(private readonly page: Page) {
-    // Lien "Bilan d'analyses" du bloc "Prestation Médicale" du dashboard patient.
-    this.bilanAnalysesQuickLink = page.getByRole('link', { name: /Bilan d'analyses/ });
+    // Lien "Bilan d'analyses" du bloc "Prestation Médicale" du dashboard patient. Si le patient a
+    // déjà un bilan, un second lien "Bilan d'analyses 1" (raccourci vers ce bilan précis) apparaît
+    // et matche aussi la regex : on cible la classe stable "qa-bilan" du bouton générique.
+    this.bilanAnalysesQuickLink = page.locator('a.qa-bilan');
     this.listHeading = page.getByRole('heading', { name: /Liste des bilans d'analyses/ });
     this.newBilanButton = page.getByRole('button', { name: /Nouveau bilan/ });
     this.tableRows = page.locator('table.data-table tbody tr');
@@ -201,7 +203,10 @@ export class HealthCheckDetailPage {
     await option.click();
     if (multiple) {
       // Un ng-select multiple ne se referme pas automatiquement après un clic sur une option.
-      await this.page.keyboard.press('Escape');
+      // Contrairement au modal de création de compte (data-keyboard="false"), #createAnalyseModal
+      // se ferme sur Échap : un clic ailleurs dans le modal (sans rien déclencher) est donc
+      // préférable pour simplement fermer le panneau du ng-select sans fermer le modal parent.
+      await this.modalHeading.click();
     } else {
       await panel.waitFor({ state: 'hidden', timeout: 3000 });
     }

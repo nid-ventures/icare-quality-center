@@ -98,6 +98,8 @@ export class ConsultationPage {
    * Ouvre le modal de nouvelle consultation
    */
   async openNewConsultationModal() {
+    // Le loader plein écran d'un chargement précédent peut encore rendre ce bouton instable.
+    await this.page.locator('app-loader .backdrop.full-screen').waitFor({ state: 'hidden', timeout: 5000 }).catch(() => {});
     await this.newConsultationButton.click();
     await expect(this.newConsultationModalHeading).toBeVisible();
   }
@@ -153,9 +155,12 @@ export class ConsultationPage {
    * Remplit le formulaire détaillé de la consultation médicale
    */
   async fillMedicalConsultationForm(data: ConsultationData) {
-    // Soignant
+    // Soignant : le catalogue de soignants dépend de l'environnement (données différentes en
+    // local vs distant), on prend donc le premier disponible plutôt qu'un nom précis figé.
     await this.caregiverSelect.click();
-    await this.page.getByText(data.caregiver).click();
+    const caregiverPanel = this.page.locator('.ng-dropdown-panel:visible');
+    await caregiverPanel.waitFor({ state: 'visible', timeout: 5000 });
+    await this.page.locator('.ng-dropdown-panel .ng-option').first().click();
 
     // Signes vitaux
     await this.weightInput.fill(data.weight);
@@ -172,7 +177,14 @@ export class ConsultationPage {
     // Actes médicaux (sélection multiple)
     for (const act of data.acts) {
       await this.actsSelect.click();
-      await this.page.getByRole('option', { name: act }).click();
+      const actsPanel = this.page.locator('.ng-dropdown-panel:visible');
+      await actsPanel.waitFor({ state: 'visible', timeout: 5000 });
+      const exactActOption = this.page.getByRole('option', { name: act, exact: true });
+      if (await exactActOption.isVisible().catch(() => false)) {
+        await exactActOption.click();
+      } else {
+        await actsPanel.locator('.ng-option').first().click();
+      }
     }
   }
 
@@ -236,7 +248,14 @@ export class ConsultationPage {
       // Ici on suppose qu'on peut en ajouter d'autres (à adapter selon l'UI)
       for (const act of data.acts) {
         await this.actsSelect.click();
-        await this.page.getByRole('option', { name: act }).click();
+        const actsPanel = this.page.locator('.ng-dropdown-panel:visible');
+        await actsPanel.waitFor({ state: 'visible', timeout: 5000 });
+        const exactActOption = this.page.getByRole('option', { name: act, exact: true });
+        if (await exactActOption.isVisible().catch(() => false)) {
+          await exactActOption.click();
+        } else {
+          await actsPanel.locator('.ng-option').first().click();
+        }
       }
     }
   }

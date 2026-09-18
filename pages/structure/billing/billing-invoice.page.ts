@@ -88,7 +88,10 @@ export class BillingInvoicePage {
         await expect(this.rechercheTabButton).toBeVisible();
         await this.identifiantInput.fill(identifier);
         await this.rechercherButton.click();
-        await this.page.waitForTimeout(500);
+        // L'appel /patients/getAll peut être lent sur le backend local (jusqu'à plusieurs
+        // secondes à froid) : on attend la disparition de l'indicateur de chargement plutôt
+        // qu'un délai fixe trop court.
+        await this.page.locator('.loading-compact').waitFor({ state: 'hidden', timeout: 15000 }).catch(() => { });
     }
 
     async getSearchResultsCount(): Promise<number> {
@@ -133,7 +136,9 @@ export class BillingInvoicePage {
 
     async submitAddActForm(): Promise<void> {
         await this.addActEnregistrerButton.click();
-        await expect(this.addActHeading).toBeHidden({ timeout: 15000 });
+        // L'appel POST createBillableToInvoices (fermeture de la modale dans son callback subscribe)
+        // peut être lent sur le backend local, comme d'autres appels observés dans ce module.
+        await expect(this.addActHeading).toBeHidden({ timeout: 30000 });
     }
 
     /** Ajoute un acte facturable au patient courant (catégorie/acte/praticien = première option disponible). */

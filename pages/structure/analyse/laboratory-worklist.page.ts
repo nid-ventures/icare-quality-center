@@ -186,7 +186,7 @@ export class LaboratoryWorklistPage {
    * d'options ng-select déjà utilisée dans ConsultationPage.
    */
   private async selectFirstNgOption(ngSelect: Locator): Promise<string> {
-    await ngSelect.click();
+    await ngSelect.locator('.ng-select-container').click();
     const panel = this.page.locator('.ng-dropdown-panel:visible');
     await panel.waitFor({ state: 'visible', timeout: 5000 });
     const option = this.page.locator('.ng-dropdown-panel .ng-option').first();

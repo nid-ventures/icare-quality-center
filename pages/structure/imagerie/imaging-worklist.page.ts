@@ -184,19 +184,37 @@ export class ImagingWorklistPage {
   // Parcourt les lignes visibles (dans la limite indiquée) et retourne la première dont le
   // formulaire déplié correspond au type d'imagerie recherché (app-echographie-simple-item ou
   // app-imaging-item), en repliant les lignes qui ne correspondent pas.
-  async findFirstRowOfKind(kind: ImagingRowKind, limit: number = 10): Promise<{ row: Locator; expandedRow: Locator } | null> {
+  //
+  // Le endpoint `/imageries/filtering` interrogé par ce worklist est indexé de façon quasi
+  // temps réel (pas immédiate) côté backend : juste après une création, l'acte peut ne pas
+  // encore apparaître dans la liste. On retente donc quelques fois avec un rafraîchissement
+  // entre chaque essai avant de conclure à une absence.
+  async findFirstRowOfKind(
+    kind: ImagingRowKind,
+    limit: number = 10,
+    retries: number = 5,
+    retryDelayMs: number = 1500
+  ): Promise<{ row: Locator; expandedRow: Locator } | null> {
     const componentSelector = kind === 'echographie' ? 'app-echographie-simple-item' : 'app-imaging-item';
-    const count = Math.min(await this.tableRows.count(), limit);
 
-    for (let i = 0; i < count; i++) {
-      const row = this.tableRows.nth(i);
-      await this.expandRow(row);
-      const expandedRow = this.getExpandedRow(row);
-      const matches = await expandedRow.locator(componentSelector).count();
-      if (matches > 0) {
-        return { row, expandedRow };
+    for (let attempt = 0; attempt <= retries; attempt++) {
+      const count = Math.min(await this.tableRows.count(), limit);
+
+      for (let i = 0; i < count; i++) {
+        const row = this.tableRows.nth(i);
+        await this.expandRow(row);
+        const expandedRow = this.getExpandedRow(row);
+        const matches = await expandedRow.locator(componentSelector).count();
+        if (matches > 0) {
+          return { row, expandedRow };
+        }
+        await this.closeRow(row);
       }
-      await this.closeRow(row);
+
+      if (attempt < retries) {
+        await this.page.waitForTimeout(retryDelayMs);
+        await this.refresh();
+      }
     }
     return null;
   }

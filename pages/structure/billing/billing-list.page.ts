@@ -86,7 +86,7 @@ export class BillingListPatientPage {
         this.facturantInput = page.locator('input[formcontrolname="billedBy"]');
         this.dateDebutInput = page.locator('input[formcontrolname="dateStart"]');
         this.dateFinInput = page.locator('input[formcontrolname="dateEnd"]');
-        this.telephoneInput = page.getByPlaceholder('Entrez le numéro');
+        this.telephoneInput = page.locator('form.search-form').getByPlaceholder('Entrez le numéro');
         this.reinitialiserButton = page.getByRole('button', { name: /Réinitialiser/ });
         this.rechercherButton = page.getByRole('button', { name: /Rechercher/ });
 
@@ -94,7 +94,7 @@ export class BillingListPatientPage {
         this.rows = page.locator('table.compact-table tbody tr.table-row');
         this.firstRow = this.rows.first();
         this.columnheaderNFacture = page.getByRole('columnheader', { name: 'N°Facture' });
-        this.columnheaderNomPatient = page.getByRole('columnheader', { name: 'Nom Patient' });
+        this.columnheaderNomPatient = page.getByRole('columnheader', { name: 'Nom Patient', exact: true });
         this.columnheaderPrenomPatient = page.getByRole('columnheader', { name: 'Prénom Patient' });
         this.columnheaderIdentifiantPatient = page.getByRole('columnheader', { name: 'Identifiant Patient' });
         this.columnheaderDateNaissance = page.getByRole('columnheader', { name: 'Date de naissance' });
@@ -124,6 +124,14 @@ export class BillingListPatientPage {
         await expect(this.columnheaderActions).toBeVisible();
         await expect(this.reinitialiserButton).toBeVisible();
         await expect(this.rechercherButton).toBeVisible();
+        await this.waitForSearchSettled();
+    }
+
+    // L'appel de chargement (forkJoin sur plusieurs sources, dont potentiellement
+    // /invoices/getAll) peut être lent sur le backend local : on attend la disparition du
+    // spinner du bouton "Rechercher" plutôt qu'un délai fixe trop court avant de lire les lignes.
+    protected async waitForSearchSettled(): Promise<void> {
+        await this.rechercherButton.locator('.spinner-border').waitFor({ state: 'hidden', timeout: 15000 }).catch(() => { });
     }
 
     async getRowCount(): Promise<number> {
@@ -151,12 +159,12 @@ export class BillingListPatientPage {
 
     async reset(): Promise<void> {
         await this.reinitialiserButton.click();
-        await this.page.waitForTimeout(300);
+        await this.waitForSearchSettled();
     }
 
     async search(): Promise<void> {
         await this.rechercherButton.click();
-        await this.page.waitForTimeout(300);
+        await this.waitForSearchSettled();
     }
 
     async fillIdentifiantPatient(value: string): Promise<void> {
@@ -309,7 +317,7 @@ export class BillingListGarantPage {
         this.facturantInput = page.locator('input[formcontrolname="billedBy"]');
         this.dateDebutInput = page.locator('input[formcontrolname="dateStart"]');
         this.dateFinInput = page.locator('input[formcontrolname="dateEnd"]');
-        this.telephoneInput = page.getByPlaceholder('Entrez le numéro');
+        this.telephoneInput = page.locator('form.search-form').getByPlaceholder('Entrez le numéro');
         this.garantSelect = page.locator('ng-select[formcontrolname="garant"]');
         this.reinitialiserButton = page.getByRole('button', { name: /Réinitialiser/ });
         this.rechercherButton = page.getByRole('button', { name: /Rechercher/ });
@@ -319,7 +327,7 @@ export class BillingListGarantPage {
         this.firstRow = this.rows.first();
         this.columnheaderNFacture = page.getByRole('columnheader', { name: 'N°Facture' });
         this.columnheaderGarant = page.getByRole('columnheader', { name: 'Garant' });
-        this.columnheaderNomPatient = page.getByRole('columnheader', { name: 'Nom Patient' });
+        this.columnheaderNomPatient = page.getByRole('columnheader', { name: 'Nom Patient', exact: true });
         this.columnheaderPrenomPatient = page.getByRole('columnheader', { name: 'Prénom Patient' });
         this.columnheaderIdentifiantPatient = page.getByRole('columnheader', { name: 'Identifiant Patient' });
         this.columnheaderDateNaissance = page.getByRole('columnheader', { name: 'Date de naissance' });
@@ -350,6 +358,11 @@ export class BillingListGarantPage {
         await expect(this.columnheaderActions).toBeVisible();
         await expect(this.reinitialiserButton).toBeVisible();
         await expect(this.rechercherButton).toBeVisible();
+        await this.waitForSearchSettled();
+    }
+
+    protected async waitForSearchSettled(): Promise<void> {
+        await this.rechercherButton.locator('.spinner-border').waitFor({ state: 'hidden', timeout: 15000 }).catch(() => { });
     }
 
     async getRowCount(): Promise<number> {
@@ -378,12 +391,12 @@ export class BillingListGarantPage {
 
     async reset(): Promise<void> {
         await this.reinitialiserButton.click();
-        await this.page.waitForTimeout(300);
+        await this.waitForSearchSettled();
     }
 
     async search(): Promise<void> {
         await this.rechercherButton.click();
-        await this.page.waitForTimeout(300);
+        await this.waitForSearchSettled();
     }
 
     async expectInvoiceVisible(invoiceOrder: string): Promise<void> {

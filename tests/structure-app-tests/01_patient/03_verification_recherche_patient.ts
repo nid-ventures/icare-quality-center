@@ -11,6 +11,8 @@ const adminUser = {
   role: 'Administrateur'
 };
 
+test.setTimeout(90000);
+
 test('Recherche Patients - tests individuels par champ', async ({ page }) => {
   const loginPage = new LoginPage(page);
   const dashboardPage = new DashboardPage(page);

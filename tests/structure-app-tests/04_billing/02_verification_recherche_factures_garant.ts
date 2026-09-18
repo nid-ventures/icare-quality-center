@@ -2,6 +2,8 @@
 import { test, expect } from '@playwright/test';
 import { LoginPage } from '../../../pages/structure/patient/login.page';
 import { DashboardPage } from '../../../pages/structure/patient/dashboard.page';
+import { PatientPage } from '../../../pages/structure/patient/patient.page';
+import { BillingInvoicePage } from '../../../pages/structure/billing/billing-invoice.page';
 import { BillingListGarantPage } from '../../../pages/structure/billing/billing-list.page';
 
 const adminUser = {
@@ -11,9 +13,17 @@ const adminUser = {
     role: 'Administrateur'
 };
 
+test.setTimeout(120000);
+
+// PRÉ-REQUIS DU TEST : sur un environnement local fraîchement provisionné, la liste des
+// factures garants est vide. On crée donc d'abord une facture de référence avec application
+// d'une prise en charge/garant (cf. BillingInvoicePage.createInvoiceForPatient) avant de tester
+// la recherche par champ.
 test('Rechercher des factures garants par chaque critère du formulaire', async ({ page }) => {
     const loginPage = new LoginPage(page);
     const dashboardPage = new DashboardPage(page);
+    const patientPage = new PatientPage(page);
+    const billingInvoicePage = new BillingInvoicePage(page);
     const billingListGarantPage = new BillingListGarantPage(page);
 
     await test.step('Ouverture de la page de connexion et connexion', async () => {
@@ -24,6 +34,15 @@ test('Rechercher des factures garants par chaque critère du formulaire', async 
 
     await test.step('Vérifier que le dashboard affiche les statistiques', async () => {
         await dashboardPage.statisticIsVisible();
+    });
+
+    await test.step('Créer une facture de référence avec garant pour ce patient (pré-requis du test)', async () => {
+        await patientPage.gotoPatientsList();
+        const patientIdentifier = await patientPage.getFirstPatientId();
+        expect(patientIdentifier, 'Aucun patient disponible pour créer une facture').not.toBe('');
+
+        await dashboardPage.goToFacturationCreate();
+        await billingInvoicePage.createInvoiceForPatient(patientIdentifier);
     });
 
     await test.step('Accéder à la liste des factures garants', async () => {

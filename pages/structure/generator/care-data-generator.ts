@@ -28,8 +28,12 @@ const BENEFIT_DEFINITIONS = [
 
 export class CareDataGenerator {
     static generate(): CareData {
-        const startDate = faker.date.between({ from: '2025-01-01', to: '2025-12-31' });
-        const endDate = faker.date.between({ from: startDate, to: '2026-12-31' });
+        // L'app exige une date de fin strictement postérieure à aujourd'hui : on génère les
+        // dates par rapport à "maintenant" plutôt que par des bornes fixes qui finissent par
+        // tomber dans le passé.
+        const today = new Date();
+        const startDate = faker.date.recent({ days: 180, refDate: today });
+        const endDate = faker.date.soon({ days: 365, refDate: today });
 
         return {
             insurerName: faker.helpers.arrayElement(INSURERS),

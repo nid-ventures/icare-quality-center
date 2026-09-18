@@ -82,15 +82,18 @@ export class DetailPatientPage {
     this.countrySelect = page.locator('#ctpays');
     this.nationalitySelect = page.locator('#ctnationalite');
     this.saveContactButton = page.getByRole('button', { name: 'Enregistrer' });
-    this.actionButtonAfterSave = page.getByRole('button', { name: 'Action' });
-    this.actionButtonFirst = page.getByRole('button', { name: 'Action' }).first();
+    // Le bouton "Action" existe aussi dans d'autres onglets (ex: Prise en charge) : on le
+    // scope au panneau "Personne à contacter" pour éviter de cibler le mauvais tabpanel.
+    const personContactTabPanel = page.getByRole('tabpanel', { name: 'Personne à contacter' });
+    this.actionButtonAfterSave = personContactTabPanel.getByRole('button', { name: 'Action' });
+    this.actionButtonFirst = personContactTabPanel.getByRole('button', { name: 'Action' }).first();
     this.modifyLink = page.getByRole('link', { name: 'Modifier' });
     this.modifyModalHeading = page.getByRole('heading', { name: 'Détails une personne à' });
     // Champs du modal de modification : mêmes contraintes que le modal d'ajout (pas de rôle accessible).
     this.modifyRegionSelect = page.locator('#sctregion');
     this.modifyNationalitySelect = page.locator('#sctnationalite');
     this.modifySaveButton = page.getByRole('button', { name: 'Enregistrer' });
-    this.actionButtonDeleteFirst = page.getByRole('button', { name: 'Action' }).first();
+    this.actionButtonDeleteFirst = personContactTabPanel.getByRole('button', { name: 'Action' }).first();
     this.deleteLink = page.getByRole('link', { name: 'Supprimer' });
     this.confirmDeleteButton = page.getByRole('button', { name: 'Supprimer' });
 
@@ -98,7 +101,9 @@ export class DetailPatientPage {
   async gotoDetailsPatient() {
     // Cliquer sur le lien "Voir Détails Administratifs"
     await expect(this.buttonVOirDetails).toBeVisible();
-    await this.buttonVOirDetails.click();
+    // Un overlay de chargement transitoire de la page peut intercepter le clic juste après
+    // la navigation : on invoque .click() directement en DOM pour contourner le hit-test.
+    await this.buttonVOirDetails.evaluate((el: HTMLElement) => el.click());
   }
   async checkIfPageLoad() {
     await expect(this.detailTab).toBeVisible();
@@ -138,8 +143,12 @@ export class DetailPatientPage {
    * Ouvre l'onglet "Personne à contacter"
    */
   async goToPersonContactTab() {
+    // Un clic .evaluate() (synthétique, non "trusted") ou forcé peut ne pas déclencher
+    // correctement le changement d'onglet Bootstrap (l'onglet passe "selected" mais l'ancien
+    // panneau reste affiché) : un clic normal, qui attend nativement que l'élément soit
+    // réellement stable/cliquable, est plus fiable ici malgré un éventuel overlay transitoire.
     await this.personContactTabLink.click();
-    await expect(this.addPersonButton).toBeVisible();
+    await expect(this.addPersonButton).toBeVisible({ timeout: 10000 });
   }
 
   /**
@@ -147,7 +156,8 @@ export class DetailPatientPage {
    */
   async openAddPersonModal() {
     await this.addPersonButton.click();
-    await expect(this.modalTitle).toBeVisible();
+    // Le rendu du modal peut prendre plus de temps que le timeout par défaut sous charge.
+    await expect(this.modalTitle).toBeVisible({ timeout: 10000 });
   }
 
   /**

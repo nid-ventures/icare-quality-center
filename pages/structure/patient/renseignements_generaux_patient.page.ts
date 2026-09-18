@@ -94,7 +94,8 @@ export class RenseignementsGenerauxPage {
     await expect(this.retourHeading).toBeVisible();
     await expect(this.buttonRetour).toBeVisible();
     await expect(this.infoGeneralHeading).toBeVisible();
-    await expect(this.conjointeHeading).toBeVisible();
+    // Le rendu de cette section (après le clic "Voir +") peut prendre plus de 10s sous charge.
+    await expect(this.conjointeHeading).toBeVisible({ timeout: 20000 });
     await expect(this.parentHeading).toBeVisible();
     await expect(this.contentHeading).toBeVisible();
     await expect(this.buttonHeading).toBeVisible();

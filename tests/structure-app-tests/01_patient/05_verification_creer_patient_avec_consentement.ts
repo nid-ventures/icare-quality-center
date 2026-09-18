@@ -12,6 +12,8 @@ const adminUser = {
   role: 'Administrateur'
 };
 
+test.setTimeout(60000);
+
 test('Créer un patient sans tester les doublons mais avec consentements', async ({ page }) => {
   const loginPage = new LoginPage(page);
   const dashboardPage = new DashboardPage(page);
