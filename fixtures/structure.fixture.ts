@@ -14,7 +14,7 @@ type StructureFixtures = {
 export const test = base.extend<StructureFixtures>({
   slowMoTimeout: [async ({}, use, testInfo) => {
     if (Number(process.env.SLOWMO) > 0) {
-      testInfo.setTimeout(testInfo.timeout * 4);
+      testInfo.setTimeout(testInfo.timeout * 6);
     }
     await use();
   }, { auto: true }],
