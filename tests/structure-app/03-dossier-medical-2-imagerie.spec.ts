@@ -21,74 +21,24 @@ const generalFields = (v: 1 | 2, withExamDate = true): FieldSpec[] => [
   { name: 'region', kind: 'select', index: v === 1 ? 0 : 1 },
 ];
 
+// Scanner, IRM et radiographie : à la création, l'application n'affiche que les champs généraux,
+// les actes à facturer et les pièces jointes ; tous les paramètres techniques (protocole, contraste,
+// kV, séquences, incidence, résultats…) sont masqués dans les formulaires (attribut hidden).
 type ImagingType = {
   kind: ImagingActeKind;
   key: 'scanner' | 'irm' | 'radiographie';
   label: string;
   createRoot: string;
   submit: RegExp;
-  technical: FieldSpec[];
 };
 
 const TYPES: ImagingType[] = [
-  {
-    kind: 'SCANNER', key: 'scanner', label: 'Scanner', createRoot: 'app-scanner-static', submit: /Enregistrer le scanner/,
-    technical: [
-      // "Avec injection" affiche les champs du produit de contraste
-      { name: 'protocol', kind: 'select', option: 'Avec injection' },
-      { name: 'clinicalIndications', kind: 'textarea', value: 'Douleur abdominale aiguë QA' },
-      { name: 'contrastProduct', kind: 'text', value: 'Iohexol QA' },
-      { name: 'contrastVolume', kind: 'number', value: '80' },
-      { name: 'conclusion', kind: 'text', value: 'Pas de lésion évolutive QA' },
-      { name: 'report', kind: 'textarea', value: 'Compte-rendu scanner détaillé QA' },
-      { name: 'kv', kind: 'number', value: '120' },
-      { name: 'ma', kind: 'number', value: '250' },
-      { name: 'sliceThickness', kind: 'number', value: '2' },
-      { name: 'acquisitionTime', kind: 'number', value: '12' },
-      { name: 'pitch', kind: 'number', value: '1' },
-      { name: 'reconstructionFilter', kind: 'text', value: 'B30f QA' },
-      { name: 'billableActs', kind: 'multiselect', count: 1 },
-    ],
-  },
-  {
-    kind: 'IRM', key: 'irm', label: 'IRM', createRoot: 'app-irm-static', submit: /Enregistrer l'IRM|Enregistrer/,
-    technical: [
-      { name: 'magneticField', kind: 'select' },
-      { name: 'sequences', kind: 'multiselect', count: 2 },
-      { name: 'clinicalIndications', kind: 'textarea', value: 'Céphalées persistantes QA' },
-      // Cocher "contraste utilisé" affiche le type de contraste
-      { name: 'contrastUsed', kind: 'checkbox', value: true },
-      { name: 'contrastType', kind: 'text', value: 'Gadolinium QA' },
-      { name: 'imageDescription', kind: 'textarea', value: 'Description des images IRM QA' },
-      { name: 'conclusion', kind: 'text', value: 'IRM normale QA' },
-      { name: 'tr', kind: 'number', value: '500' },
-      { name: 'te', kind: 'number', value: '15' },
-      { name: 'sliceThickness', kind: 'number', value: '3' },
-      { name: 'acquisitionMatrix', kind: 'text', value: '256x256' },
-      { name: 'fov', kind: 'text', value: '240 mm' },
-      { name: 'nex', kind: 'number', value: '2' },
-      { name: 'billableActs', kind: 'multiselect', count: 1 },
-    ],
-  },
-  {
-    kind: 'RADIOGRAPHIE', key: 'radiographie', label: 'Radiographie', createRoot: 'app-radiographie-static', submit: /Enregistrer la radiographie|Enregistrer/,
-    technical: [
-      { name: 'incidence', kind: 'select' },
-      { name: 'numberOfViews', kind: 'number', value: '2' },
-      { name: 'indication', kind: 'text', value: 'Traumatisme du poignet QA' },
-      { name: 'specificity', kind: 'textarea', value: 'Cliché de face et de profil QA' },
-      { name: 'interpretation', kind: 'textarea', value: 'Absence de trait de fracture QA' },
-      { name: 'conclusion', kind: 'text', value: 'Radiographie normale QA' },
-      { name: 'kv', kind: 'number', value: '60' },
-      { name: 'mas', kind: 'number', value: '5' },
-      { name: 'distance', kind: 'number', value: '100' },
-      { name: 'cassetteFormat', kind: 'select' },
-      { name: 'additionalFilter', kind: 'text', value: 'Filtre Al 1 mm QA' },
-      { name: 'dap', kind: 'number', value: '3' },
-      { name: 'billableActs', kind: 'multiselect', count: 1 },
-    ],
-  },
+  { kind: 'SCANNER', key: 'scanner', label: 'Scanner', createRoot: 'app-scanner-static', submit: /Enregistrer le scanner/ },
+  { kind: 'IRM', key: 'irm', label: 'IRM', createRoot: 'app-irm-static', submit: /Enregistrer l'IRM|Enregistrer/ },
+  { kind: 'RADIOGRAPHIE', key: 'radiographie', label: 'Radiographie', createRoot: 'app-radiographie-static', submit: /Enregistrer la radiographie|Enregistrer/ },
 ];
+
+const billableActs: FieldSpec[] = [{ name: 'billableActs', kind: 'multiselect', count: 1 }];
 
 // Fiche d'un foetus (échographie obstétricale)
 const foetusFields = (n: number): FieldSpec[] => [
@@ -159,11 +109,11 @@ test.describe('Module Dossier médical — Imagerie', () => {
       let general1: FilledValues = {};
       let general2: FilledValues = {};
 
-      test(`Créer un acte "${type.label}" avec tous les champs et une pièce jointe`, async ({ page }) => {
+      test(`Créer un acte "${type.label}" avec tous les champs affichés et une pièce jointe`, async ({ page }) => {
         const root = await startActe(page, type.kind, type.createRoot);
         const form = new ConsultationFormPage(page, root);
         general1 = await form.fill(generalFields(1));
-        await form.fill(type.technical);
+        await form.fill(billableActs);
         await root.locator('input[type="file"]').first().setInputFiles(attachment(`compte-rendu-${type.key}.pdf`));
         await expect(root.getByText(`compte-rendu-${type.key}.pdf`)).toBeVisible();
         await root.getByRole('button', { name: type.submit }).last().click();
@@ -177,12 +127,6 @@ test.describe('Module Dossier médical — Imagerie', () => {
         await expect(page.locator(`.imaging-item.imaging-item--${type.key}`).first().locator('.imaging-item-attachments')).toContainText('1');
       });
 
-      test(`Les paramètres techniques du "${type.label}" sont consultables après création`, async ({ page }) => {
-        test.fail(true, "Anomalie : après création, la fiche (app-imaging-item, annoncée \"édition complète\") ne montre que les champs généraux ; les paramètres techniques saisis (kV, séquences, incidence, contraste…) ne sont plus consultables.");
-        const item = await openHistoryItem(page, type.key);
-        const technical = type.technical.find(f => f.kind === 'number')!;
-        await expect(item.locator(`[formcontrolname="${technical.name}"]`)).toBeVisible({ timeout: 5000 });
-      });
 
       test(`Modifier les champs de l'acte "${type.label}" et ajouter une pièce jointe`, async ({ page }) => {
         const item = await openHistoryItem(page, type.key);
@@ -243,7 +187,6 @@ test.describe('Module Dossier médical — Imagerie', () => {
       obstetric = await form.fill([
         ...generalFields(1, false),
         { name: 'ddr', kind: 'date', value: isoDate(-150) },
-        { name: 'conclusion', kind: 'text', value: 'Grossesse gémellaire évolutive QA' },
         { name: 'billableActs', kind: 'multiselect', count: 1 },
       ]);
 
@@ -257,6 +200,8 @@ test.describe('Module Dossier médical — Imagerie', () => {
         await root.getByRole('button', { name: /Ajouter un foetus/ }).click();
         const foetuses = root.locator('app-echographie-simple-foetus');
         await expect(foetuses).toHaveCount(2);
+        // Le nombre d'embryons suit le nombre de fiches foetus
+        await expect(root.locator('[formcontrolname="nombreEmbryon"]')).toHaveValue('2');
         foetus2 = await new ConsultationFormPage(page, foetuses.nth(1)).fill(foetusFields(2));
       });
 

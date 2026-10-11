@@ -32,9 +32,17 @@ export class ConsultationFormPage {
     return this.root.locator(`[formcontrolname="${name}"]`);
   }
 
-  private async closeDropdown() {
-    await this.page.keyboard.press('Escape');
-    await this.page.locator('.ng-dropdown-panel').waitFor({ state: 'hidden', timeout: 3000 }).catch(() => {});
+  /**
+   * Referme la liste d'un ng-select si elle est restée ouverte, en cliquant sur sa flèche : la
+   * touche Échap fermerait aussi la fenêtre Bootstrap qui contient le formulaire (vaccination,
+   * bilan…). La plupart des ng-select se referment d'eux-mêmes après le choix.
+   */
+  private async closeDropdown(select: Locator) {
+    const panel = this.page.locator('.ng-dropdown-panel');
+    if (await panel.first().isVisible().catch(() => false)) {
+      await select.locator('.ng-arrow-wrapper').click().catch(() => {});
+    }
+    await panel.first().waitFor({ state: 'hidden', timeout: 3000 }).catch(() => {});
   }
 
   /**
@@ -112,7 +120,7 @@ export class ConsultationFormPage {
             : options.nth(Math.min(field.index ?? 0, count - 1));
           const label = ((await option.textContent()) ?? '').replace(/\s+/g, ' ').trim();
           await this.pick(option);
-          await this.closeDropdown();
+          await this.closeDropdown(select);
           await expect(select.locator('.ng-value'), `Valeur choisie pour "${field.name}"`).toContainText(label, { ignoreCase: true });
           filled[field.name] = label;
           break;
@@ -133,7 +141,7 @@ export class ConsultationFormPage {
             const label = ((await option.textContent()) ?? '').replace(/\s+/g, ' ').trim();
             labels.push(label);
             await this.pick(option);
-            await this.closeDropdown();
+            await this.closeDropdown(select);
             await expect(select.locator('.ng-value').filter({ hasText: new RegExp(escapeRegExp(label), 'i') }), `Valeur "${label}" ajoutée à "${field.name}"`).toHaveCount(1);
           }
           filled[field.name] = labels;

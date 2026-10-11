@@ -50,7 +50,7 @@ npx playwright show-report
   `00-authentification` (login, forgot/change password, policies, public consent pages), `01-portail` (module launcher `/modules`), `02-base-patients`, `03-dossier-medical-<n>-*`. The Dossier médical files are numbered in the order of the dashboard's "Prestation Médicale" frame, because Playwright runs files alphabetically:
   - `0-general`: search, dashboard, prescriptions, ordonnance.
   - `1-consultations`: prenatal / family planning / pediatric / dental create-edit with every field and prescriptions, dental chart cases.
-  - `2-imagerie`: scanner / IRM / radiographie / standard and obstetric échographie with every field and attachments, history, worklist.
+  - `2-imagerie`: scanner / IRM / radiographie (general fields only: the app hides their technical fields) and standard / obstetric échographie with every displayed field and attachments, history, worklist.
   - `3-vaccination`: vaccination and doses.
   - `4-bilans`: one bilan per type, full result form with attachment, PDF bulletins, analyses.
   - `5-parcours`: care pathway templates created by the tests with every act, then started; vaccinal pathway and archives.
