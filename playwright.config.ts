@@ -47,8 +47,8 @@ export default defineConfig({
   },
 
   projects: [
-    // Edge (channel msedge, basé sur Chromium) utilise l'installation système, pas de
-    // binaire téléchargé par Playwright. Le spread de devices['Desktop Edge'] écraserait
+    // Google Chrome (channel chrome) utilise l'installation système, pas de
+    // binaire téléchargé par Playwright. Le spread de devices['Desktop Chrome'] écraserait
     // le viewport défini plus haut (il apporte son propre viewport 1280x720) : on le
     // redéfinit explicitement après le spread.
     {
@@ -56,7 +56,7 @@ export default defineConfig({
       name: 'setup',
       testDir: './tests/structure-app',
       testMatch: /auth\.setup\.ts/,
-      use: { ...devices['Desktop Edge'], channel: 'msedge', viewport: { width: 1600, height: 900 } },
+      use: { ...devices['Desktop Chrome'], channel: 'chrome', viewport: { width: 1600, height: 900 } },
     },
     {
       // Application structure (hi-icare-patient) : un fichier .spec.ts par module métier.
@@ -65,8 +65,8 @@ export default defineConfig({
       testMatch: /.*\.spec\.ts/,
       dependencies: ['setup'],
       use: {
-        ...devices['Desktop Edge'],
-        channel: 'msedge',
+        ...devices['Desktop Chrome'],
+        channel: 'chrome',
         viewport: { width: 1600, height: 900 },
         // Même chemin que ADMIN_STORAGE_STATE (test-data/structure-users.ts), non importé ici
         // pour ne pas évaluer ce module avant le chargement du fichier .env.
@@ -76,7 +76,7 @@ export default defineConfig({
     {
       name: 'caregiver-app',
       testDir: './tests/caregiver-app-tests',
-      use: { ...devices['Desktop Edge'], channel: 'msedge', viewport: { width: 1600, height: 900 } },
+      use: { ...devices['Desktop Chrome'], channel: 'chrome', viewport: { width: 1600, height: 900 } },
     },
   ],
 });

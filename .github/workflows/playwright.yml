@@ -34,7 +34,7 @@ jobs:
       run: npm ci
 
     - name: Install Playwright Browsers
-      run: npx playwright install --with-deps
+      run: npx playwright install --with-deps chrome
 
     - name: Create .env file
       run: |

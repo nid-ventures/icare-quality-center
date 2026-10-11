@@ -61,7 +61,7 @@ npx playwright show-report
 
 - **Environment variables**: `BASE_URL`, `USER_EMAIL`, `USER_PASSWORD`, `DB_HOST`, `DB_PORT`, `DB_USER`, `DB_PASSWORD`, `DB_NAME`. Loaded via `dotenv` in `playwright.config.ts`.
 - **Multi-environment support**: three env files, none committed (`.env.local`, `.env.dev`, `.env.test`), selected at runtime via the `TEST_ENV` variable (`local`/`dev`/`test`) — see `npm run test:local|dev|test` above. Without `TEST_ENV` (e.g. plain `npx playwright test`, or CI), the config falls back to loading the legacy `.env` file. `TEST_ENV` values map to: `local` → local Docker backend, `dev` → icare-nestlabs-test.net, `test` → pro-icare.com.
-- **Browser / projects**: Microsoft Edge (`channel: 'msedge'`, viewport 1600×900). Projects: `setup` (login), `structure-app` (depends on `setup`), `caregiver-app`.
+- **Browser / projects**: Google Chrome (`channel: 'chrome'`, viewport 1600×900). Projects: `setup` (login), `structure-app` (depends on `setup`), `caregiver-app`.
 - **Reporters**: list (console), allure-playwright (to `allure-results/`), HTML (auto-generated to `playwright-report/`).
 - **CI**: GitHub Actions workflow (`.github/workflows/playwright.yml`) runs daily at 3:00 UTC, on push/PR to main, and manually. Sends email notification with results via OVH SMTP. Secrets required: `BASE_URL`, `USER_EMAIL`, `USER_PASSWORD`, `SMTP_USERNAME`, `SMTP_PASSWORD`.
 
