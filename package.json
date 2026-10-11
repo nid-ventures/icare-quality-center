@@ -8,7 +8,7 @@
     "test:local": "rimraf allure-results && cross-env TEST_ENV=local npx playwright test",
     "test:dev": "rimraf allure-results && cross-env TEST_ENV=dev npx playwright test",
     "test:test": "rimraf allure-results && cross-env TEST_ENV=test npx playwright test",
-    "test:visuel": "cross-env TEST_ENV=local SLOWMO=1000 npx playwright test --project=structure-app --headed",
+    "test:visuel": "cross-env TEST_ENV=local SLOWMO=1500 npx playwright test --project=structure-app --headed",
     "report:branding": "node -e \"const fs=require('fs');const src='allure-branding/styles.css';const dst='node_modules/allure-commandline/dist/plugins/custom-logo-plugin/static/styles.css';fs.copyFileSync(src,dst);const cfg='node_modules/allure-commandline/dist/config/allure.yml';const c=fs.readFileSync(cfg,'utf8');if(!c.includes('custom-logo-plugin'))fs.appendFileSync(cfg,'  - custom-logo-plugin\\n');\"",
     "report:generate": "npm run report:branding && npx allure generate allure-results -o allure-report --clean --name \"ICARE QUALITY\"",
     "report:open": "npx allure open allure-report",

@@ -28,7 +28,7 @@ dotenv.config({ path: envFile });
 //   de l'app (min-width:1300px, cf. responsive.css) et la sidebar bascule en mode "tablette" ;
 // - --window-size -> taille utilisée en headless, où --start-maximized est sans effet.
 // - SLOWMO (ms, optionnel) -> pause après chaque action pour suivre les tests à l'écran
-//   (ex: SLOWMO=1000 avec --headed, cf. "npm run test:visuel"). 0 par défaut.
+//   (ex: SLOWMO=1500 avec --headed, cf. "npm run test:visuel"). 0 par défaut.
 const slowMo = Number(process.env.SLOWMO) || 0;
 const chrome = {
   channel: 'chrome',

@@ -26,7 +26,7 @@ TEST_ENV=local npx playwright test tests/structure-app/02-base-patients.spec.ts 
 # Run tests with headed browser
 npx playwright test --headed
 
-# Watch the structure suite in slow motion (SLOWMO ms after each action — 1000 by default —, test timeouts x6, on-screen banner with the current feature)
+# Watch the structure suite in slow motion (SLOWMO ms after each action — 1500 by default —, test timeouts x6, on-screen banner with the current feature)
 npm run test:visuel
 
 # Generate and open Allure report
@@ -62,7 +62,7 @@ npx playwright show-report
 
 **Every-field consultation tests**: `pages/structure/consultation/consultation-form.page.ts` fills any consultation form by `formcontrolname` (text/number/date/radio/checkbox/ng-select) and re-checks every value after reopening; field sets live in `test-data/consultation-fields.ts`. Known app defects are kept as `test.fail(true, 'Anomalie : …')` tests so they turn red when fixed.
 
-**Visual runs**: with `SLOWMO>0` (`npm run test:visuel`, 1 s per action) a banner (`fixtures/visual-notes.ts`, closed shadow DOM, invisible to locators) shows module › section, test and current step.
+**Visual runs**: with `SLOWMO>0` (`npm run test:visuel`, 1.5 s per action) a banner (`fixtures/visual-notes.ts`, closed shadow DOM, invisible to locators) shows module › section, test and current step.
 
 **App behaviours to know**: creating a patient redirects to its medical dashboard (switching to the Dossier médical module) and may trigger the duplicate-detection panel; in the patient model `firstName` holds the family name and `lastName` the given name; Base patients opens the administrative file on row click, Dossier médical is "search first" and opens the medical dashboard.
 
