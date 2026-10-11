@@ -167,13 +167,17 @@ export class ImagingWorklistPage {
     return await this.tableRows.count();
   }
 
-  // Boutons "Consulter"/"Fermer" identifiés par leur attribut title -> getByTitle.
+  // Boutons "Consulter"/"Fermer" identifiés par leur attribut title -> getByTitle. Délai explicite :
+  // sans actionTimeout, un bouton absent bloquait le test jusqu'à son délai global (30 min en visuel).
   async expandRow(row: Locator) {
-    await row.getByTitle('Consulter').click();
+    await row.getByTitle('Consulter').click({ timeout: 10000 });
+    // Le formulaire inline est rendu de façon asynchrone : on l'attend avant d'en lire le type.
+    await expect(this.getExpandedRow(row).locator('app-echographie-simple-item, app-imaging-item').first(),
+      'Formulaire déplié de la ligne').toBeVisible({ timeout: 15000 });
   }
 
   async closeRow(row: Locator) {
-    await row.getByTitle('Fermer').click();
+    await row.getByTitle('Fermer').click({ timeout: 10000 });
   }
 
   // La ligne dépliée (formulaire inline) est la <tr> juste après la ligne cliquée.

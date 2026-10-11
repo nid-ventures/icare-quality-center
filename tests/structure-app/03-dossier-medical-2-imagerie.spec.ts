@@ -73,6 +73,20 @@ const confirmUpdate = async (page: Page) => {
   await expect(page.getByText('Mise à jour réussie').first(), 'Enregistrement confirmé').toBeVisible({ timeout: 30000 });
 };
 
+/**
+ * Fiche du foetus n d'une échographie rouverte, retrouvée par sa présentation ("Céphalique Fn…") :
+ * l'ordre d'affichage des fiches n'est pas stable d'une réouverture à l'autre.
+ */
+async function foetusSheet(item: Locator, n: number): Promise<Locator> {
+  const sheets = item.locator('app-echographie-simple-foetus');
+  const count = await sheets.count();
+  for (let i = 0; i < count; i++) {
+    const presentation = await sheets.nth(i).locator('[formcontrolname="presentation"]').inputValue();
+    if (presentation.startsWith(`Céphalique F${n}`)) return sheets.nth(i);
+  }
+  throw new Error(`Fiche du foetus ${n} introuvable parmi ${count} fiche(s)`);
+}
+
 const visible = (page: Page, selector: string) => page.locator(selector).filter({ visible: true }).first();
 
 /** Ligne de l'historique d'imagerie (la plus récente du type), dépliée ; renvoie son formulaire. */
@@ -228,8 +242,8 @@ test.describe('Module Dossier médical — Imagerie', () => {
       ], obstetric);
       const foetuses = item.locator('app-echographie-simple-foetus');
       await expect(foetuses).toHaveCount(2);
-      await new ConsultationFormPage(page, foetuses.nth(0)).expectValues(foetusFields(1), foetus1);
-      await new ConsultationFormPage(page, foetuses.nth(1)).expectValues(foetusFields(2), foetus2);
+      await new ConsultationFormPage(page, await foetusSheet(item, 1)).expectValues(foetusFields(1), foetus1);
+      await new ConsultationFormPage(page, await foetusSheet(item, 2)).expectValues(foetusFields(2), foetus2);
     });
 
     test("Modifier l'échographie : champs généraux et fiche du foetus 1", async ({ page }) => {
@@ -241,7 +255,7 @@ test.describe('Module Dossier médical — Imagerie', () => {
         { name: 'date', kind: 'date', value: isoDate(-1) },
         { name: 'ddr', kind: 'date', value: isoDate(-140) },
       ]);
-      foetus1 = await new ConsultationFormPage(page, item.locator('app-echographie-simple-foetus').nth(0))
+      foetus1 = await new ConsultationFormPage(page, await foetusSheet(item, 1))
         .fill(foetusFields(1).map(f => (f.kind === 'text' || f.kind === 'textarea') ? { ...f, value: `${f.value} (modifié)` } : f));
       await item.locator('button.btn-success').last().click();
       await confirmUpdate(page);
@@ -256,7 +270,7 @@ test.describe('Module Dossier médical — Imagerie', () => {
 
     test("Rouvrir l'échographie : modifications de la fiche du foetus 1 conservées", async ({ page }) => {
       const item = await openHistoryItem(page, 'echographie');
-      await new ConsultationFormPage(page, item.locator('app-echographie-simple-foetus').nth(0))
+      await new ConsultationFormPage(page, await foetusSheet(item, 1))
         .expectValues(foetusFields(1), foetus1);
     });
 
