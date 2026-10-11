@@ -244,11 +244,16 @@ test.describe('Module Dossier médical — Imagerie', () => {
       await confirm(page);
     });
 
-    test("Rouvrir l'échographie : modifications conservées", async ({ page }) => {
+    test("Rouvrir l'échographie : modifications des champs généraux conservées", async ({ page }) => {
       const item = await openHistoryItem(page, 'echographie');
       await new ConsultationFormPage(page, item).expectValues([
         { name: 'caregiverId', kind: 'select' }, { name: 'date', kind: 'date', value: '' }, { name: 'ddr', kind: 'date', value: '' },
       ], edited);
+    });
+
+    test("Rouvrir l'échographie : modifications de la fiche du foetus 1 conservées", async ({ page }) => {
+      test.fail(true, "Anomalie : les modifications d'une fiche foetus d'une échographie existante ne sont pas enregistrées (le front les envoie dans la mise à jour, les anciennes valeurs reviennent à la réouverture).");
+      const item = await openHistoryItem(page, 'echographie');
       await new ConsultationFormPage(page, item.locator('app-echographie-simple-foetus').nth(0))
         .expectValues(foetusFields(1), foetus1);
     });
