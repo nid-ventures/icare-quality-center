@@ -54,8 +54,9 @@ export class HonorairesListPage {
     constructor(page: Page) {
         this.page = page;
 
-        this.honorairesNavLink = page.getByRole('link', { name: ' Honoraires ' });
-        this.releveHonorairesNavLink = page.getByRole('link', { name: ' Relevés honoraires' });
+        // Entrée "Relevés d'honoraires" du menu latéral du module Honoraires.
+        this.honorairesNavLink = page.locator('nav.iq-sidebar-menu').getByRole('link', { name: /Relevés d'honoraires$/ });
+        this.releveHonorairesNavLink = this.honorairesNavLink;
 
         this.pageHeading = page.getByRole('heading', { name: /Relevés de Notes Honoraires/ });
         this.rows = page.locator('tr.honoraire-row');
@@ -99,8 +100,7 @@ export class HonorairesListPage {
     async goto(): Promise<void> {
         await expect(this.honorairesNavLink).toBeVisible();
         await this.honorairesNavLink.click();
-        await expect(this.releveHonorairesNavLink).toBeVisible();
-        await this.releveHonorairesNavLink.click();
+        await this.page.waitForURL('**/honoraire/honoraires');
         await expect(this.pageHeading).toBeVisible();
         await this.attendreChargement();
     }

@@ -35,7 +35,8 @@ export class AccountListPage {
   private readonly fermerConfirmButton: Locator;
 
   constructor(private readonly page: Page) {
-    this.usersNavLink = page.getByRole('link', { name: ' Utilisateurs' });
+    // Entrée "Utilisateurs" du menu latéral du module Administration.
+    this.usersNavLink = page.locator('nav.iq-sidebar-menu').getByRole('link', { name: /Utilisateurs$/ });
 
     this.searchLoginInput = page.getByPlaceholder('Login...');
     // "Nom..." sans exact:true matche aussi le placeholder "Prénom..." (substring "nom...").
@@ -112,6 +113,17 @@ export class AccountListPage {
     await this.searchLoginInput.fill(login);
     await this.searchButton.click();
     await this.page.waitForTimeout(500);
+  }
+
+  /**
+   * Recherche par login avec le filtre "État" (Active / Désactive). Le filtre vaut "Active" par
+   * défaut : un utilisateur désactivé n'apparaît qu'avec "Désactive".
+   */
+  async searchByLoginAndState(login: string, state: 'Active' | 'Désactive') {
+    const stateSelect = this.page.locator('ng-select[name="active"]');
+    await stateSelect.click();
+    await this.page.getByRole('option', { name: state, exact: true }).click();
+    await this.searchByLogin(login);
   }
 
   async resetSearch() {

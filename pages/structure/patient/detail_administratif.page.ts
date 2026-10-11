@@ -48,8 +48,9 @@ export class DetailPatientPage {
   constructor(private readonly page: Page) {
     // Bouton sans rôle/nom accessible exploitable -> ciblage CSS par id.
     this.buttonVOirDetails = page.locator('#button_details');
-    this.detailTab = page.getByRole('tab', { name: ' Détails' });
-    this.PersonContactTab = page.getByRole('tab', { name: ' Personne à contacter' });
+    // Les onglets sont précédés d'une icône (incluse dans le nom accessible) : correspondance par fin de libellé.
+    this.detailTab = page.getByRole('tab', { name: /Détails$/ });
+    this.PersonContactTab = page.getByRole('tab', { name: /Personne à contacter$/ });
     this.PriseEnChargeTab = page.getByRole('tab', { name: 'Prise en charge' });
     this.buttonActiveTab = page.getByRole('button', { name: 'Activer le formulaire' });
     // Champ date natif sans label associé exploitable par getByLabel/getByRole -> ciblage CSS par name.
@@ -63,8 +64,8 @@ export class DetailPatientPage {
     this.buttonEnregistrer = page.getByRole('button', { name: 'Enregistrer' });
     this.buttonConfirmer = page.getByRole('button', { name: 'Confirmer' });
     // Initialisations pour Personne à contacter
-    this.personContactTabLink = page.getByRole('tab', { name: ' Personne à contacter' });
-    this.addPersonButton = page.getByRole('link', { name: 'Ajouter une personne à' });
+    this.personContactTabLink = page.getByRole('tab', { name: /Personne à contacter$/ });
+    this.addPersonButton = page.getByRole('link', { name: /^\W*Ajouter une personne à/ });
     this.modalTitle = page.getByRole('heading', { name: 'Ajouter personne à contacter' });
     // Champs du modal "Personne à contacter" : ciblage CSS par id, ces champs n'exposent pas
     // tous un label ou un rôle ARIA exploitable via getByRole/getByLabel.
@@ -147,8 +148,12 @@ export class DetailPatientPage {
     // correctement le changement d'onglet Bootstrap (l'onglet passe "selected" mais l'ancien
     // panneau reste affiché) : un clic normal, qui attend nativement que l'élément soit
     // réellement stable/cliquable, est plus fiable ici malgré un éventuel overlay transitoire.
-    await this.personContactTabLink.click();
-    await expect(this.addPersonButton).toBeVisible({ timeout: 10000 });
+    // Juste après l'ouverture de la fiche, un clic sur l'onglet peut être perdu (onglets Bootstrap
+    // pas encore prêts) : on reclique jusqu'à ce que le panneau soit réellement affiché.
+    await expect(async () => {
+      await this.personContactTabLink.click();
+      await expect(this.addPersonButton).toBeVisible({ timeout: 2000 });
+    }).toPass({ timeout: 20000 });
   }
 
   /**

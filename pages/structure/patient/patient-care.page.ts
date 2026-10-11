@@ -56,7 +56,7 @@ export class PatientCarePage {
     constructor(private readonly page: Page) {
         // Onglet et bouton d'ajout
         this.priseEnChargeTab = page.getByRole('tab', { name: 'Prise en charge' });
-        this.addCareLink = page.getByRole('link', { name: 'Ajouter une prise en charge' });
+        this.addCareLink = page.getByRole('link', { name: /^\W*Ajouter une prise en charge/ });
         this.modalHeading = page.getByRole('heading', { name: 'Ajouter prise en charge' });
 
         // Champs du formulaire
@@ -101,8 +101,12 @@ export class PatientCarePage {
      * Ouvre l'onglet "Prise en charge"
      */
     async goToCareTab() {
-        await this.priseEnChargeTab.click();
-        await expect(this.addCareLink).toBeVisible();
+        // Juste après l'ouverture de la fiche, un clic sur l'onglet peut être perdu (onglets
+        // Bootstrap pas encore prêts) : on reclique jusqu'à ce que le panneau soit affiché.
+        await expect(async () => {
+            await this.priseEnChargeTab.click();
+            await expect(this.addCareLink).toBeVisible({ timeout: 2000 });
+        }).toPass({ timeout: 20000 });
         // Vérifier que les en-têtes sont présents (optionnel)
         for (const header of Object.values(this.columnHeaders)) {
             await expect(header).toBeVisible();

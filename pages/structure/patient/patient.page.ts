@@ -10,8 +10,6 @@ interface Field {
 export class PatientPage {
   private readonly firstChildRowTablePatient: Locator;
   private readonly patientLink: Locator;
-  private readonly patientHeading: Locator;
-  private readonly patientUrl: Promise<void>;
   // PATIENTS LISTE ELEMENTS
   private readonly identifiantLabel: Locator;
   private readonly numbDossierLabel: Locator;
@@ -93,9 +91,9 @@ export class PatientPage {
     // .compact-table est une table HTML classique sans rôles ARIA dédiés par ligne/cellule,
     // d'où l'usage de sélecteurs CSS pour cibler les lignes du tableau des patients.
     this.firstChildRowTablePatient = page.locator('.compact-table tbody tr:first-child');
-    this.patientHeading = page.getByRole('heading', { name: 'Patients' });
-    this.patientLink = page.getByRole('link', { name: ' Patients' });
-    this.patientUrl = page.waitForURL('**/patient/patients');
+    // Entrée du menu latéral du module courant ("Patients" en Base patients, "Dossiers patients"
+    // en Dossier médical) ; l'icône précédant le libellé fait partie du nom accessible.
+    this.patientLink = page.locator('nav.iq-sidebar-menu').getByRole('link', { name: /patients$/i });
     this.identifiantLabel = page.getByText('Identifiant patient');
     this.identifiantInput = page.getByPlaceholder('Identifiant...');
     this.numbDossierLabel = page.locator('label').filter({ hasText: 'N° Dossier' });
@@ -117,11 +115,12 @@ export class PatientPage {
     this.dateCreationInput = page.locator('input[type="date"][name="createdDate"]');
     this.telephoneLabel = page.locator('label').filter({ hasText: /^Téléphone$/ });
     this.listeHeading = page.getByRole('heading', { name: 'Liste des patients' });
-    this.buttonInit = page.getByRole('button', { name: ' Réinitialiser' });
-    this.buttonRechercher = page.getByRole('button', { name: ' Rechercher' });
+    this.buttonInit = page.getByRole('button', { name: /^\W*Réinitialiser/ });
+    this.buttonRechercher = page.getByRole('button', { name: /^\W*Rechercher/ });
     // ng-select (Angular) : ciblage CSS + hasText car plusieurs ng-select existent sur la page sans nom accessible distinct.
     this.comboboxTaille = page.locator('ng-select.compact-select');
-    this.buttonNouveau = page.getByRole('button', { name: ' Nouveau patient' });
+    // Bouton présent dans les deux écrans de liste (Base patients et Dossier médical), précédé d'une icône.
+    this.buttonNouveau = page.getByRole('button', { name: /Nouveau patient$/ }).first();
     this.columnheaderIdentifiant = page.getByRole('columnheader', { name: 'Identifiant' });
     this.columnheaderNDossier = page.getByRole('columnheader', { name: 'N° Dossier' });
     this.columnheaderPrenom = page.getByRole('columnheader', { name: 'Prénom' });
@@ -179,7 +178,8 @@ export class PatientPage {
     this.parcoursSoinsHeading = page.getByRole('heading', { name: 'Parcours de soins' });
 
     this.infoUtileHeading = page.getByRole('heading', { name: 'Informations Utiles' });
-    this.voirDetailAdminHeading = page.getByRole('link', { name: 'Voir Détails Administratifs' });
+    // Lien renommé "Voir / modifier les détails administratifs" : ciblé par son id stable.
+    this.voirDetailAdminHeading = page.locator('#button_details');
     this.derniereActiviteHeading = page.getByRole('heading', { name: 'Dernières activités' });
   }
 
@@ -249,9 +249,8 @@ export class PatientPage {
 
   // ======================== MÉTHODES PUBLIQUES ========================
   async checkPatientsList() {
-    await expect(this.patientHeading).toBeVisible();
     await this.patientLink.click();
-    await this.patientUrl;
+    await this.page.waitForURL('**/patient/patients');
 
     await expect(this.identifiantLabel).toBeVisible();
     await expect(this.numbDossierLabel).toBeVisible();
@@ -289,9 +288,8 @@ export class PatientPage {
   }
 
   async chooseFirstPatient() {
-    await expect(this.patientHeading).toBeVisible();
     await this.patientLink.click();
-    await this.patientUrl;
+    await this.page.waitForURL('**/patient/patients');
     await expect(this.firstChildRowTablePatient).toBeVisible();
     // Le loader plein écran de la navigation peut encore intercepter le clic juste après.
     await this.page.locator('app-loader .backdrop.full-screen').waitFor({ state: 'hidden', timeout: 5000 }).catch(() => {});
@@ -387,10 +385,99 @@ export class PatientPage {
     await this.buttonConfirmValiderChoix.click();
   }
 
+  // ======================== RECHERCHE CIBLÉE & ACTIONS PAR PATIENT ========================
+  private async waitForLoader() {
+    await this.page.locator('app-loader .backdrop.full-screen').waitFor({ state: 'hidden', timeout: 10000 }).catch(() => {});
+  }
+
+  /**
+   * Recherche un patient créé avec fillCreationForm(data) : on reprend la même correspondance
+   * que le formulaire de création (champ "Prénom" <- data.lastName, champ "Nom" <- data.firstName).
+   * Côté application, le modèle `lastName` porte le prénom et `firstName` le nom de famille.
+   */
+  async searchByName(firstName: string, lastName: string) {
+    await this.waitForLoader();
+    await this.prenomInput.fill(lastName);
+    await this.nomInput.fill(firstName);
+    await this.buttonRechercherHelper.click();
+    await this.waitForLoader();
+  }
+
+  patientRow(lastName: string): Locator {
+    return this.page.locator('.compact-table tbody tr').filter({ hasText: lastName });
+  }
+
+  async expectPatientInList(lastName: string) {
+    await expect(this.patientRow(lastName).first()).toBeVisible({ timeout: 15000 });
+  }
+
+  async expectPatientNotInList(lastName: string) {
+    await expect(this.patientRow(lastName)).toHaveCount(0, { timeout: 15000 });
+  }
+
+  /** Clic sur la ligne : fiche administrative (Base patients) ou dossier médical (Dossier médical). */
+  async openPatient(lastName: string) {
+    await this.waitForLoader();
+    await this.patientRow(lastName).first().locator('td').first().click();
+  }
+
+  async deletePatient(lastName: string) {
+    await this.patientRow(lastName).first().locator('button[title="Supprimer le patient"]').click();
+    await expect(this.buttonConfirmValiderChoix).toBeVisible();
+    await this.buttonConfirmValiderChoix.click();
+  }
+
+  /** Raccourci "Facturer ce patient" (Base patients, si le module Facturation est accessible). */
+  async billPatient(lastName: string) {
+    await this.patientRow(lastName).first().locator('button[title="Facturer ce patient"]').click();
+    await this.page.waitForURL('**/billing/billings-create**');
+  }
+
+  /** Raccourci "Factures du patient" (Base patients, si le module Facturation est accessible). */
+  async openPatientInvoices(lastName: string) {
+    await this.patientRow(lastName).first().locator('button[title="Factures du patient"]').click();
+    await this.page.waitForURL('**/billing/billings-patients**');
+  }
+
+  /**
+   * Crée un patient complet (sans consentement par défaut). Après création, l'application
+   * redirige vers le dashboard médical du patient (`/patient/patient-dashboard/:id`), ce qui
+   * bascule le module courant sur "Dossier médical". Renvoie l'id (UUID) du patient créé.
+   */
+  async createPatient(data: Parameters<PatientPage['fillCreationForm']>[1], hiConfig = 'Désactivé', email?: string): Promise<string> {
+    await this.openCreationModal();
+    await this.fillCreationForm(hiConfig, data, email);
+    await this.saveAndConfirm();
+    // Des données générées peuvent ressembler à un patient existant : l'application affiche alors
+    // la détection de doublons au lieu de créer. On choisit "Ignorer et créer le patient".
+    const dashboardUrl = /\/patient\/patient-dashboard\//;
+    const outcome = await Promise.race([
+      this.page.waitForURL(dashboardUrl, { timeout: 45000 }).then(() => 'created' as const, () => 'timeout' as const),
+      this.buttonIgnoreAndCreate.waitFor({ state: 'visible', timeout: 45000 }).then(() => 'duplicate' as const, () => 'timeout' as const),
+    ]);
+    expect(outcome, 'Ni redirection vers le dossier ni détection de doublon après la création').not.toBe('timeout');
+    if (outcome === 'duplicate') {
+      await this.buttonIgnoreAndCreate.click();
+      await this.buttonConfirmValiderChoix.click();
+      await this.page.waitForURL(dashboardUrl, { timeout: 45000 });
+    }
+    return this.page.url().split('/patient/patient-dashboard/')[1].split(/[?#/]/)[0];
+  }
+
+  /** Identifiant patient (1re colonne) de la ligne correspondant au nom donné. */
+  async getPatientIdentifier(lastName: string): Promise<string> {
+    return (await this.patientRow(lastName).first().locator('td').first().innerText()).trim();
+  }
+
   async checkPatientDashboard() {
     const firstRow = this.firstChildRowTablePatient;
     await expect(firstRow).toBeVisible();
     await firstRow.click();
+    await this.expectMedicalDashboardSections();
+  }
+
+  /** Sections du dashboard médical d'un patient (`/patient/patient-dashboard/:id`). */
+  async expectMedicalDashboardSections() {
     await expect(this.infosAdminHeading).toBeVisible();
     await expect(this.identiteMedHeading).toBeVisible();
     await expect(this.AntecedentHeading).toBeVisible();
@@ -462,9 +549,8 @@ export class PatientPage {
   }
 
   async definitionChamps(page: Page) {
-    await expect(this.patientHeading).toBeVisible();
     await this.patientLink.click();
-    await this.patientUrl;
+    await this.page.waitForURL('**/patient/patients');
     // La liste peut encore afficher l'état "Aucun patient disponible" le temps que les données
     // arrivent : on attend la vraie première ligne avant de lire ses champs.
     await expect(this.firstChildRowTablePatient).toBeVisible();

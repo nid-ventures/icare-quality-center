@@ -88,6 +88,55 @@ export class MyConfigurationPage {
     await expect(this.invoiceHeader).toBeVisible();
   }
 
+  // ===== Cartes génériques de l'espace paramétrage (accordéon .config-card) =====
+
+  /** Carte de l'espace paramétrage par son titre (ex: "Modules de la structure"). */
+  configCard(title: string): Locator {
+    return this.page.locator('.config-card').filter({
+      has: this.page.locator('.config-card-header h3', { hasText: new RegExp(`^\\s*${title.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}\\s*$`) }),
+    });
+  }
+
+  async expectSectionsVisible(titles: string[]) {
+    for (const title of titles) {
+      await expect(this.configCard(title).locator('.config-card-header')).toBeVisible();
+    }
+  }
+
+  async openSection(title: string) {
+    const card = this.configCard(title);
+    const body = card.locator('.config-card-body');
+    if (!((await body.getAttribute('class')) ?? '').includes('expanded')) {
+      await card.locator('.config-card-header').click();
+    }
+    await expect(body).toHaveClass(/expanded/);
+  }
+
+  // ===== Modules de la structure (activation stockée dans le navigateur, par structure) =====
+
+  private moduleRow(name: string): Locator {
+    return this.configCard('Modules de la structure').locator('ul.ms-list > li').filter({
+      has: this.page.locator('strong', { hasText: new RegExp(`^${name}$`) }),
+    });
+  }
+
+  moduleSwitch(name: string): Locator {
+    return this.moduleRow(name).locator('input[type="checkbox"]');
+  }
+
+  async expectModuleAlwaysActive(name: string) {
+    await expect(this.moduleRow(name).getByText('Toujours actif')).toBeVisible();
+  }
+
+  async setModuleEnabled(name: string, enabled: boolean) {
+    const input = this.moduleSwitch(name);
+    if ((await input.isChecked()) !== enabled) {
+      // La case est masquée derrière un curseur stylé (label.ms-switch) : on clique sur le label.
+      await this.moduleRow(name).locator('label.ms-switch').click();
+    }
+    await expect(input).toBeChecked({ checked: enabled });
+  }
+
   // ===== Accordéon =====
 
   async isDetailsSectionOpen(): Promise<boolean> {

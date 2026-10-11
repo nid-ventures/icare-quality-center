@@ -6,7 +6,6 @@ export type ImagingRowKind = 'echographie' | 'imaging';
 export class ImagingWorklistPage {
   // Navigation (le lien du menu latéral n'a pas de classe distinctive : on cible le href
   // résolu par RouterLink, plus robuste que le texte qui peut porter une icône collée).
-  readonly worklistNavLink: Locator;
 
   // Formulaire de recherche
   readonly searchFormToggleButton: Locator;
@@ -39,7 +38,6 @@ export class ImagingWorklistPage {
   readonly fermerConfirmationButton: Locator;
 
   constructor(private readonly page: Page) {
-    this.worklistNavLink = page.locator('a[href*="imagerie/worklist"]');
 
     this.searchFormToggleButton = page.locator('button.btn-search-toggle');
     this.folderOrderInput = page.locator('#criteria-folderOrder');
@@ -74,7 +72,9 @@ export class ImagingWorklistPage {
   }
 
   async goto() {
-    await this.worklistNavLink.click();
+    // Le module "Laboratoire & Imagerie" est masqué dans l'application (aucune entrée de menu ni
+    // carte sur le portail) : on ouvre la worklist par son URL, dont la route reste active.
+    await this.page.goto('/imagerie/worklist');
     await this.page.waitForURL('**/imagerie/worklist');
     await expect(this.listHeading).toBeVisible();
     await this.waitForSettled();

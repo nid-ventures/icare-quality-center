@@ -2,7 +2,6 @@
 import { type Page, type Locator, expect } from '@playwright/test';
 
 export class LaboratoryWorklistPage {
-  private readonly laboratoireNavLink: Locator;
   private readonly lastNameInput: Locator;
   private readonly firstNameInput: Locator;
   private readonly bulletinInput: Locator;
@@ -24,7 +23,6 @@ export class LaboratoryWorklistPage {
   constructor(private readonly page: Page) {
     // Lien "Laboratoire" du menu latéral (icône dans le lien -> nom accessible non fiable, on
     // utilise donc une regex partielle plutôt qu'une correspondance exacte).
-    this.laboratoireNavLink = page.getByRole('link', { name: /Laboratoire/ });
 
     const searchForm = page.locator('form.search-form');
     this.lastNameInput = page.locator('#criteria-lastName');
@@ -38,7 +36,8 @@ export class LaboratoryWorklistPage {
     this.resetButton = searchForm.getByRole('button', { name: /Annuler/ });
     this.searchButton = searchForm.getByRole('button', { name: /Rechercher/ });
 
-    this.listHeading = page.getByRole('heading', { name: /Liste des bilans d'analyses/ });
+    // Titre renommé "Liste des prescriptions d'analyses" dans la nouvelle version.
+    this.listHeading = page.getByRole('heading', { name: /Liste des (bilans|prescriptions) d'analyses/ });
     this.loadingState = page.locator('.loading-state');
     this.tableRows = page.locator('table.compact-table tbody tr.table-row');
     this.emptyRowText = page.getByText('Aucun enregistrement');
@@ -50,7 +49,10 @@ export class LaboratoryWorklistPage {
   }
 
   async gotoWorklist() {
-    await this.laboratoireNavLink.click();
+    // Le module "Laboratoire & Imagerie" est masqué dans l'application (aucune entrée de menu ni
+    // carte sur le portail) : on ouvre la worklist par son URL, dont la route reste active.
+    await this.page.goto('/analyse/worklist');
+    await this.page.waitForURL('**/analyse/worklist');
     await expect(this.listHeading).toBeVisible();
     await this.waitForResults();
   }

@@ -18,7 +18,8 @@ export class CreateHonorairePage {
 
     constructor(private readonly page: Page) {
         // Navigation (le lien "Honoraires" du menu principal mène directement à /honoraire/create)
-        this.honorairesNavLink = page.getByRole('link', { name: ' Honoraires ' });
+        // Entrée "Nouveau relevé" du menu latéral du module Honoraires.
+        this.honorairesNavLink = page.locator('nav.iq-sidebar-menu').getByRole('link', { name: /Nouveau relevé$/ });
 
         this.headerTitle = page.getByRole('heading', { name: /Nouvelle note d.honoraire|Modifier la note d.honoraire/ });
 
@@ -45,6 +46,7 @@ export class CreateHonorairePage {
     async gotoViaMenu(): Promise<void> {
         await expect(this.honorairesNavLink).toBeVisible();
         await this.honorairesNavLink.click();
+        await this.page.waitForURL('**/honoraire/create');
         await expect(this.headerTitle).toBeVisible();
     }
 
@@ -61,10 +63,31 @@ export class CreateHonorairePage {
      * que le libellé sélectionné est bien affiché.
      * Retourne le nom complet du médecin sélectionné (utile pour filtrer la liste ensuite).
      */
+    /**
+     * Indique si au moins un médecin est proposé. La liste vient de `/renumerations/profiles` :
+     * elle est vide tant qu'aucun profil de rémunération médecin n'est configuré dans
+     * l'environnement (Administration > Paramètres > Rémunération médecin).
+     */
+    async hasMedecinDisponible(): Promise<boolean> {
+        const options = this.page.locator('.ng-dropdown-panel .ng-option:not(.ng-option-disabled)');
+        const found = await expect(async () => {
+            await this.page.keyboard.press('Escape');
+            await this.openMedecinDropdown();
+            await expect(options.first().locator('strong')).toBeVisible({ timeout: 2000 });
+        }).toPass({ timeout: 10000 }).then(() => true, () => false);
+        await this.page.keyboard.press('Escape');
+        return found;
+    }
+
     async selectFirstMedecinDisponible(): Promise<string> {
-        await this.openMedecinDropdown();
-        const options = this.page.locator('.ng-dropdown-panel .ng-option');
-        await expect(options.first()).toBeVisible();
+        // La liste des médecins est chargée de façon asynchrone (getReleveHonoraireMedecins) : si le
+        // menu est ouvert trop tôt il affiche "No items found". On le referme et on réessaie.
+        const options = this.page.locator('.ng-dropdown-panel .ng-option:not(.ng-option-disabled)');
+        await expect(async () => {
+            await this.page.keyboard.press('Escape');
+            await this.openMedecinDropdown();
+            await expect(options.first().locator('strong')).toBeVisible({ timeout: 2000 });
+        }).toPass({ timeout: 20000 });
 
         const nom = (await options.first().locator('strong').first().textContent())?.replace(/\s+/g, ' ').trim() ?? '';
         if (!nom) {

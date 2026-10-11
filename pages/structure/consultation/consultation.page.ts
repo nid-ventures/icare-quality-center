@@ -44,18 +44,18 @@ export class ConsultationPage {
 
     // Liste des consultations
     this.consultationsHeading = page.getByRole('heading', { name: 'Liste des consultations' });
-    this.newConsultationButton = page.getByRole('button', { name: ' Nouvelle consultation' });
+    this.newConsultationButton = page.getByRole('button', { name: /^\W*Nouvelle consultation/ });
     this.filterByTypeText = page.locator('.consultation-filter ng-select');
 
     // Modal Nouvelle consultation
     this.newConsultationModalHeading = page.getByRole('heading', { name: 'Nouvelle consultation' });
     this.specialtySelect = page.locator('ng-select').filter({ hasText: 'Sélectionner une spécialité' });
     this.consultationTypeSelect = page.locator('ng-select').filter({ hasText: 'Sélectionner un type' });
-    this.createConsultationButton = page.getByRole('button', { name: ' Créer la consultation' });
-    this.cancelButton = page.getByRole('button', { name: ' Annuler' });
+    this.createConsultationButton = page.getByRole('button', { name: /^\W*Créer la consultation/ });
+    this.cancelButton = page.getByRole('button', { name: /^\W*Annuler/ });
 
     // Formulaire consultation médicale
-    this.medicalConsultationHeading = page.getByRole('heading', { name: ' Consultation Médicale' });
+    this.medicalConsultationHeading = page.getByRole('heading', { name: /^\W*Consultation Médicale/ });
     this.caregiverSelect = page.locator('#caregiverId').getByRole('textbox');
     this.weightInput = page.locator('#weight');
     this.heightInput = page.locator('#taille');
@@ -72,9 +72,9 @@ export class ConsultationPage {
       .filter({ hasText: /Sélectionnez les actes à/i })
       .locator('input[type="text"]:not([disabled])')
       .first();
-    this.saveConsultationButton = page.getByRole('button', { name: ' Enregistrer la consultation' });
+    this.saveConsultationButton = page.getByRole('button', { name: /^\W*Enregistrer la consultation/ });
     this.confirmButton = page.getByRole('button', { name: 'Confirmer' });
-    this.annulerButton = page.getByRole('button', { name: ' Annuler' });
+    this.annulerButton = page.getByRole('button', { name: /^\W*Annuler/ });
   }
 
   /**
@@ -228,7 +228,7 @@ export class ConsultationPage {
    * Active le formulaire de modification (bouton "Activer")
    */
   async activateForm() {
-    const activateButton = this.page.getByRole('button', { name: ' Activer' });
+    const activateButton = this.page.getByRole('button', { name: /^\W*Activer/ });
     await expect(activateButton).toBeVisible();
     await activateButton.click();
 
@@ -264,7 +264,7 @@ export class ConsultationPage {
    * Sauvegarde la modification (bouton "Mettre à jour")
    */
   async updateConsultation() {
-    const updateButton = this.page.getByRole('button', { name: ' Mettre à jour la' });
+    const updateButton = this.page.getByRole('button', { name: /^\W*Mettre à jour la/ });
     await updateButton.click();
     await expect(this.confirmButton).toBeVisible();
     await this.confirmButton.click();
@@ -274,7 +274,7 @@ export class ConsultationPage {
    * Supprime la consultation actuellement ouverte (après l'avoir sélectionnée)
    */
   async deleteConsultation() {
-    const deleteButton = this.page.getByRole('button', { name: ' Supprimer' });
+    const deleteButton = this.page.getByRole('button', { name: /^\W*Supprimer/ });
     await expect(deleteButton).toBeVisible();
     await deleteButton.click();
 

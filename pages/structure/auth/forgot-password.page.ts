@@ -41,8 +41,27 @@ export class ForgotPasswordPage {
     await this.sendButton.click();
   }
 
+  async fillEmail(email: string) {
+    await this.emailField.fill(email);
+  }
+
+  /** Le bouton "Envoyer le lien" reste désactivé tant que l'email est vide ou mal formé. */
+  async expectSendButtonDisabled() {
+    await expect(this.sendButton).toBeDisabled();
+  }
+
+  async expectSendButtonEnabled() {
+    await expect(this.sendButton).toBeEnabled();
+  }
+
+  async backToLogin() {
+    await this.backToLoginLink.click();
+    await this.page.waitForURL('**/auth/login');
+  }
+
   async expectSuccessMessageVisible() {
-    await expect(this.successHeading).toBeVisible();
+    // L'envoi de l'email passe par le serveur SMTP du backend : réponse parfois lente.
+    await expect(this.successHeading).toBeVisible({ timeout: 30000 });
     await expect(this.successMessage).toBeVisible();
   }
 }

@@ -65,7 +65,9 @@ export class ConsultationPlanificationPage extends ConsultationPage {
         this.observationsInput = page.locator('textarea[formcontrolname="observations"]').first();
 
         // Date prochain rendez-vous (3ème input date)
-        this.nextAppointmentDateInput = page.locator('input[type="date"]').nth(2);
+        // Même formControlName dans les formulaires de création et de modification (l'index
+        // nth(2) ciblait un autre champ date dans le formulaire de modification).
+        this.nextAppointmentDateInput = page.locator('input[formcontrolname="dateProchainRdv"]:visible');
 
         // Actes facturables (composant "modern-select" maison, sans rôle accessible dédié)
         this.actsSelect = page.locator('.modern-select.billing-select input[type="text"]').first();
@@ -145,11 +147,18 @@ export class ConsultationPlanificationPage extends ConsultationPage {
 
     // Surcharge pour la modification – activation du formulaire
     async activateForm() {
-        const activateButton = this.page.getByRole('button', { name: 'Activer' });
-        await expect(activateButton).toBeVisible();
-        await activateButton.click();
-        // Attendre que le formulaire soit activé (champ observations devient enabled)
-        await expect(this.observationsInput).toBeEnabled({ timeout: 10000 });
+        // Le bouton alterne "Activer" / "Verrouiller". Si on active avant la fin du chargement de la
+        // consultation, le rechargement re-désactive le formulaire alors que le bouton affiche déjà
+        // "Verrouiller" : on attend les données, puis on rebascule tant que les champs restent grisés.
+        const toggleButton = this.page.getByRole('button', { name: /^\W*(Activer|Verrouiller)$/ });
+        await expect(this.observationsInput).not.toHaveValue('', { timeout: 15000 });
+        await expect(async () => {
+            if (/Verrouiller/.test(await toggleButton.innerText())) {
+                await toggleButton.click();
+            }
+            await toggleButton.click();
+            await expect(this.observationsInput).toBeEnabled({ timeout: 3000 });
+        }).toPass({ timeout: 20000 });
     }
 
     // Surcharge pour la modification – mise à jour

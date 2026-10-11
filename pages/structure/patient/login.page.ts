@@ -66,6 +66,48 @@ export class LoginPage {
 
   }
 
+  // ======================== CAS D'ERREUR & OPTIONS DU FORMULAIRE ========================
+  /** Le bouton Connexion reste désactivé tant que le formulaire est invalide (hors autofill). */
+  async expectLoginButtonDisabled() {
+    await expect(this.loginButton).toBeDisabled();
+  }
+
+  async expectLoginButtonEnabled() {
+    await expect(this.loginButton).toBeEnabled();
+  }
+
+  async expectBadCredentialsError() {
+    await expect(this.page.getByText('Erreur de connexion : identifiant ou mot de passe incorrect')).toBeVisible();
+    await expect(this.page).toHaveURL(/\/auth\/login/);
+  }
+
+  // Le libellé du bouton alterne entre "Afficher le mot de passe" et "Masquer le mot de passe".
+  async togglePasswordVisibility() {
+    await this.page.getByRole('button', { name: /(Afficher|Masquer) le mot de passe/ }).click();
+  }
+
+  async expectPasswordType(type: 'password' | 'text') {
+    await expect(this.passwordField).toHaveAttribute('type', type);
+  }
+
+  rememberMeCheckbox(): Locator {
+    return this.page.getByRole('checkbox', { name: 'Se souvenir de moi' });
+  }
+
+  async openForgotPassword() {
+    await this.forgotPasswordLink.click();
+    await this.page.waitForURL('**/auth/forgot-password');
+  }
+
+  /** Annule la modale de choix de structure (comptes multi-structures uniquement). */
+  async cancelStructureSelection() {
+    const structureModalHeading = this.page.getByRole('heading', { name: /Sélectionnez votre établissement/ });
+    await expect(structureModalHeading).toBeVisible();
+    await expect(this.page.getByRole('button', { name: 'Valider et continuer' })).toBeDisabled();
+    await this.page.getByRole('button', { name: 'Annuler' }).click();
+    await expect(structureModalHeading).toBeHidden();
+  }
+
   /**
    * Gère la modale de sélection de structure après connexion.
    * Un compte associé à une seule structure/HI code passe directement au dashboard

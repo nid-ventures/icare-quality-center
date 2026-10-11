@@ -48,10 +48,10 @@ export class RenseignementsGenerauxPage {
     this.voirPlusHeading = page.getByRole('link', { name: 'Voir +' }).first();
     // Bloc de titre/fil d'Ariane sans rôle ARIA dédié -> ciblage CSS par contenu textuel du conteneur.
     this.retourHeading = page.locator('.header-left').filter({ hasText: 'Retour' }).filter({ hasText: 'Renseignements généraux' }).first();
-    this.buttonRetour = page.getByRole('button', { name: ' Retour' });
+    this.buttonRetour = page.getByRole('button', { name: /^\W*Retour/ });
     this.infoGeneralHeading = page.getByRole('heading', { name: 'Informations Personnelles' });
-    this.conjointeHeading = page.getByRole('heading', { name: 'Conjoint/Conjointe' });
-    this.parentHeading = page.getByRole('heading', { name: 'Parents' });
+    this.conjointeHeading = page.getByRole('heading', { name: /^\W*Conjoint\/Conjointe/ });
+    this.parentHeading = page.getByRole('heading', { name: /^\W*Parents/ });
     this.buttonHeading = page.getByRole('button', { name: 'Activer le formulaire' });
     // Conteneur de mise en page (boutons d'action) sans rôle accessible propre -> ciblage CSS.
     this.contentHeading = page.locator('.d-flex.justify-content-end.mt-4');

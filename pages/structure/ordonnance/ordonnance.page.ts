@@ -1,5 +1,6 @@
 // pages/structure/ordonnance/ordonnance.page.ts
 import { type Page, type Locator, expect } from '@playwright/test';
+import { openFromDashboard } from '../patient/care-pathway.page';
 
 export interface OrdonnanceData {
   title: string;
@@ -51,7 +52,8 @@ export class OrdonnancePage {
   constructor(private readonly page: Page) {
     this.quickActionLink = page.locator('a.qa-ordonnance');
 
-    this.listHeading = page.getByRole('heading', { name: /Liste des ordonnances/ });
+    // Titre de la liste : "Ordonnances (N)" (anciennement "Liste des ordonnances").
+    this.listHeading = page.getByRole('heading', { name: /^(Liste des ordonnances|Ordonnances \(\d+\))/ });
     this.newOrdonnanceButton = page.locator('button.btn-action-new');
     this.firstOrdonnanceHeader = page.locator('.ordonnance-item-header').first();
     this.ordonnanceItemBody = page.locator('.ordonnance-item-body');
@@ -85,9 +87,9 @@ export class OrdonnancePage {
    * Accède à l'écran des ordonnances du patient depuis son dashboard.
    */
   async gotoFromPatientDashboard() {
-    await expect(this.quickActionLink).toBeVisible();
-    await this.quickActionLink.click();
-    await this.page.waitForURL('**/ordonnance/ordonnances/**');
+    // Le raccourci "Ordonnance" n'apparaît sur le dashboard que si le patient a déjà une
+    // ordonnance : sinon la page est ouverte par son URL.
+    await openFromDashboard(this.page, 'ordonnance/ordonnances');
     await expect(this.listHeading).toBeVisible();
   }
 

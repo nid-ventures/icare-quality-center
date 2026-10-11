@@ -67,9 +67,9 @@ export class AntecedentPage {
     this.voirPlusHeading = page.getByRole('link', { name: 'Voir +' }).nth(1);
     // Bloc de titre/fil d'Ariane sans rôle ARIA dédié -> ciblage CSS par contenu textuel du conteneur.
     this.retourHeading = page.locator('.header-left').filter({ hasText: 'Retour' }).filter({ hasText: 'Antécédents médicaux' }).first();
-    this.patientHeading = page.getByRole('tab', { name: ' Patient' });
-    this.familiauxHeading = page.getByRole('tab', { name: ' Familiaux' });
-    this.conjointeHeading = page.getByRole('tab', { name: ' Conjoint(e)' }); 
+    this.patientHeading = page.getByRole('tab', { name: /^\W*Patient/ });
+    this.familiauxHeading = page.getByRole('tab', { name: /^\W*Familiaux/ });
+    this.conjointeHeading = page.getByRole('tab', { name: /^\W*Conjoint\(e\)/ }); 
       // ANTECEDANTS GENERAUX
     this.generauxHeading = page.getByRole('tab', { name: 'Généraux' }); 
     this.buttonActiver = page.getByRole('button', { name: 'Activer le formulaire' }); 

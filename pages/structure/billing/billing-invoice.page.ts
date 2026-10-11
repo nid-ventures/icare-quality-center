@@ -57,7 +57,10 @@ export class BillingInvoicePage {
 
         this.rechercheTabButton = page.getByRole('button', { name: /Recherche Patient/ });
         this.actesTabButton = page.getByRole('button', { name: /Actes Médicaux/ });
-        this.facturationTabButton = page.getByRole('button', { name: /Facturation/ }).first();
+        // Libellé exact de l'étape : le bouton "Changer de module Facturation" contient aussi "Facturation".
+        // Onglet de l'assistant (le libellé peut être suivi d'un compteur d'actes, et l'onglet existe
+        // en double pour l'affichage mobile) : on prend le bouton visible.
+        this.facturationTabButton = page.locator('button.nav-tab-integrated').filter({ hasText: /^\s*Facturation/ }).filter({ visible: true });
 
         this.identifiantInput = page.getByPlaceholder('Identifiant patient...');
         this.naissanceInput = page.getByPlaceholder('Date de naissance');
