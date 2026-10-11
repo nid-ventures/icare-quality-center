@@ -124,6 +124,8 @@ test.describe('Module Dossier médical — Vaccination', () => {
     await expect(vaccination.doseForm).toBeVisible();
     dose1 = await new ConsultationFormPage(page, vaccination.doseForm).fill(doseFields(1));
     await vaccination.enregistrerDoseButton.click();
+    await expect(page.getByText('Voulez-vous ajouter cette dose')).toBeVisible();
+    await confirm(page);
     await expect(vaccination.doseAddedToast).toBeVisible({ timeout: 15000 });
     await expect(doses).toHaveCount(before + 1, { timeout: 15000 });
   });
