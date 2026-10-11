@@ -40,7 +40,8 @@ async function createDossierPatient(browser: Browser): Promise<DossierPatient> {
   const context = await browser.newContext({
     baseURL: process.env.BASE_URL,
     storageState: ADMIN_STORAGE_STATE,
-    viewport: { width: 1600, height: 900 },
+    // Même fenêtre que les projets (cf. playwright.config.ts) : la page suit la taille de la fenêtre.
+    viewport: null,
     ignoreHTTPSErrors: true,
   });
   const page = await context.newPage();

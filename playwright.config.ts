@@ -1,4 +1,4 @@
-import { defineConfig, devices } from '@playwright/test';
+import { defineConfig } from '@playwright/test';
 import dotenv from 'dotenv';
 import fs from 'fs';
 import path from 'path';
@@ -20,6 +20,21 @@ if (!fs.existsSync(envFile)) {
 
 dotenv.config({ path: envFile });
 
+// Navigateur : Google Chrome installé sur le poste (channel chrome), fenêtre maximisée.
+// - viewport: null -> la page prend la taille réelle de la fenêtre (pas de zone fixe qui déborde
+//   de l'écran ou reste décentrée en mode --headed / --ui) ;
+// - --force-device-scale-factor=1 -> rendu 1:1 même avec une mise à l'échelle Windows (ex: 150 %),
+//   sinon la largeur CSS de la fenêtre (1920 / 1.5 = 1280 px) passe SOUS le breakpoint desktop
+//   de l'app (min-width:1300px, cf. responsive.css) et la sidebar bascule en mode "tablette" ;
+// - --window-size -> taille utilisée en headless, où --start-maximized est sans effet.
+const chrome = {
+  channel: 'chrome',
+  viewport: null,
+  launchOptions: {
+    args: ['--start-maximized', '--window-size=1920,1080', '--force-device-scale-factor=1'],
+  },
+};
+
 export default defineConfig({
   testDir: './tests',
   testMatch: '**/*.ts',
@@ -39,24 +54,15 @@ export default defineConfig({
     // auto-signé non approuvé par défaut ; sans impact sur les environnements distants qui ont
     // un certificat valide.
     ignoreHTTPSErrors: true,
-    // Le viewport par défaut (1280px) est SOUS le breakpoint desktop de l'app
-    // (min-width:1300px, cf. responsive.css) : la sidebar y est hors-écran par défaut
-    // (mode "tablette"), ce qui causait la quasi-totalité des interceptions de clic observées
-    // sur les liens/éléments proches du bord gauche. Un viewport réellement desktop l'évite.
-    viewport: { width: 1600, height: 900 },
   },
 
   projects: [
-    // Google Chrome (channel chrome) utilise l'installation système, pas de
-    // binaire téléchargé par Playwright. Le spread de devices['Desktop Chrome'] écraserait
-    // le viewport défini plus haut (il apporte son propre viewport 1280x720) : on le
-    // redéfinit explicitement après le spread.
     {
       // Connexion unique de l'administrateur, sauvegardée pour le projet structure-app.
       name: 'setup',
       testDir: './tests/structure-app',
       testMatch: /auth\.setup\.ts/,
-      use: { ...devices['Desktop Chrome'], channel: 'chrome', viewport: { width: 1600, height: 900 } },
+      use: { ...chrome },
     },
     {
       // Application structure (hi-icare-patient) : un fichier .spec.ts par module métier.
@@ -65,9 +71,7 @@ export default defineConfig({
       testMatch: /.*\.spec\.ts/,
       dependencies: ['setup'],
       use: {
-        ...devices['Desktop Chrome'],
-        channel: 'chrome',
-        viewport: { width: 1600, height: 900 },
+        ...chrome,
         // Même chemin que ADMIN_STORAGE_STATE (test-data/structure-users.ts), non importé ici
         // pour ne pas évaluer ce module avant le chargement du fichier .env.
         storageState: 'playwright/.auth/structure-admin.json',
@@ -76,7 +80,7 @@ export default defineConfig({
     {
       name: 'caregiver-app',
       testDir: './tests/caregiver-app-tests',
-      use: { ...devices['Desktop Chrome'], channel: 'chrome', viewport: { width: 1600, height: 900 } },
+      use: { ...chrome },
     },
   ],
 });
