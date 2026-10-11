@@ -107,7 +107,7 @@ test.describe('Module Dossier médical — Vaccination', () => {
     edited = await new ConsultationFormPage(page, item).fill(editFields());
     await item.getByRole('button', { name: /^\W*Enregistrer$/ }).click();
     await confirm(page);
-    await expect(page.getByText(/modification.*r[ée]ussi/i).first()).toBeVisible({ timeout: 15000 });
+    await expect(page.getByText('Vaccination mise à jour avec succès').first()).toBeVisible({ timeout: 15000 });
   });
 
   test('Rouvrir la vaccination : les modifications sont conservées', async ({ page }) => {
