@@ -26,10 +26,10 @@ const editFields = (): FieldSpec[] => [
   { name: 'commentary', kind: 'textarea', value: 'Commentaire modifié QA' },
 ];
 
-// Champs d'une dose (ajout "Nouvelle dose" et modification d'une dose)
+// Champs d'une dose (ajout "Nouvelle dose" et modification d'une dose) ; le terme n'est affiché que
+// pour une dose de parcours de soins (IsCarePlan), et masqué en modification.
 const doseFields = (v: 1 | 2): FieldSpec[] => [
   { name: 'date', kind: 'date', value: isoDate(v === 1 ? 0 : 1) },
-  { name: 'terme', kind: 'text', value: v === 1 ? 'Rappel à 1 mois QA' : 'Rappel à 2 mois QA' },
   { name: 'dose', kind: 'select', index: v === 1 ? 0 : 1 },
   { name: 'lot', kind: 'text', value: v === 1 ? `DOSE-QA-${Date.now()}` : `DOSE-QA-MODIF-${Date.now()}` },
 ];
