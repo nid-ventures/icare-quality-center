@@ -65,6 +65,16 @@ const confirm = async (page: Page) => {
   await expect(button).toBeHidden({ timeout: 30000 });
 };
 
+/**
+ * Confirme une modification et attend le message de succès du serveur : sans cette attente, le test
+ * se terminait dès la fermeture de la confirmation et la fermeture du navigateur pouvait couper la
+ * requête d'enregistrement encore en cours.
+ */
+const confirmUpdate = async (page: Page) => {
+  await confirm(page);
+  await expect(page.getByText('Mise à jour réussie').first(), 'Enregistrement confirmé').toBeVisible({ timeout: 30000 });
+};
+
 const visible = (page: Page, selector: string) => page.locator(selector).filter({ visible: true }).first();
 
 /** Ligne de l'historique d'imagerie (la plus récente du type), dépliée ; renvoie son formulaire. */
@@ -144,7 +154,7 @@ test.describe('Module Dossier médical — Imagerie', () => {
         await item.locator('input[type="file"]').first().setInputFiles(attachment(`complement-${type.key}.pdf`));
         await expect(item.getByText(`complement-${type.key}.pdf`)).toBeVisible();
         await item.locator('button.btn-success').last().click();
-        await confirm(page);
+        await confirmUpdate(page);
       });
 
       test(`Rouvrir l'acte "${type.label}" : modifications et 2 pièces jointes conservées`, async ({ page }) => {
@@ -241,7 +251,7 @@ test.describe('Module Dossier médical — Imagerie', () => {
       foetus1 = await new ConsultationFormPage(page, item.locator('app-echographie-simple-foetus').nth(0))
         .fill(foetusFields(1).map(f => (f.kind === 'text' || f.kind === 'textarea') ? { ...f, value: `${f.value} (modifié)` } : f));
       await item.locator('button.btn-success').last().click();
-      await confirm(page);
+      await confirmUpdate(page);
     });
 
     test("Rouvrir l'échographie : modifications des champs généraux conservées", async ({ page }) => {
@@ -252,7 +262,6 @@ test.describe('Module Dossier médical — Imagerie', () => {
     });
 
     test("Rouvrir l'échographie : modifications de la fiche du foetus 1 conservées", async ({ page }) => {
-      test.fail(true, "Anomalie : les modifications d'une fiche foetus d'une échographie existante ne sont pas enregistrées (le front les envoie dans la mise à jour, les anciennes valeurs reviennent à la réouverture).");
       const item = await openHistoryItem(page, 'echographie');
       await new ConsultationFormPage(page, item.locator('app-echographie-simple-foetus').nth(0))
         .expectValues(foetusFields(1), foetus1);
