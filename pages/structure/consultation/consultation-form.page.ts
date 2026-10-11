@@ -91,6 +91,18 @@ export class ConsultationFormPage {
         case 'select': {
           const select = control.first();
           await expect(select, `Liste "${field.name}"`).toBeVisible();
+          // Liste déroulante native (<select>) : choix par libellé ou par position.
+          if (await select.evaluate(el => el.tagName === 'SELECT')) {
+            const nativeOptions = select.locator('option:not([disabled])');
+            const nativeCount = await nativeOptions.count();
+            const nativeOption = field.option
+              ? nativeOptions.filter({ hasText: field.option }).first()
+              : nativeOptions.nth(Math.min(field.index ?? 0, nativeCount - 1));
+            const nativeLabel = ((await nativeOption.textContent()) ?? '').replace(/\s+/g, ' ').trim();
+            await select.selectOption({ label: ((await nativeOption.textContent()) ?? '').trim() });
+            filled[field.name] = nativeLabel;
+            break;
+          }
           await this.openDropdown(select);
           const options = this.page.locator('.ng-dropdown-panel .ng-option:not(.ng-option-disabled)');
           // Par libellé, sinon par position (index), en restant dans les options disponibles.
@@ -196,9 +208,16 @@ export class ConsultationFormPage {
         case 'checkbox':
           await expect(control.first(), `Case "${field.name}"`).toBeChecked({ checked: expected as boolean });
           break;
-        case 'select':
-          await expect(control.first().locator('.ng-value'), `Liste "${field.name}"`).toContainText(expected as string, { ignoreCase: true });
+        case 'select': {
+          const select = control.first();
+          if (await select.evaluate(el => el.tagName === 'SELECT')) {
+            const selected = await select.evaluate((el: HTMLSelectElement) => el.selectedOptions[0]?.textContent?.replace(/\s+/g, ' ').trim() ?? '');
+            expect(selected.toLowerCase(), `Liste "${field.name}"`).toBe((expected as string).toLowerCase());
+          } else {
+            await expect(select.locator('.ng-value'), `Liste "${field.name}"`).toContainText(expected as string, { ignoreCase: true });
+          }
           break;
+        }
         case 'multiselect':
           for (const label of expected as string[]) {
             await expect(control.first().locator('.ng-value').filter({ hasText: new RegExp(escapeRegExp(label), 'i') }), `Liste "${field.name}" : ${label}`).toHaveCount(1);

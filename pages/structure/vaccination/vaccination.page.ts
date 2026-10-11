@@ -75,7 +75,12 @@ export class VaccinationPage {
     this.validerButton = this.modal.getByRole('button', { name: /Valider/ });
 
     // Bouton de suppression dans l'en-tête de l'item déplié (classe btn-danger, texte précédé d'une icône).
-    this.supprimerButton = this.vaccinationItemBody.locator('button.btn-danger');
+    // Bouton de suppression de la vaccination ; ceux de la liste des doses (#collapseOneItemV_<n>)
+    // suppriment une dose et sont exclus.
+    this.supprimerButton = this.vaccinationItemBody
+      .locator('button.btn-danger:not([id^="collapseOneItemV_"] button)')
+      .filter({ hasText: /Supprimer/ })
+      .first();
 
     // Formulaire d'ajout de dose : composant dédié, distinct du formulaire d'édition de la
     // vaccination qui partage les mêmes noms de formcontrolname ("date", "lot") dans le même item

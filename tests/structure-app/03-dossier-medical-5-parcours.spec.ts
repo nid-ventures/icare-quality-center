@@ -233,3 +233,53 @@ test.describe('Module Dossier médical — Parcours de soins paramétrés', () =
     }
   });
 });
+
+// ======================================================================
+// Parcours prédéfinis (vaccinal) et archives : patiente dédiée. Le cas d'exception passe avant le
+// démarrage, car un parcours en cours désactive son bouton de démarrage sur le dashboard.
+// ======================================================================
+test.describe('Module Dossier médical — Parcours vaccinal et archives', () => {
+  test.describe.configure({ mode: 'serial' });
+  let patient: DossierPatient;
+
+  test.beforeAll(async ({ browser }) => {
+    test.setTimeout(DOSSIER_SETUP_TIMEOUT);
+    patient = await createDossierPatient(browser);
+  });
+
+  test.beforeEach(async ({ portal, page }) => {
+    await portal.goto();
+    await openPatientFile(page, patient);
+  });
+
+  test('Démarrer un parcours vaccinal sans date ni praticien est refusé', async ({ page }) => {
+    const carePathway = new CarePathwayPage(page);
+    await carePathway.openStartForm('VACCINAL');
+    await page.locator('#startDate').fill('');
+    await carePathway.startButton.click();
+    // Date de début : message "<libellé de la date> est obligatoire" (libellé paramétrable)
+    await expect(page.locator('.invalid-feedback').filter({ hasText: /est obligatoire/ }).first()).toBeVisible();
+    // Libellé de l'application : "Le patricien est obligatoire" (sic)
+    await expect(page.getByText(/Le pa(t)?ricien est obligatoire|Le praticien est obligatoire/)).toBeVisible();
+    await expect(page).toHaveURL(/\/patient\/create-careplan\//);
+  });
+
+  test('Démarrer un parcours vaccinal', async ({ page }) => {
+    const carePathway = new CarePathwayPage(page);
+    await carePathway.openStartForm('VACCINAL');
+    await carePathway.fillStartForm(new Date().toISOString().split('T')[0]);
+    await carePathway.start();
+  });
+
+  test('Le parcours vaccinal en cours est affiché et ne peut plus être redémarré', async ({ page }) => {
+    await expect(page.getByRole('link', { name: /VACCINAL\s*Voir le parcours/ }).first()).toBeVisible();
+    await expect(page.getByRole('button', { name: /VACCINAL/ }).first()).toBeDisabled();
+  });
+
+  test('Consulter les archives des parcours de soins', async ({ page }) => {
+    await new CarePathwayPage(page).openArchivesFromDashboard();
+    for (const column of ['Type', 'Médecin', 'Date enregistrement', 'État', 'Date clôture', 'Actions']) {
+      await expect(page.getByRole('columnheader', { name: column, exact: true })).toBeVisible();
+    }
+  });
+});
