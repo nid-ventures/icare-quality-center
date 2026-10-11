@@ -20,6 +20,8 @@ const generalFields = (v: 1 | 2, withExamDate = true): FieldSpec[] => [
   ...(withExamDate ? [{ name: 'dateExam', kind: 'date', value: isoDate(v === 1 ? -1 : 0) } as FieldSpec] : []),
   { name: 'region', kind: 'select', index: v === 1 ? 0 : 1 },
 ];
+// Vérification après réouverture : la date d'examen n'est pas conservée (test d'anomalie dédié)
+const checkedGeneralFields = (v: 1 | 2) => generalFields(v).filter(f => f.name !== 'dateExam');
 
 // Scanner, IRM et radiographie : à la création, l'application n'affiche que les champs généraux,
 // les actes à facturer et les pièces jointes ; tous les paramètres techniques (protocole, contraste,
@@ -123,8 +125,14 @@ test.describe('Module Dossier médical — Imagerie', () => {
 
       test(`Rouvrir l'acte "${type.label}" : champs généraux et pièce jointe conservés`, async ({ page }) => {
         const item = await openHistoryItem(page, type.key);
-        await new ConsultationFormPage(page, item).expectValues(generalFields(1), general1);
+        await new ConsultationFormPage(page, item).expectValues(checkedGeneralFields(1), general1);
         await expect(page.locator(`.imaging-item.imaging-item--${type.key}`).first().locator('.imaging-item-attachments')).toContainText('1');
+      });
+
+      test(`La date d'examen du "${type.label}" est conservée`, async ({ page }) => {
+        test.fail(true, "Anomalie : la date d'examen saisie n'est pas conservée ; à la réouverture, la fiche affiche la date de l'acte (imaging-item : dateExam absent de la réponse, repli sur date).");
+        const item = await openHistoryItem(page, type.key);
+        await expect(item.locator('[formcontrolname="dateExam"]')).toHaveValue(general1.dateExam as string, { timeout: 5000 });
       });
 
 
@@ -141,7 +149,7 @@ test.describe('Module Dossier médical — Imagerie', () => {
 
       test(`Rouvrir l'acte "${type.label}" : modifications et 2 pièces jointes conservées`, async ({ page }) => {
         const item = await openHistoryItem(page, type.key);
-        await new ConsultationFormPage(page, item).expectValues(generalFields(2), general2);
+        await new ConsultationFormPage(page, item).expectValues(checkedGeneralFields(2), general2);
         await expect(page.locator(`.imaging-item.imaging-item--${type.key}`).first().locator('.imaging-item-attachments')).toContainText('2');
       });
 
@@ -190,7 +198,8 @@ test.describe('Module Dossier médical — Imagerie', () => {
         { name: 'billableActs', kind: 'multiselect', count: 1 },
       ]);
 
-      await test.step('Fiche du foetus 1 (créée automatiquement)', async () => {
+      await test.step("Nombre d'embryons : 1 -> une fiche foetus, à remplir", async () => {
+        await root.locator('[formcontrolname="nombreEmbryon"]').fill('1');
         const foetuses = root.locator('app-echographie-simple-foetus');
         await expect(foetuses).toHaveCount(1);
         foetus1 = await new ConsultationFormPage(page, foetuses.nth(0)).fill(foetusFields(1));
@@ -227,7 +236,7 @@ test.describe('Module Dossier médical — Imagerie', () => {
       edited = await form.fill([
         { name: 'caregiverId', kind: 'select', index: 1 },
         { name: 'date', kind: 'date', value: isoDate(-1) },
-        { name: 'notice', kind: 'textarea', value: 'Notice modifiée QA' },
+        { name: 'ddr', kind: 'date', value: isoDate(-140) },
       ]);
       foetus1 = await new ConsultationFormPage(page, item.locator('app-echographie-simple-foetus').nth(0))
         .fill(foetusFields(1).map(f => (f.kind === 'text' || f.kind === 'textarea') ? { ...f, value: `${f.value} (modifié)` } : f));
@@ -238,7 +247,7 @@ test.describe('Module Dossier médical — Imagerie', () => {
     test("Rouvrir l'échographie : modifications conservées", async ({ page }) => {
       const item = await openHistoryItem(page, 'echographie');
       await new ConsultationFormPage(page, item).expectValues([
-        { name: 'caregiverId', kind: 'select' }, { name: 'date', kind: 'date', value: '' }, { name: 'notice', kind: 'textarea', value: '' },
+        { name: 'caregiverId', kind: 'select' }, { name: 'date', kind: 'date', value: '' }, { name: 'ddr', kind: 'date', value: '' },
       ], edited);
       await new ConsultationFormPage(page, item.locator('app-echographie-simple-foetus').nth(0))
         .expectValues(foetusFields(1), foetus1);
