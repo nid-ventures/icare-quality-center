@@ -7,12 +7,15 @@ import { ADMIN_STORAGE_STATE } from '../test-data/structure-users';
 
 export type DossierPatient = { identifier: string; firstName: string; lastName: string };
 
+/** Codes du référentiel sexe de l'application (le dashboard affiche FEMME pour '1'). */
+const SEX_CODES = { FEMME: '1', HOMME: '2' } as const;
+
 /**
- * Crée une patiente adulte dédiée aux tests du dossier médical (jamais un patient existant) et
- * renvoie son identifiant. Sexe '1' = FEMME : nécessaire pour les consultations prénatales et de
- * planification familiale.
+ * Crée un patient adulte dédié aux tests du dossier médical (jamais un patient existant) et
+ * renvoie son identifiant. Par défaut une FEMME : nécessaire pour les consultations prénatales et
+ * de planification familiale ; HOMME pour les parcours de soins ciblés par sexe.
  */
-export async function createDossierPatient(browser: Browser): Promise<DossierPatient> {
+export async function createDossierPatient(browser: Browser, sex: keyof typeof SEX_CODES = 'FEMME'): Promise<DossierPatient> {
   const context = await browser.newContext({
     baseURL: process.env.BASE_URL,
     storageState: ADMIN_STORAGE_STATE,
@@ -24,7 +27,7 @@ export async function createDossierPatient(browser: Browser): Promise<DossierPat
   try {
     const portal = new PortalPage(page);
     const patientPage = new PatientPage(page);
-    const data = { ...PatientDataGenerator.generate(), sex: '1' };
+    const data = { ...PatientDataGenerator.generate(), sex: SEX_CODES[sex] };
 
     await portal.goto();
     await portal.enterModule('Base patients');

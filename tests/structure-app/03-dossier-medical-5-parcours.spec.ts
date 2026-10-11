@@ -56,6 +56,10 @@ async function openPatientFile(page: Page, patient: DossierPatient) {
   await openDossier(page, patient);
 }
 
+/** Bouton (lien actif ou bouton grisé) d'un type de parcours dans la carte "Parcours de soins". */
+const pathwayButton = (page: Page, name: string) =>
+  page.locator('.pathway-actions .qa-btn').filter({ hasText: name });
+
 /** Vérifie l'aperçu des étapes (écran de démarrage) : nombre d'étapes et actes de chacune. */
 async function expectPreview(page: Page, selected: SelectedActs) {
   const steps = page.locator('ul.iq-timeline > li');
@@ -81,9 +85,12 @@ test.describe('Module Dossier médical — Parcours de soins paramétrés', () =
   let allActs: SelectedActs = [];
   let combined: SelectedActs = [];
 
+  let man: DossierPatient;
+
   test.beforeAll(async ({ browser }) => {
-    test.setTimeout(DOSSIER_SETUP_TIMEOUT);
+    test.setTimeout(DOSSIER_SETUP_TIMEOUT * 2);
     patient = await createDossierPatient(browser);
+    man = await createDossierPatient(browser, 'HOMME');
   });
 
   test.beforeEach(async ({ portal }) => {
@@ -134,13 +141,15 @@ test.describe('Module Dossier médical — Parcours de soins paramétrés', () =
     });
   });
 
-  test("Un parcours réservé aux hommes n'est pas proposé à une patiente", async ({ page }) => {
+  test("Un parcours réservé aux hommes n'est ni proposé ni grisé pour une patiente", async ({ page }) => {
     const carePathway = new CarePathwayPage(page);
     const templates = await openTemplates(page);
     await templates.create(MEN_ONLY);
     await openPatientFile(page, patient);
     await expect(page.getByRole('heading', { name: /Parcours de soins/ })).toBeVisible();
     await expect(carePathway.startLink(MEN_ONLY.name)).toHaveCount(0);
+    // Sexe cible différent : le parcours est caché, pas seulement grisé
+    await expect(pathwayButton(page, MEN_ONLY.name)).toHaveCount(0);
   });
 
   test('Un parcours en cours n\'est plus proposé au démarrage', async ({ page }) => {
@@ -149,6 +158,41 @@ test.describe('Module Dossier médical — Parcours de soins paramétrés', () =
     await openPatientFile(page, patient);
     await expect(carePathway.startLink(ALL_ACTS.name)).toHaveCount(0);
     await expect(carePathway.startLink(COMBINED.name)).toHaveCount(0);
+    // En cours : toujours affiché, mais grisé
+    await expect(pathwayButton(page, ALL_ACTS.name)).toBeDisabled();
+  });
+
+  // ---------------- Patient homme : parcours selon le sexe cible du modèle ----------------
+  test('La carte "Parcours de soins" est affichée pour un patient homme', async ({ page }) => {
+    await openTemplates(page);
+    await openPatientFile(page, man);
+    await expect(page.getByRole('banner').getByText('HOMME', { exact: true })).toBeVisible();
+    await expect(page.getByRole('heading', { name: /Parcours de soins/ })).toBeVisible();
+  });
+
+  test('Un parcours réservé aux hommes est proposé à un patient homme (aperçu de démarrage)', async ({ page }) => {
+    const carePathway = new CarePathwayPage(page);
+    await openTemplates(page);
+    await openPatientFile(page, man);
+    await expect(carePathway.startLink(MEN_ONLY.name)).toHaveCount(1);
+    await carePathway.openStartForm(MEN_ONLY.name);
+    await expect(page.locator('ul.iq-timeline > li')).toHaveCount(1);
+  });
+
+  test("Un parcours réservé aux femmes n'est ni proposé ni grisé pour un patient homme", async ({ page }) => {
+    const carePathway = new CarePathwayPage(page);
+    await openTemplates(page);
+    await openPatientFile(page, man);
+    await expect(page.getByRole('heading', { name: /Parcours de soins/ })).toBeVisible();
+    await expect(carePathway.startLink(COMBINED.name)).toHaveCount(0);
+    await expect(pathwayButton(page, COMBINED.name)).toHaveCount(0);
+  });
+
+  test('Un parcours pour tous les sexes, en cours chez une patiente, reste proposé à un patient homme', async ({ page }) => {
+    const carePathway = new CarePathwayPage(page);
+    await openTemplates(page);
+    await openPatientFile(page, man);
+    await expect(carePathway.startLink(ALL_ACTS.name)).toHaveCount(1);
   });
 
   test('Modifier un parcours non utilisé : ajouter une étape et changer la description', async ({ page }) => {
