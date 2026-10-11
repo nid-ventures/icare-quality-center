@@ -26,6 +26,9 @@ TEST_ENV=local npx playwright test tests/structure-app/02-base-patients.spec.ts 
 # Run tests with headed browser
 npx playwright test --headed
 
+# Watch the structure suite in slow motion (SLOWMO ms after each action, test timeouts x4)
+npm run test:visuel
+
 # Generate and open Allure report
 npm run report
 

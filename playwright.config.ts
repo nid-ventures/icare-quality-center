@@ -27,10 +27,14 @@ dotenv.config({ path: envFile });
 //   sinon la largeur CSS de la fenêtre (1920 / 1.5 = 1280 px) passe SOUS le breakpoint desktop
 //   de l'app (min-width:1300px, cf. responsive.css) et la sidebar bascule en mode "tablette" ;
 // - --window-size -> taille utilisée en headless, où --start-maximized est sans effet.
+// - SLOWMO (ms, optionnel) -> pause après chaque action pour suivre les tests à l'écran
+//   (ex: SLOWMO=800 avec --headed, cf. "npm run test:visuel"). 0 par défaut.
+const slowMo = Number(process.env.SLOWMO) || 0;
 const chrome = {
   channel: 'chrome',
   viewport: null,
   launchOptions: {
+    slowMo,
     args: ['--start-maximized', '--window-size=1920,1080', '--force-device-scale-factor=1'],
   },
 };
