@@ -20,8 +20,6 @@ const generalFields = (v: 1 | 2, withExamDate = true): FieldSpec[] => [
   ...(withExamDate ? [{ name: 'dateExam', kind: 'date', value: isoDate(v === 1 ? -1 : 0) } as FieldSpec] : []),
   { name: 'region', kind: 'select', index: v === 1 ? 0 : 1 },
 ];
-// Vérification après réouverture : la date d'examen n'est pas conservée (test d'anomalie dédié)
-const checkedGeneralFields = (v: 1 | 2) => generalFields(v).filter(f => f.name !== 'dateExam');
 
 // Scanner, IRM et radiographie : à la création, l'application n'affiche que les champs généraux,
 // les actes à facturer et les pièces jointes ; tous les paramètres techniques (protocole, contraste,
@@ -135,15 +133,10 @@ test.describe('Module Dossier médical — Imagerie', () => {
 
       test(`Rouvrir l'acte "${type.label}" : champs généraux et pièce jointe conservés`, async ({ page }) => {
         const item = await openHistoryItem(page, type.key);
-        await new ConsultationFormPage(page, item).expectValues(checkedGeneralFields(1), general1);
+        await new ConsultationFormPage(page, item).expectValues(generalFields(1), general1);
         await expect(page.locator(`.imaging-item.imaging-item--${type.key}`).first().locator('.imaging-item-attachments')).toContainText('1');
       });
 
-      test(`La date d'examen du "${type.label}" est conservée`, async ({ page }) => {
-        test.fail(true, "Anomalie : la date d'examen saisie n'est pas conservée ; à la réouverture, la fiche affiche la date de l'acte (imaging-item : dateExam absent de la réponse, repli sur date).");
-        const item = await openHistoryItem(page, type.key);
-        await expect(item.locator('[formcontrolname="dateExam"]')).toHaveValue(general1.dateExam as string, { timeout: 5000 });
-      });
 
 
       test(`Modifier les champs de l'acte "${type.label}" et ajouter une pièce jointe`, async ({ page }) => {
@@ -159,7 +152,7 @@ test.describe('Module Dossier médical — Imagerie', () => {
 
       test(`Rouvrir l'acte "${type.label}" : modifications et 2 pièces jointes conservées`, async ({ page }) => {
         const item = await openHistoryItem(page, type.key);
-        await new ConsultationFormPage(page, item).expectValues(checkedGeneralFields(2), general2);
+        await new ConsultationFormPage(page, item).expectValues(generalFields(2), general2);
         await expect(page.locator(`.imaging-item.imaging-item--${type.key}`).first().locator('.imaging-item-attachments')).toContainText('2');
       });
 
