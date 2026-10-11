@@ -1,0 +1,54 @@
+import { type Browser, type Page } from '@playwright/test';
+import { PortalPage } from '../pages/structure/portal/portal.page';
+import { PatientPage } from '../pages/structure/patient/patient.page';
+import { DossierSearchPage } from '../pages/structure/patient/dossier-search.page';
+import { PatientDataGenerator } from '../pages/structure/generator/data-generator';
+import { ADMIN_STORAGE_STATE } from '../test-data/structure-users';
+
+export type DossierPatient = { identifier: string; firstName: string; lastName: string };
+
+/**
+ * Crée une patiente adulte dédiée aux tests du dossier médical (jamais un patient existant) et
+ * renvoie son identifiant. Sexe '1' = FEMME : nécessaire pour les consultations prénatales et de
+ * planification familiale.
+ */
+export async function createDossierPatient(browser: Browser): Promise<DossierPatient> {
+  const context = await browser.newContext({
+    baseURL: process.env.BASE_URL,
+    storageState: ADMIN_STORAGE_STATE,
+    // Même fenêtre que les projets (cf. playwright.config.ts) : la page suit la taille de la fenêtre.
+    viewport: null,
+    ignoreHTTPSErrors: true,
+  });
+  const page = await context.newPage();
+  try {
+    const portal = new PortalPage(page);
+    const patientPage = new PatientPage(page);
+    const data = { ...PatientDataGenerator.generate(), sex: '1' };
+
+    await portal.goto();
+    await portal.enterModule('Base patients');
+    await patientPage.createPatient(data);
+    await portal.enterModule('Base patients');
+    await patientPage.searchByName(data.firstName, data.lastName);
+    await patientPage.expectPatientInList(data.lastName);
+    const identifier = await patientPage.getPatientIdentifier(data.lastName);
+    return { identifier, firstName: data.firstName, lastName: data.lastName };
+  } finally {
+    await context.close();
+  }
+}
+
+/** Délai du beforeAll de création de patiente (allongé en mode ralenti SLOWMO). */
+export const DOSSIER_SETUP_TIMEOUT = Number(process.env.SLOWMO) > 0 ? 120000 * 6 : 120000;
+
+/** Ouvre le dashboard médical de la patiente depuis la recherche du module Dossier médical. */
+export async function openDossier(page: Page, patient: DossierPatient) {
+  await new DossierSearchPage(page).openPatientByIdentifier(patient.identifier);
+}
+
+/** Revient sur la recherche du module puis rouvre le dossier de la patiente. */
+export async function openDossierAgain(page: Page, patient: DossierPatient) {
+  await new PortalPage(page).openMenu('Dossiers patients', '**/patient/patients');
+  await openDossier(page, patient);
+}

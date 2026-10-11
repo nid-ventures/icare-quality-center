@@ -1,57 +1,77 @@
 import { type Page } from '@playwright/test';
 import { test, expect } from '../../fixtures/structure.fixture';
+import { PortalPage } from '../../pages/structure/portal/portal.page';
 import { CreateHonorairePage } from '../../pages/structure/honoraire/create-honoraire.page';
 import { HonorairesListPage } from '../../pages/structure/honoraire/honoraires-list.page';
+import { RemunerationProfilePage } from '../../pages/structure/my-space/remuneration-profile.page';
 import { HonoraireDataGenerator } from '../../pages/structure/generator/honoraire-data-generator';
+import {
+  ensureHonorairePrerequisites, billActForMedecin, HONORAIRE_SETUP_TIMEOUT, HONORAIRE_SPECIALITY, type HonoraireContext,
+} from '../../fixtures/honoraires-setup';
 
-test.setTimeout(120000);
+test.setTimeout(240000);
 
-// Prérequis de données : la liste des médecins provient de leurs profils de rémunération. Sans
-// profil configuré dans l'environnement, aucun relevé ne peut être créé : le test est ignoré.
-const NO_MEDECIN_REASON = "Aucun médecin avec profil de rémunération dans cet environnement (Administration > Paramètres > Rémunération médecin)";
+let ctx: HonoraireContext;
 
 /**
- * Crée un relevé d'honoraires "Non Payé" pour le premier médecin disponible sur la période
- * donnée (12 derniers mois par défaut) et renvoie le nom du médecin.
+ * Crée un relevé d'honoraires "Non Payé" pour le médecin paramétré : facture d'abord un acte de ce
+ * médecin (un acte déjà relevé n'est plus éligible), puis établit le relevé sur la période.
  */
 async function createReleve(page: Page, periode = HonoraireDataGenerator.generateLargePeriod()): Promise<string> {
   const createPage = new CreateHonorairePage(page);
   const listPage = new HonorairesListPage(page);
-  let medecinNom = '';
-  await createPage.gotoViaMenu();
-  test.skip(!(await createPage.hasMedecinDisponible()), NO_MEDECIN_REASON);
-  await test.step("Créer un relevé d'honoraires (pré-requis)", async () => {
-    medecinNom = await createPage.selectFirstMedecinDisponible();
+
+  await test.step(`Facturer un acte réalisé par ${ctx.medecin}`, async () => {
+    await billActForMedecin(page, ctx);
+  });
+
+  await test.step("Créer le relevé d'honoraires", async () => {
+    await new PortalPage(page).enterModule('Honoraires');
+    await createPage.gotoViaMenu();
+    await createPage.selectMedecin(ctx.medecin);
     await createPage.fillPeriode(periode.dateDebut, periode.dateFin);
     await createPage.rechercher();
-    expect(await createPage.hasActesTrouves(), 'Aucun acte facturé trouvé pour le médecin/période sélectionnés').toBeTruthy();
+    expect(await createPage.hasActesTrouves(), 'Des actes facturés du médecin doivent être trouvés').toBeTruthy();
     expect(await createPage.selectAllSelectableActes()).toBeGreaterThan(0);
     await createPage.creerHonoraire();
     await listPage.expectListLoaded();
   });
-  return medecinNom;
+  return ctx.medecin;
 }
 
 test.describe('Module Honoraires', () => {
+
+  // Paramétrage nécessaire (profil de rémunération, médecin) créé si absent
+  test.beforeAll(async ({ browser }) => {
+    test.setTimeout(HONORAIRE_SETUP_TIMEOUT);
+    ctx = await ensureHonorairePrerequisites(browser);
+  });
 
   test.beforeEach(async ({ portal, page }) => {
     await portal.enterModule('Honoraires');
     await page.waitForURL('**/honoraire/honoraires');
   });
 
+  test('Le profil de rémunération du médecin est paramétré', async ({ portal, page }) => {
+    const profiles = new RemunerationProfilePage(page);
+    await portal.enterModule('Administration');
+    await profiles.open();
+    expect(await profiles.hasActiveProfile(HONORAIRE_SPECIALITY, ctx.act), `Profil actif ${HONORAIRE_SPECIALITY} / ${ctx.act}`).toBeTruthy();
+  });
+
   test("Créer un relevé d'honoraires pour un médecin", async ({ page }) => {
     const createPage = new CreateHonorairePage(page);
     const listPage = new HonorairesListPage(page);
     const periode = HonoraireDataGenerator.generateLargePeriod();
-    let medecinNom = '';
 
-    await test.step('Ouvrir "Nouveau relevé" depuis le menu', async () => {
-      await createPage.gotoViaMenu();
+    await test.step(`Facturer un acte réalisé par ${ctx.medecin}`, async () => {
+      await billActForMedecin(page, ctx);
+      await new PortalPage(page).enterModule('Honoraires');
     });
-    test.skip(!(await createPage.hasMedecinDisponible()), NO_MEDECIN_REASON);
 
-    await test.step('Sélectionner un médecin et une période large', async () => {
-      medecinNom = await createPage.selectFirstMedecinDisponible();
+    await test.step('Ouvrir "Nouveau relevé" et choisir le médecin et la période', async () => {
+      await createPage.gotoViaMenu();
+      await createPage.selectMedecin(ctx.medecin);
       await createPage.fillPeriode(periode.dateDebut, periode.dateFin);
       await createPage.expectPeriodeValide();
     });
@@ -66,7 +86,7 @@ test.describe('Module Honoraires', () => {
     await test.step('Créer le relevé et le retrouver "Non Payé" dans la liste', async () => {
       await createPage.creerHonoraire();
       await listPage.expectListLoaded();
-      const ligne = await listPage.getMostRecentRowForMedecinAndStatut(medecinNom, 'Non Payé');
+      const ligne = await listPage.getMostRecentRowForMedecinAndStatut(ctx.medecin, 'Non Payé');
       await expect(ligne).toBeVisible();
       expect(await listPage.getRowStatutLibelle(ligne)).toBe('Non Payé');
     });
@@ -176,6 +196,26 @@ test.describe('Module Honoraires', () => {
 
     await test.step("Vérifier qu'il n'apparaît plus dans la liste", async () => {
       expect(await listPage.referenceExisteDansListe(reference)).toBeFalsy();
+    });
+  });
+
+  test.describe("Cas d'exception", () => {
+    test('Une période dont la fin précède le début est refusée', async ({ page }) => {
+      const createPage = new CreateHonorairePage(page);
+      await createPage.gotoViaMenu();
+      await createPage.selectMedecin(ctx.medecin);
+      const periode = HonoraireDataGenerator.generateLargePeriod();
+      await createPage.fillPeriode(periode.dateFin, periode.dateDebut);
+      await expect(page.getByText('La date de fin doit être après la date de début')).toBeVisible();
+      await expect(page.getByRole('button', { name: /Rechercher/ })).toBeDisabled();
+    });
+
+    test('La recherche est impossible sans médecin', async ({ page }) => {
+      const createPage = new CreateHonorairePage(page);
+      await createPage.gotoViaMenu();
+      const periode = HonoraireDataGenerator.generateLargePeriod();
+      await createPage.fillPeriode(periode.dateDebut, periode.dateFin);
+      await expect(page.getByRole('button', { name: /Rechercher/ })).toBeDisabled();
     });
   });
 });

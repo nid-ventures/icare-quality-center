@@ -26,7 +26,7 @@ TEST_ENV=local npx playwright test tests/structure-app/02-base-patients.spec.ts 
 # Run tests with headed browser
 npx playwright test --headed
 
-# Watch the structure suite in slow motion (SLOWMO ms after each action, test timeouts x6)
+# Watch the structure suite in slow motion (SLOWMO ms after each action — 1000 by default —, test timeouts x6, on-screen banner with the current feature)
 npm run test:visuel
 
 # Generate and open Allure report
@@ -47,7 +47,7 @@ npx playwright show-report
 **Page Object Model (POM)**, two applications:
 
 - **Structure app (hi-icare-patient)** — `tests/structure-app/`, one `.spec.ts` per business module of the app (mirrors `AppModulesService.modules` in the app source):
-  `00-authentification` (login, forgot/change password, policies, public consent pages), `01-portail` (module launcher `/modules`), `02-base-patients`, `03-dossier-medical`, `04-facturation`, `05-honoraires`, `06-reporting`, `07-administration`, `08-laboratoire-imagerie` (worklists only: the module is hidden in the app and opened by URL).
+  `00-authentification` (login, forgot/change password, policies, public consent pages), `01-portail` (module launcher `/modules`), `02-base-patients`, `03-dossier-medical` (+ `03-dossier-medical-consultations`: prenatal / family planning / pediatric / dental create-edit with every field and prescriptions, dental chart cases, exception cases; + `03-dossier-medical-parcours`: care pathway templates created by the tests with every act, then started on the patient), `04-facturation`, `05-honoraires`, `06-reporting`, `07-administration`, `08-laboratoire-imagerie` (worklists only: the module is hidden in the app and opened by URL).
   Each spec is a `test.describe('Module …')` with one nested `describe` per feature and one `test()` per action.
 - `tests/structure-app/auth.setup.ts` — logs in once as the structure admin and saves the session to `playwright/.auth/structure-admin.json` (project `setup`); the `structure-app` project reuses it via `storageState`. Tests needing a logged-out browser use `test.use({ storageState: { cookies: [], origins: [] } })`.
 - `fixtures/structure.fixture.ts` — `test`/`expect` to import in structure specs; the `portal` fixture opens `/modules` (`PortalPage`).
@@ -56,7 +56,13 @@ npx playwright show-report
 - `test-data/structure-users.ts` — structure admin credentials (overridable with `STRUCTURE_USER_EMAIL` / `_PASSWORD` / `_HI`).
 - **Caregiver app** — `tests/caregiver-app-tests/` (project `caregiver-app`) with `pages/*.page.ts` and `test-data/users.json`.
 
-**Test data**: tests that modify or delete data create their own records first (patient, user, invoice, fee statement…). The Dossier médical spec creates one dedicated female patient per worker in `beforeAll`; consultation CRUD groups run in `serial` mode (create → update → delete).
+**Test data**: tests that modify or delete data create their own records first (patient, user, invoice, fee statement…). Dossier médical specs create one dedicated female patient per worker in `beforeAll` (`fixtures/dossier-patient.ts`); consultation CRUD groups run in `serial` mode (create → verify → update → verify → delete).
+
+**Configuration created by the tests**: when a feature depends on Administration > Paramètres, the tests set it up themselves — e.g. `fixtures/honoraires-setup.ts` creates a doctor remuneration profile (speciality "pédiatrie" + default billed act) if missing and bills an act to that doctor before each fee statement; the parcours spec creates its own care pathway templates and deletes them at the end.
+
+**Every-field consultation tests**: `pages/structure/consultation/consultation-form.page.ts` fills any consultation form by `formcontrolname` (text/number/date/radio/checkbox/ng-select) and re-checks every value after reopening; field sets live in `test-data/consultation-fields.ts`. Known app defects are kept as `test.fail(true, 'Anomalie : …')` tests so they turn red when fixed.
+
+**Visual runs**: with `SLOWMO>0` (`npm run test:visuel`, 1 s per action) a banner (`fixtures/visual-notes.ts`, closed shadow DOM, invisible to locators) shows module › section, test and current step.
 
 **App behaviours to know**: creating a patient redirects to its medical dashboard (switching to the Dossier médical module) and may trigger the duplicate-detection panel; in the patient model `firstName` holds the family name and `lastName` the given name; Base patients opens the administrative file on row click, Dossier médical is "search first" and opens the medical dashboard.
 

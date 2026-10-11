@@ -79,6 +79,19 @@ export class CreateHonorairePage {
         return found;
     }
 
+    /** Sélectionne un médecin précis (nom complet) dans la liste des médecins. */
+    async selectMedecin(nom: string): Promise<void> {
+        const option = this.page.locator('.ng-dropdown-panel .ng-option:not(.ng-option-disabled)')
+            .filter({ has: this.page.locator('strong', { hasText: nom }) }).first();
+        await expect(async () => {
+            await this.page.keyboard.press('Escape');
+            await this.openMedecinDropdown();
+            await expect(option).toBeVisible({ timeout: 2000 });
+        }).toPass({ timeout: 20000 });
+        await option.click();
+        await expect(this.medecinSelect).toContainText(nom, { timeout: 3000 });
+    }
+
     async selectFirstMedecinDisponible(): Promise<string> {
         // La liste des médecins est chargée de façon asynchrone (getReleveHonoraireMedecins) : si le
         // menu est ouvert trop tôt il affiche "No items found". On le referme et on réessaie.
@@ -111,9 +124,14 @@ export class CreateHonorairePage {
 
     async rechercher(): Promise<void> {
         await expect(this.rechercherButton).toBeEnabled();
+        const response = this.page.waitForResponse(r => r.url().includes('/feestatements/billableActs/search'), { timeout: 30000 });
         await this.rechercherButton.click();
-        // Attendre la fin du chargement (le libellé du bouton repasse de "Chargement..." à "Rechercher")
-        await expect(this.rechercherButton).not.toContainText('Chargement', { timeout: 5000 });
+        // L'application ne gère pas l'échec de cet appel : en cas d'erreur serveur, le bouton reste
+        // indéfiniment sur "Chargement..." sans message. On contrôle donc la réponse de l'API.
+        const result = await response;
+        expect(result.status(), `Recherche des actes facturés (POST /feestatements/billableActs/search) : ${await result.text().catch(() => '')}`).toBe(200);
+        // Pendant la recherche, le bouton s'intitule "Chargement..." : on attend qu'il redevienne "Rechercher".
+        await expect(this.rechercherButton).toBeVisible({ timeout: 30000 });
         await Promise.race([
             this.resultsRows.first().waitFor({ state: 'visible', timeout: 15000 }).catch(() => { }),
             this.noResultsMessage.waitFor({ state: 'visible', timeout: 15000 }).catch(() => { })

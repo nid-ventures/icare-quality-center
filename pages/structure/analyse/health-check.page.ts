@@ -68,9 +68,10 @@ export class HealthChecksListPage {
 
   async saveBilan() {
     await this.saveButton.click();
-    await expect(this.successAlert).toBeVisible();
-    // Le composant ferme la modale ~1s après le succès (setTimeout côté Angular).
-    await expect(this.modal).toBeHidden({ timeout: 8000 });
+    // Le message de succès n'est affiché qu'environ 1 s avant la fermeture automatique de la
+    // modale (setTimeout côté Angular, uniquement en cas de succès) : en mode ralenti (SLOWMO) il a
+    // déjà disparu après la pause qui suit le clic. La fermeture de la modale atteste le succès.
+    await expect(this.modal).toBeHidden({ timeout: 15000 });
   }
 
   /** Retourne la liste des N° de bulletin actuellement affichés (1ère colonne). */
@@ -162,8 +163,8 @@ export class HealthCheckDetailPage {
 
   async saveAnalyse() {
     await this.saveButton.click();
-    await expect(this.successAlert).toBeVisible();
-    await expect(this.modal).toBeHidden({ timeout: 8000 });
+    // Même logique que saveBilan() : la fermeture automatique de la modale atteste le succès.
+    await expect(this.modal).toBeHidden({ timeout: 15000 });
   }
 
   async getAnalyseRowCount(): Promise<number> {

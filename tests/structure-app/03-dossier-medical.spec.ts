@@ -1,5 +1,5 @@
-import { type Browser } from '@playwright/test';
 import { test, expect } from '../../fixtures/structure.fixture';
+import { createDossierPatient, openDossier as openPatientDossier, DOSSIER_SETUP_TIMEOUT, type DossierPatient } from '../../fixtures/dossier-patient';
 import { PortalPage } from '../../pages/structure/portal/portal.page';
 import { PatientPage } from '../../pages/structure/patient/patient.page';
 import { DossierSearchPage } from '../../pages/structure/patient/dossier-search.page';
@@ -8,71 +8,23 @@ import { DetailPatientPage } from '../../pages/structure/patient/detail_administ
 import { RenseignementsGenerauxPage } from '../../pages/structure/patient/renseignements_generaux_patient.page';
 import { AntecedentPage } from '../../pages/structure/patient/antecedant_patient.page';
 import { ConsultationPage } from '../../pages/structure/consultation/consultation.page';
-import { ConsultationPediatriquePage } from '../../pages/structure/consultation/consultation-pediatrique.page';
-import { ConsultationPlanificationPage } from '../../pages/structure/consultation/consultation-planification.page';
-import { ConsultationPrenatalPage } from '../../pages/structure/consultation/consultation-prenatal.page';
-import { ConsultationDentairePage } from '../../pages/structure/consultation/consultation-dentaire.page';
 import { HealthChecksListPage, HealthCheckDetailPage } from '../../pages/structure/analyse/health-check.page';
 import { ImagerieDashboardPage } from '../../pages/structure/imagerie/imagerie-dashboard.page';
 import { ImagingWorklistPage } from '../../pages/structure/imagerie/imaging-worklist.page';
 import { VaccinationPage, type VaccinationData, type DoseData } from '../../pages/structure/vaccination/vaccination.page';
 import { OrdonnancePage } from '../../pages/structure/ordonnance/ordonnance.page';
 import { PrescriptionManagerPage } from '../../pages/structure/consultation/prescription-manager.page';
-import { PatientDataGenerator } from '../../pages/structure/generator/data-generator';
 import { ConsultationStandardDataGenerator } from '../../pages/structure/generator/consultation-standard-data-generator';
-import { ConsultationPediatriqueDataGenerator } from '../../pages/structure/generator/consultation-pediatrique-data-generator';
-import { ConsultationPlanificationDataGenerator } from '../../pages/structure/generator/consultation-planification-data-generator';
-import { ConsultationPrenatalDataGenerator } from '../../pages/structure/generator/consultation-prenatal-data-generator';
-import { ConsultationDentaireDataGenerator } from '../../pages/structure/generator/consultation-dentaire-data-generator';
 import { HealthCheckDataGenerator } from '../../pages/structure/generator/health-check-data-generator';
 import { ImagingDataGenerator } from '../../pages/structure/generator/imaging-data-generator';
-import { ADMIN_STORAGE_STATE } from '../../test-data/structure-users';
 
 test.setTimeout(120000);
-
-type DossierPatient = { identifier: string; firstName: string; lastName: string };
-
-/**
- * Crée (une fois par worker) une patiente adulte dédiée à ce module : tous les tests du
- * dossier médical travaillent sur elle, jamais sur des patients existants de la base.
- */
-async function createDossierPatient(browser: Browser): Promise<DossierPatient> {
-  const context = await browser.newContext({
-    baseURL: process.env.BASE_URL,
-    storageState: ADMIN_STORAGE_STATE,
-    // Même fenêtre que les projets (cf. playwright.config.ts) : la page suit la taille de la fenêtre.
-    viewport: null,
-    ignoreHTTPSErrors: true,
-  });
-  const page = await context.newPage();
-  try {
-    const portal = new PortalPage(page);
-    const patientPage = new PatientPage(page);
-    // Sexe '1' = FEMME : nécessaire pour les consultations prénatales / planification familiale.
-    const data = { ...PatientDataGenerator.generate(), sex: '1' };
-
-    await portal.goto();
-    await portal.enterModule('Base patients');
-    await patientPage.createPatient(data);
-    await portal.enterModule('Base patients');
-    await patientPage.searchByName(data.firstName, data.lastName);
-    await patientPage.expectPatientInList(data.lastName);
-    const identifier = await patientPage.getPatientIdentifier(data.lastName);
-    return { identifier, firstName: data.firstName, lastName: data.lastName };
-  } finally {
-    await context.close();
-  }
-}
-
-// Filtre de type et premier bouton de consultation dans la liste du patient
-const firstConsultationButton = (page: import('@playwright/test').Page) =>
-  page.locator('app-consultations').getByRole('button', { name: /Consultation/ }).first();
 
 test.describe('Module Dossier médical', () => {
   let patient: DossierPatient;
 
   test.beforeAll(async ({ browser }) => {
-    test.setTimeout(120000);
+    test.setTimeout(DOSSIER_SETUP_TIMEOUT);
     patient = await createDossierPatient(browser);
   });
 
@@ -84,7 +36,7 @@ test.describe('Module Dossier médical', () => {
   // Ouvre le dashboard médical de la patiente dédiée
   async function openDossier(page: import('@playwright/test').Page) {
     await test.step(`Ouvrir le dossier de ${patient.firstName} ${patient.lastName}`, async () => {
-      await new DossierSearchPage(page).openPatientByIdentifier(patient.identifier);
+      await openPatientDossier(page, patient);
     });
   }
 
@@ -174,237 +126,8 @@ test.describe('Module Dossier médical', () => {
     });
   });
 
-  // ======================================================================
-  // Consultations : créer -> modifier -> supprimer, pour chaque type
-  // (mode série : la modification et la suppression portent sur la consultation créée)
-  // ======================================================================
-  test.describe('Consultation standard', () => {
-    test.describe.configure({ mode: 'serial' });
-    const TYPE = 'CONSULTATION ANESTHÉSIQUE';
-
-    test('Créer une consultation standard', async ({ page }) => {
-      const consultationPage = new ConsultationPage(page);
-      const data = ConsultationStandardDataGenerator.generate();
-      await openDossier(page);
-      await consultationPage.goToConsultationTab();
-      await consultationPage.expectConsultationsListLoaded();
-      await consultationPage.openNewConsultationModal();
-      await consultationPage.fillConsultationBasics(data);
-      await consultationPage.createConsultation();
-      await consultationPage.fillMedicalConsultationForm(data);
-      await consultationPage.saveConsultation();
-      await consultationPage.filterByConsultationType(data.consultationType);
-      await expect(firstConsultationButton(page)).toBeVisible();
-    });
-
-    test('Modifier la consultation standard', async ({ page }) => {
-      const consultationPage = new ConsultationPage(page);
-      await openDossier(page);
-      await consultationPage.goToConsultationTab();
-      await consultationPage.expectConsultationsListLoaded();
-      await consultationPage.filterByConsultationType(TYPE);
-      await consultationPage.selectFirstConsultation();
-      await expect(consultationPage.reportInput).toBeVisible();
-      await consultationPage.activateForm();
-      await consultationPage.fillUpdatedForm(ConsultationStandardDataGenerator.generateUpdatedData());
-      await consultationPage.updateConsultation();
-      await expect(consultationPage.confirmButton).not.toBeVisible();
-    });
-
-    test('Supprimer la consultation standard', async ({ page }) => {
-      const consultationPage = new ConsultationPage(page);
-      await openDossier(page);
-      await consultationPage.goToConsultationTab();
-      await consultationPage.expectConsultationsListLoaded();
-      await consultationPage.filterByConsultationType(TYPE);
-      await consultationPage.openFirstConsultation();
-      await consultationPage.deleteConsultation();
-      await expect(consultationPage.confirmButton).not.toBeVisible();
-    });
-  });
-
-  test.describe('Consultation pédiatrique', () => {
-    test.describe.configure({ mode: 'serial' });
-    const TYPE = 'CONSULTATION PÉDIATRIQUE';
-
-    test('Créer une consultation pédiatrique', async ({ page }) => {
-      const consultationPage = new ConsultationPediatriquePage(page);
-      const data = ConsultationPediatriqueDataGenerator.generate();
-      await openDossier(page);
-      await consultationPage.goToConsultationTab();
-      await consultationPage.expectConsultationsListLoaded();
-      await consultationPage.openNewConsultationModal();
-      await consultationPage.fillConsultationBasics({ specialty: data.specialty, consultationType: data.consultationType });
-      await consultationPage.createConsultation();
-      await consultationPage.expectPediatriqueFormLoaded();
-      await consultationPage.fillMedicalConsultationForm(data);
-      await consultationPage.saveConsultation();
-      await consultationPage.filterByConsultationType(TYPE);
-      await expect(firstConsultationButton(page)).toBeVisible();
-    });
-
-    test('Modifier la consultation pédiatrique', async ({ page }) => {
-      const consultationPage = new ConsultationPediatriquePage(page);
-      await openDossier(page);
-      await consultationPage.goToConsultationTab();
-      await consultationPage.expectConsultationsListLoaded();
-      await consultationPage.filterByConsultationType(TYPE);
-      await consultationPage.openFirstConsultation();
-      await consultationPage.expectPediatriqueFormLoaded();
-      await consultationPage.activateForm();
-      await consultationPage.fillUpdatedPediatriqueForm(ConsultationPediatriqueDataGenerator.generateUpdatedData());
-      await consultationPage.updateConsultation();
-      await expect(consultationPage.confirmButton).not.toBeVisible();
-    });
-
-    test('Supprimer la consultation pédiatrique', async ({ page }) => {
-      const consultationPage = new ConsultationPediatriquePage(page);
-      await openDossier(page);
-      await consultationPage.goToConsultationTab();
-      await consultationPage.expectConsultationsListLoaded();
-      await consultationPage.filterByConsultationType(TYPE);
-      await consultationPage.openFirstConsultation();
-      await consultationPage.deleteConsultation();
-      await expect(consultationPage.confirmButton).not.toBeVisible();
-    });
-  });
-
-  test.describe('Consultation de planification familiale', () => {
-    test.describe.configure({ mode: 'serial' });
-    const TYPE = 'CONSULTATION PLANIFICATION';
-
-    test('Créer une consultation de planification familiale', async ({ page }) => {
-      const consultationPage = new ConsultationPlanificationPage(page);
-      const data = ConsultationPlanificationDataGenerator.generate();
-      await openDossier(page);
-      await consultationPage.goToConsultationTab();
-      await consultationPage.expectConsultationsListLoaded();
-      await consultationPage.openNewConsultationModal();
-      await consultationPage.fillConsultationBasics({ specialty: data.specialty, consultationType: data.consultationType });
-      await consultationPage.createConsultation();
-      await consultationPage.fillPlanificationForm(data);
-      await consultationPage.saveConsultation();
-      await consultationPage.filterByConsultationType(TYPE);
-      await expect(firstConsultationButton(page)).toBeVisible();
-    });
-
-    test('Modifier la consultation de planification familiale', async ({ page }) => {
-      const consultationPage = new ConsultationPlanificationPage(page);
-      await openDossier(page);
-      await consultationPage.goToConsultationTab();
-      await consultationPage.expectConsultationsListLoaded();
-      await consultationPage.filterByConsultationType(TYPE);
-      await consultationPage.openFirstConsultation();
-      await expect(consultationPage.heightInput).toBeVisible();
-      await consultationPage.activateForm();
-      await consultationPage.fillUpdatedPlanificationForm(ConsultationPlanificationDataGenerator.generateUpdatedData());
-      await consultationPage.updateConsultation();
-      await expect(consultationPage.confirmButton).not.toBeVisible();
-    });
-
-    test('Supprimer la consultation de planification familiale', async ({ page }) => {
-      const consultationPage = new ConsultationPlanificationPage(page);
-      await openDossier(page);
-      await consultationPage.goToConsultationTab();
-      await consultationPage.expectConsultationsListLoaded();
-      await consultationPage.filterByConsultationType(TYPE);
-      await consultationPage.openFirstConsultation();
-      await consultationPage.deleteConsultation();
-      await expect(consultationPage.confirmButton).not.toBeVisible();
-    });
-  });
-
-  test.describe('Consultation prénatale', () => {
-    test.describe.configure({ mode: 'serial' });
-    const TYPE = 'CONSULTATION PRÉNATALE';
-
-    test('Créer une consultation prénatale', async ({ page }) => {
-      const consultationPage = new ConsultationPrenatalPage(page);
-      const data = ConsultationPrenatalDataGenerator.generate();
-      await openDossier(page);
-      await consultationPage.goToConsultationTab();
-      await consultationPage.expectConsultationsListLoaded();
-      await consultationPage.openNewConsultationModal();
-      await consultationPage.fillConsultationBasics({ specialty: data.specialty, consultationType: data.consultationType });
-      await consultationPage.createConsultation();
-      await consultationPage.expectPrenatalFormLoaded();
-      await consultationPage.fillPrenatalForm(data);
-      await consultationPage.saveConsultation();
-      await consultationPage.filterByConsultationType(TYPE);
-      await expect(firstConsultationButton(page)).toBeVisible();
-    });
-
-    test('Modifier la consultation prénatale', async ({ page }) => {
-      const consultationPage = new ConsultationPrenatalPage(page);
-      await openDossier(page);
-      await consultationPage.goToConsultationTab();
-      await consultationPage.expectConsultationsListLoaded();
-      await consultationPage.filterByConsultationType(TYPE);
-      await consultationPage.openFirstConsultation();
-      await consultationPage.expectPrenatalFormLoaded();
-      await consultationPage.activateForm();
-      await consultationPage.fillUpdatedPrenatalForm(ConsultationPrenatalDataGenerator.generateUpdatedData());
-      await consultationPage.updateConsultation();
-      await expect(consultationPage.confirmButton).not.toBeVisible();
-    });
-
-    test('Supprimer la consultation prénatale', async ({ page }) => {
-      const consultationPage = new ConsultationPrenatalPage(page);
-      await openDossier(page);
-      await consultationPage.goToConsultationTab();
-      await consultationPage.expectConsultationsListLoaded();
-      await consultationPage.filterByConsultationType(TYPE);
-      await consultationPage.openFirstConsultation();
-      await consultationPage.deleteConsultation();
-      await expect(consultationPage.confirmButton).not.toBeVisible();
-    });
-  });
-
-  test.describe('Consultation dentaire', () => {
-    test.describe.configure({ mode: 'serial' });
-    const TYPE = 'CONSULTATION DENTAIRE';
-
-    test('Créer une consultation dentaire', async ({ page }) => {
-      const consultationPage = new ConsultationDentairePage(page);
-      const data = ConsultationDentaireDataGenerator.generate();
-      await openDossier(page);
-      await consultationPage.goToConsultationTab();
-      await consultationPage.expectConsultationsListLoaded();
-      await consultationPage.openNewConsultationModal();
-      await consultationPage.fillConsultationBasics({ specialty: data.specialty, consultationType: data.consultationType });
-      await consultationPage.createConsultation();
-      await consultationPage.expectDentaireFormLoaded();
-      await consultationPage.fillDentaireConsultationForm(data);
-      await consultationPage.saveConsultation();
-      await consultationPage.filterByConsultationType(TYPE);
-      await expect(firstConsultationButton(page)).toBeVisible();
-    });
-
-    test('Modifier la consultation dentaire', async ({ page }) => {
-      const consultationPage = new ConsultationDentairePage(page);
-      await openDossier(page);
-      await consultationPage.goToConsultationTab();
-      await consultationPage.expectConsultationsListLoaded();
-      await consultationPage.filterByConsultationType(TYPE);
-      await consultationPage.openFirstConsultation();
-      await consultationPage.expectDentaireFormLoaded();
-      await consultationPage.activateForm();
-      await consultationPage.fillUpdatedDentaireForm(ConsultationDentaireDataGenerator.generateUpdatedData());
-      await consultationPage.updateConsultation();
-      await expect(consultationPage.confirmButton).not.toBeVisible();
-    });
-
-    test('Supprimer la consultation dentaire', async ({ page }) => {
-      const consultationPage = new ConsultationDentairePage(page);
-      await openDossier(page);
-      await consultationPage.goToConsultationTab();
-      await consultationPage.expectConsultationsListLoaded();
-      await consultationPage.filterByConsultationType(TYPE);
-      await consultationPage.openFirstConsultation();
-      await consultationPage.deleteConsultation();
-      await expect(consultationPage.confirmButton).not.toBeVisible();
-    });
-  });
+  // Consultations (tous types, tous les champs, prescriptions, cas d'exception) :
+  // voir 03-dossier-medical-consultations.spec.ts
 
   // ======================================================================
   // Bilans d'analyses
@@ -685,6 +408,74 @@ test.describe('Module Dossier médical', () => {
       await page.getByRole('button', { name: /Actualiser$/ }).click();
       await page.getByRole('button', { name: /Retour$/ }).click();
       await page.waitForURL('**/patient/patient-dashboard/**');
+    });
+  });
+
+  // ======================================================================
+  // Cas d'exception (les consultations ont les leurs : 03-dossier-medical-consultations.spec.ts)
+  // ======================================================================
+  test.describe("Cas d'exception", () => {
+    test('Une recherche composée uniquement d\'espaces est refusée', async ({ page }) => {
+      const search = new DossierSearchPage(page);
+      await search.identifierInput.fill('   ');
+      await search.searchButton.click();
+      await expect(search.searchHint).toBeVisible();
+      await expect(search.results).toHaveCount(0);
+    });
+
+    test("Un bilan sans prescripteur ni type n'est pas enregistré", async ({ page }) => {
+      const listPage = new HealthChecksListPage(page);
+      await openDossier(page);
+      await listPage.goToHealthChecksList();
+      const before = await listPage.getBilanOrderNumbers();
+      await listPage.openNewBilanModal();
+      const modal = page.locator('#createBilanModal');
+      await modal.getByRole('button', { name: /Enregistrer/ }).click();
+      await expect(modal.getByText('Le prescripteur est obligatoire')).toBeVisible();
+      await expect(modal.getByText('Le type de bilan est obligatoire')).toBeVisible();
+      await expect(modal, 'La fenêtre reste ouverte').toBeVisible();
+      await page.keyboard.press('Escape');
+      expect(await listPage.getBilanOrderNumbers()).toEqual(before);
+    });
+
+    // La date est préremplie avec la date du jour : seuls type, consultant et dose sont manquants.
+    test("Une vaccination sans type, consultant ni dose n'est pas enregistrée", async ({ page }) => {
+      const vaccinationPage = new VaccinationPage(page);
+      await openDossier(page);
+      await vaccinationPage.gotoFromPatientDashboard();
+      await vaccinationPage.openNewVaccinationModal();
+      const modal = page.locator('.modal.show');
+      await modal.getByRole('button', { name: /Valider/ }).click();
+      for (const message of ['Le type est obligatoire', 'Le consultant est obligatoire', 'La dose est obligatoire']) {
+        await expect(modal.getByText(message), message).toBeVisible();
+      }
+    });
+
+    test('Démarrer un parcours de soins sans date ni praticien est refusé', async ({ page }) => {
+      const carePathway = new CarePathwayPage(page);
+      await openDossier(page);
+      await carePathway.openStartForm('VACCINAL');
+      await carePathway.startButton.click();
+      await expect(page.getByText(/est obligatoire/).first()).toBeVisible();
+      // Libellé de l'application : "Le patricien est obligatoire" (sic)
+      await expect(page.getByText(/Le pa(t)?ricien est obligatoire|Le praticien est obligatoire/)).toBeVisible();
+      await expect(page).toHaveURL(/\/patient\/create-careplan\//);
+    });
+
+    test("Valider un acte d'imagerie sans type est refusé", async ({ page }) => {
+      test.fail(true, "Anomalie : \"Valider\" sans type d'acte ferme la fenêtre et ouvre le formulaire sans type (imagerie-dashboard.component.ts, onAddEchographie sans contrôle).");
+      const imageriePage = new ImagerieDashboardPage(page);
+      await openDossier(page);
+      await imageriePage.gotoFromPatientDashboard();
+      await imageriePage.openNewActeModal();
+      await page.locator('.modal.show').getByRole('button', { name: /Valider/ }).click();
+      await expect(page.locator('.modal.show'), 'La fenêtre doit rester ouverte avec un message').toBeVisible({ timeout: 3000 });
+    });
+
+    test("Ouvrir le dossier d'un patient inexistant affiche une erreur", async ({ page }) => {
+      test.fail(true, "Anomalie : /patient/patient-dashboard/<id inconnu> affiche un dashboard vide (nom vide), sans message d'erreur ni redirection.");
+      await page.goto('/patient/patient-dashboard/00000000-0000-0000-0000-000000000000');
+      await expect(page.getByText(/introuvable|n'existe pas|inexistant|erreur/i).first()).toBeVisible({ timeout: 10000 });
     });
   });
 });

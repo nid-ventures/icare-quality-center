@@ -109,6 +109,21 @@ export class BillingInvoicePage {
 
     // ======================== Modale "Ajouter un acte" ========================
 
+    /** Choisit l'option d'un ng-select dont le libellé correspond (sans tenir compte de la casse). */
+    private async selectNgOptionByText(ngSelect: Locator, text: string): Promise<void> {
+        await ngSelect.click();
+        const input = ngSelect.locator('input[type="text"]');
+        // Filtre sur le premier mot : les libellés peuvent contenir des espaces multiples.
+        if (await input.isEditable().catch(() => false)) await input.fill(text.trim().split(/\s+/)[0]);
+        const panel = this.page.locator('.ng-dropdown-panel:visible');
+        const option = panel.locator('.ng-option:not(.ng-option-disabled):not(.ng-optgroup)')
+            // Les libellés de l'application contiennent parfois des espaces multiples.
+            .filter({ hasText: new RegExp(`^\\s*${text.replace(/\s+/g, ' ').trim().replace(/[.*+?^${}()|[\]\\]/g, '\\$&').replace(/ /g, '\\s+')}\\s*$`, 'i') }).first();
+        await expect(option, `Option "${text}" proposée`).toBeVisible({ timeout: 10000 });
+        await option.click();
+        await panel.waitFor({ state: 'hidden', timeout: 3000 }).catch(() => { });
+    }
+
     /** Sélectionne la première option disponible (non-groupe, non désactivée) d'un ng-select. */
     private async selectFirstNgOption(ngSelect: Locator): Promise<void> {
         await ngSelect.click();
@@ -246,6 +261,42 @@ export class BillingInvoicePage {
      * test (pour contourner le problème de données connu), saisie de son montant, passage à la
      * facturation, tentative d'application d'une prise en charge puis génération de la facture.
      */
+    /**
+     * Facture au patient (recherché par identifiant) l'acte par défaut (première catégorie,
+     * premier acte) réalisé par le praticien indiqué, puis génère la facture.
+     */
+    async createInvoiceForPractitioner(
+        patientIdentifier: string,
+        practitioner: string,
+        act?: { category: string; act: string },
+        amount: string = '5000',
+    ): Promise<void> {
+        await this.searchPatientByIdentifier(patientIdentifier);
+        expect(await this.getSearchResultsCount()).toBeGreaterThan(0);
+        await this.selectFirstSearchResult();
+
+        await this.openAddActModal();
+        if (act) {
+            await this.selectNgOptionByText(this.addActCategorySelect, act.category);
+            await this.selectNgOptionByText(this.addActBillableActsSelect, act.act);
+        } else {
+            await this.selectFirstNgOption(this.addActCategorySelect);
+            await this.selectFirstNgOption(this.addActBillableActsSelect);
+        }
+        await this.addActCaregiverSelect.click();
+        const panel = this.page.locator('.ng-dropdown-panel:visible');
+        const option = panel.locator('.ng-option:not(.ng-option-disabled)')
+            .filter({ hasText: new RegExp(practitioner.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), 'i') }).first();
+        await expect(option, `Praticien "${practitioner}" proposé`).toBeVisible({ timeout: 10000 });
+        await option.click();
+        await this.submitAddActForm();
+
+        expect(await this.fillFirstAvailableActAmount(amount)).toBeTruthy();
+        await this.proceedToBilling();
+        await this.tryApplyFirstAvailableInsurance();
+        await this.generateInvoice();
+    }
+
     async createInvoiceForPatient(patientIdentifier: string, amount: string = '5000'): Promise<void> {
         await this.searchPatientByIdentifier(patientIdentifier);
         expect(await this.getSearchResultsCount(), `Aucun patient trouvé pour l'identifiant "${patientIdentifier}"`).toBeGreaterThan(0);
