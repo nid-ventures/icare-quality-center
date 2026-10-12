@@ -3,7 +3,7 @@ import { test, expect } from '../../fixtures/structure.fixture';
 import { createDossierPatient, openDossier, DOSSIER_SETUP_TIMEOUT, type DossierPatient } from '../../fixtures/dossier-patient';
 import { PortalPage } from '../../pages/structure/portal/portal.page';
 import { CarePathwayPage } from '../../pages/structure/patient/care-pathway.page';
-import { CarePathwayTemplatePage, ACT_DOMAINS, type CarePathwayTemplate } from '../../pages/structure/my-space/care-pathway-template.page';
+import { CarePathwayTemplatePage, ACT_DOMAINS, type CarePathwayTemplate, type SelectedActs } from '../../pages/structure/my-space/care-pathway-template.page';
 import { ConsultationFormPage } from '../../pages/structure/consultation/consultation-form.page';
 import { isoDate } from '../../test-data/consultation-fields';
 
@@ -13,7 +13,8 @@ test.setTimeout(300000);
 // Chaque parcours a 2 étapes contenant chacune les 4 types d'actes (consultation, échographie,
 // vaccination, bilan). Ils sont démarrés sur une patiente et un patient dédiés.
 const stamp = Date.now().toString().slice(-6);
-const allTypesStep = (plannedPeriod: string) => ({ plannedPeriod, groups: ACT_DOMAINS.map(domain => ({ domain, acts: 1 })) });
+// Chaque type d'acte choisi est associé à TOUS ses actes médicaux du catalogue
+const allTypesStep = (plannedPeriod: string) => ({ plannedPeriod, groups: ACT_DOMAINS.map(domain => ({ domain, acts: 'all' as const })) });
 
 const FEMMES: CarePathwayTemplate = {
   name: `QA-SUIVI-F-${stamp}`, description: 'Suivi femmes : tous les types d\'actes', targetSex: 'Femmes uniquement',
@@ -46,8 +47,13 @@ async function openTemplates(page: Page) {
   return templates;
 }
 
-/** Ouvre le dashboard médical du patient (rafraîchit au passage le cache des modèles). */
+/**
+ * Ouvre le dashboard médical du patient, après avoir rafraîchi le cache des modèles de parcours
+ * (localStorage, chargé à la connexion) en ouvrant leur page : sans cela, les parcours créés par
+ * les tests ne sont ni proposés ni affichés dans ce navigateur (anomalie de cache connue).
+ */
 async function openPatientFile(page: Page, patient: DossierPatient) {
+  await openTemplates(page);
   await new PortalPage(page).enterModule('Dossier médical');
   await openDossier(page, patient);
   await expect(page.getByRole('heading', { name: /Parcours de soins/ })).toBeVisible();
@@ -108,6 +114,8 @@ test.describe('Module Dossier médical — Suivi des parcours de soins (homme, f
   test.describe.configure({ mode: 'serial' });
   let woman: DossierPatient;
   let man: DossierPatient;
+  // Actes réellement associés à chaque étape de chaque parcours, au paramétrage
+  const selectedActs: Record<string, SelectedActs> = {};
 
   test.beforeAll(async ({ browser }) => {
     test.setTimeout(DOSSIER_SETUP_TIMEOUT * 2);
@@ -125,8 +133,9 @@ test.describe('Module Dossier médical — Suivi des parcours de soins (homme, f
     for (const template of [FEMMES, HOMMES, TOUS]) {
       await test.step(`Parcours ${template.name} (${template.targetSex})`, async () => {
         const acts = await templates.create(template);
+        selectedActs[template.name] = acts;
         for (const [i, stepActs] of acts.entries()) {
-          expect(stepActs.length, `Étape ${i + 1} : un acte par type`).toBe(ACT_DOMAINS.length);
+          expect(stepActs.length, `Étape ${i + 1} : tous les actes des 4 types`).toBeGreaterThanOrEqual(ACT_DOMAINS.length);
         }
       });
     }
@@ -134,7 +143,6 @@ test.describe('Module Dossier médical — Suivi des parcours de soins (homme, f
 
   test('La patiente voit les parcours femmes et tous les sexes, pas celui des hommes', async ({ page }) => {
     const carePathway = new CarePathwayPage(page);
-    await openTemplates(page);
     await openPatientFile(page, woman);
     await expect(carePathway.startLink(FEMMES.name)).toHaveCount(1);
     await expect(carePathway.startLink(TOUS.name)).toHaveCount(1);
@@ -143,7 +151,6 @@ test.describe('Module Dossier médical — Suivi des parcours de soins (homme, f
 
   test('Le patient voit les parcours hommes et tous les sexes, pas celui des femmes', async ({ page }) => {
     const carePathway = new CarePathwayPage(page);
-    await openTemplates(page);
     await openPatientFile(page, man);
     await expect(carePathway.startLink(HOMMES.name)).toHaveCount(1);
     await expect(carePathway.startLink(TOUS.name)).toHaveCount(1);
@@ -152,7 +159,6 @@ test.describe('Module Dossier médical — Suivi des parcours de soins (homme, f
 
   // ---------------- Démarrage ----------------
   test('Démarrer le parcours femmes et le parcours tous les sexes chez la patiente', async ({ page }) => {
-    await openTemplates(page);
     for (const template of [FEMMES, TOUS]) {
       await test.step(`Démarrer ${template.name}`, async () => {
         await openPatientFile(page, woman);
@@ -162,7 +168,6 @@ test.describe('Module Dossier médical — Suivi des parcours de soins (homme, f
   });
 
   test('Démarrer le parcours hommes et le parcours tous les sexes chez le patient', async ({ page }) => {
-    await openTemplates(page);
     for (const template of [HOMMES, TOUS]) {
       await test.step(`Démarrer ${template.name}`, async () => {
         await openPatientFile(page, man);
@@ -191,7 +196,11 @@ test.describe('Module Dossier médical — Suivi des parcours de soins (homme, f
     await expect(planned, 'Actes prévus : une ligne par étape').toHaveCount(2);
     for (let i = 0; i < 2; i++) {
       await expect(planned.nth(i)).toContainText(`Étape ${i + 1}`);
-      await expect(planned.nth(i).locator('.pw-act-badge'), `Étape ${i + 1} : 4 actes`).toHaveCount(ACT_DOMAINS.length);
+      const expected = selectedActs[FEMMES.name]?.[i] ?? [];
+      await expect(planned.nth(i).locator('.pw-act-badge'), `Étape ${i + 1} : tous les actes paramétrés`).toHaveCount(expected.length);
+      for (const act of expected) {
+        await expect(planned.nth(i), `Étape ${i + 1} : acte "${act}"`).toContainText(act, { ignoreCase: true });
+      }
     }
   });
 
@@ -380,7 +389,6 @@ test.describe('Module Dossier médical — Suivi des parcours de soins (homme, f
   });
 
   test("Après archivage, le parcours femmes est de nouveau proposé à la patiente", async ({ page }) => {
-    await openTemplates(page);
     await openPatientFile(page, woman);
     await expect(new CarePathwayPage(page).startLink(FEMMES.name)).toHaveCount(1);
   });
