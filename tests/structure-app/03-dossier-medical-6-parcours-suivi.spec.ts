@@ -387,14 +387,23 @@ test.describe('Module Dossier médical — Suivi des parcours de soins (homme, f
     await expect(activeStep(page).getByRole('button', { name: /Clôturer cette étape/ })).toHaveCount(0);
   });
 
-  test("Clôturer l'étape 2 sans acte réalisé : étape incomplète", async ({ page }) => {
+  test("Une étape à venir ne peut pas être clôturée", async ({ page }) => {
+    // Étape 2 prévue 7 jours plus tard : "À venir" (en attente), sans bouton de clôture
     await openPathway(page, woman, FEMMES.name);
     await goToStep(page, 2);
-    await expect(activeStep(page)).toContainText('Étape 2');
+    await expect(stepButton(page, 2)).toHaveClass(/pw-step-secondary/);
+    await expect(activeStep(page).getByRole('button', { name: /Clôturer cette étape/ })).toHaveCount(0);
+  });
+
+  test("Clôturer une étape en cours sans acte réalisé : étape incomplète", async ({ page }) => {
+    // Étape 1 du parcours tous les sexes de la patiente, aucun acte réalisé
+    await openPathway(page, woman, TOUS.name);
+    await expect(activeStep(page)).toContainText('Étape 1');
     await activeStep(page).getByRole('button', { name: /Clôturer cette étape/ }).click();
     await confirm(page);
     await expect(page.getByText(/clôture de cet étape a\s+reussi/i).first()).toBeVisible({ timeout: 20000 });
-    await expect(stepButton(page, 2)).toHaveClass(/pw-step-warning/, { timeout: 20000 });
+    await expect(stepButton(page, 1)).toHaveClass(/pw-step-warning/, { timeout: 20000 });
+    await expect(activeStep(page).getByRole('button', { name: /Clôturer cette étape/ })).toHaveCount(0);
   });
 
   // ---------------- Résumé et modification ----------------
