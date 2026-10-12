@@ -266,13 +266,34 @@ const realizeBilan = (page: Page): Realize => async (body, title, reopen) => {
     return result;
   };
   const result = await openResult(reopen);
-  await result.getByRole('button', { name: /Activer le formulaire/ }).click();
-  await expect(result.locator('textarea[formcontrolname="diagnostic"]')).toBeEnabled();
+  // Les zones de résultat (une par analyse) sont créées désactivées à la fin du chargement des
+  // analyses, éventuellement après "Activer le formulaire" : on (ré)active jusqu'à ce qu'elles
+  // soient toutes modifiables, sinon elles restaient vides sans être signalées.
+  const inputs = result.locator('textarea.result-input');
+  await expect(inputs.first(), `${title} : une zone de résultat par analyse`).toBeVisible({ timeout: 30000 });
+  const toggle = result.getByRole('button', { name: /Activer le formulaire|Verrouiller/ });
+  await expect(async () => {
+    if (await inputs.last().isDisabled()) await toggle.click();
+    await expect(inputs.last()).toBeEnabled({ timeout: 3000 });
+    await expect(result.locator('textarea[formcontrolname="diagnostic"]')).toBeEnabled({ timeout: 1000 });
+  }).toPass({ timeout: 30000 });
   const filled = await fillAllFields(page, result, title);
+  const count = await inputs.count();
+  for (let k = 0; k < count; k++) {
+    await expect(inputs.nth(k), `${title} : résultat de l'analyse ${k + 1}/${count} saisi`).not.toHaveValue('');
+  }
   await result.locator('button.btn-submit').click();
   await confirm(page);
   await expect(success(page)).toBeVisible({ timeout: 20000 });
-  return async reopened => expectKept(await openResult(async () => reopened), filled, `${title} (résultat)`);
+  return async reopened => {
+    const kept = await openResult(async () => reopened);
+    await expectKept(kept, filled, `${title} (résultat)`);
+    const keptInputs = kept.locator('textarea.result-input');
+    await expect.soft(keptInputs, `${title} : une zone de résultat par analyse`).toHaveCount(count);
+    for (let k = 0; k < count; k++) {
+      await expect.soft(keptInputs.nth(k), `${title} : résultat de l'analyse ${k + 1}/${count} réaffiché`).not.toHaveValue('');
+    }
+  };
 };
 
 test.describe('Module Dossier médical — Suivi des parcours de soins (homme, femme, tous les sexes)', () => {
@@ -459,10 +480,27 @@ test.describe('Module Dossier médical — Suivi des parcours de soins (homme, f
     await expect(activeStep(page).getByRole('button', { name: /Clôturer cette étape/ })).toHaveCount(0);
   });
 
-  test("Clôturer une étape en cours sans acte réalisé : étape incomplète", async ({ page }) => {
-    // Étape 1 du parcours tous les sexes de la patiente, aucun acte réalisé
+  test("Une étape sans acte réalisé reste en attente et ne peut pas être clôturée", async ({ page }) => {
+    // Étape 1 du parcours tous les sexes de la patiente : aucun acte réalisé, étape "en attente"
     await openPathway(page, woman, TOUS.name);
     await expect(activeStep(page)).toContainText('Étape 1');
+    const content = await openDomain(page, /Consultation/i);
+    test.skip(await content.locator('.acc-item-badge').count() > 0, 'Patients réutilisés : un acte a déjà été réalisé dans cette étape');
+    await expect(activeStep(page).getByRole('button', { name: /Clôturer cette étape/ })).toHaveCount(0);
+  });
+
+  test("Clôturer une étape commencée mais incomplète : étape incomplète", async ({ page }) => {
+    test.setTimeout(1800000);
+    // Étape 1 du parcours tous les sexes de la patiente : une seule consultation réalisée, puis clôture
+    await openPathway(page, woman, TOUS.name);
+    await expect(activeStep(page)).toContainText('Étape 1');
+    const content = await openDomain(page, /Consultation/i);
+    if (await content.locator('.acc-item').first().locator('.acc-item-badge').count() === 0) {
+      const reopen = async () => expandAct(await openDomain(page, /Consultation/i), 0);
+      await realizeConsultation(page)(await expandAct(content, 0), 'Consultation de l\'étape incomplète', reopen);
+      await page.reload();
+      await expect(page.locator('.pw-hero')).toBeVisible({ timeout: 20000 });
+    }
     await activeStep(page).getByRole('button', { name: /Clôturer cette étape/ }).click();
     await confirm(page);
     await expect(page.getByText(/clôture de cet étape a\s+reussi/i).first()).toBeVisible({ timeout: 20000 });
