@@ -470,6 +470,16 @@ test.describe('Module Dossier médical — Suivi des parcours de soins (homme, f
     }
     await expect(stepButton(page, 1)).toHaveClass(/pw-step-success/, { timeout: 20000 });
     await expect(activeStep(page).getByRole('button', { name: /Clôturer cette étape/ })).toHaveCount(0);
+
+    // Étape clôturée : plus aucun bouton de modification dans ses actes, quel que soit le type
+    await page.reload();
+    await expect(page.locator('.pw-hero')).toBeVisible({ timeout: 20000 });
+    const editButtons = /^\W*(Activer|Activer le formulaire|Verrouiller|Mettre à jour.*|Enregistrer.*|Modifier la vaccination|Nouvelle dose)\s*$/;
+    for (const domain of [/Consultation/i, /chographie/i, /Vaccination/i, /Bilan/i]) {
+      const body = await expandAct(await openDomain(page, domain), 0);
+      await page.waitForTimeout(2000); // chargement de l'acte depuis le serveur
+      await expect.soft(body.getByRole('button', { name: editButtons }), `${domain} : aucun bouton de modification, étape clôturée`).toHaveCount(0);
+    }
   });
 
   test("Une étape à venir ne peut pas être clôturée", async ({ page }) => {
