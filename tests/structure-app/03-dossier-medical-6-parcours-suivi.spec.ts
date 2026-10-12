@@ -169,7 +169,8 @@ const realizeConsultation = (page: Page): Realize => async (body, title) => {
   });
   await prescriptions.addLaboratoryPrescription(`Analyses ${title}`);
   await prescriptions.addImagingPrescription(`Imagerie ${title}`, isoDate());
-  await body.getByRole('button', { name: /Mettre à jour la consultation|Enregistrer la consultation/ }).click();
+  // Libellé selon le type de consultation : "Mettre à jour la consultation", "Mettre à jour"…
+  await body.getByRole('button', { name: /^\W*(Mettre à jour( la consultation)?|Enregistrer la consultation)\s*$/ }).last().click();
   await confirm(page);
   await expect(success(page)).toBeVisible({ timeout: 20000 });
 };
