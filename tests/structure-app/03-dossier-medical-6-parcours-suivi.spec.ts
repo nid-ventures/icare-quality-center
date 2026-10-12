@@ -83,6 +83,18 @@ async function startPathway(page: Page, name: string) {
 
 /** Bouton de navigation de l'étape n dans le bandeau. */
 const stepButton = (page: Page, n: number) => page.locator('.pw-steps-track button.pw-step').filter({ hasText: `Étape ${n}` });
+/**
+ * Affiche l'étape n. Les boutons d'étape portent aria-disabled="true" en dur (attribut fixe du
+ * template, défaut d'accessibilité) : Playwright les juge désactivés alors qu'ils sont cliquables
+ * pour l'utilisateur. On déclenche donc directement le clic.
+ */
+async function goToStep(page: Page, n: number) {
+  const button = stepButton(page, n);
+  await expect(button).toBeVisible();
+  await button.dispatchEvent('click');
+  await expect(activeStep(page)).toContainText(`Étape ${n}`);
+}
+
 /** Contenu de l'étape affichée. */
 const activeStep = (page: Page) => page.locator('.pw-tab-pane--active');
 
@@ -207,16 +219,16 @@ test.describe('Module Dossier médical — Suivi des parcours de soins (homme, f
   test('Naviguer entre les étapes', async ({ page }) => {
     await openPathway(page, woman, FEMMES.name);
     await expect(activeStep(page)).toContainText('Étape 1');
-    await stepButton(page, 2).click();
+    await goToStep(page, 2);
     await expect(activeStep(page)).toContainText('Étape 2');
-    await stepButton(page, 1).click();
+    await goToStep(page, 1);
     await expect(activeStep(page)).toContainText('Étape 1');
   });
 
   test("Chaque étape propose les 4 types de prestations", async ({ page }) => {
     await openPathway(page, woman, FEMMES.name);
     for (const n of [1, 2]) {
-      await stepButton(page, n).click();
+      await goToStep(page, n);
       await expect(activeStep(page).locator('.quick-actions a.qa-btn'), `Étape ${n}`).toHaveCount(ACT_DOMAINS.length);
     }
   });
@@ -296,7 +308,7 @@ test.describe('Module Dossier médical — Suivi des parcours de soins (homme, f
 
   test("Clôturer l'étape 2 sans acte réalisé : étape incomplète", async ({ page }) => {
     await openPathway(page, woman, FEMMES.name);
-    await stepButton(page, 2).click();
+    await goToStep(page, 2);
     await expect(activeStep(page)).toContainText('Étape 2');
     await activeStep(page).getByRole('button', { name: /Clôturer cette étape/ }).click();
     await confirm(page);
