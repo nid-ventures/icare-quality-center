@@ -519,9 +519,13 @@ test.describe('Module Dossier médical — Suivi des parcours de soins (homme, f
       await page.reload();
       await expect(page.locator('.pw-hero')).toBeVisible({ timeout: 20000 });
     }
-    await activeStep(page).getByRole('button', { name: /Clôturer cette étape/ }).click();
-    await confirm(page);
-    await expect(page.getByText(/clôture de cet étape a\s+reussi/i).first()).toBeVisible({ timeout: 20000 });
+    const close = activeStep(page).getByRole('button', { name: /Clôturer cette étape/ });
+    // Patients réutilisés : étape déjà clôturée par un passage précédent, on vérifie seulement son état
+    if (!(REUSED_PATIENTS && await close.count() === 0)) {
+      await close.click();
+      await confirm(page);
+      await expect(page.getByText(/clôture de cet étape a\s+reussi/i).first()).toBeVisible({ timeout: 20000 });
+    }
     await expect(stepButton(page, 1)).toHaveClass(/pw-step-warning/, { timeout: 20000 });
     await expect(activeStep(page).getByRole('button', { name: /Clôturer cette étape/ })).toHaveCount(0);
   });
