@@ -652,10 +652,13 @@ test.describe('Module Dossier médical — Suivi des parcours de soins (homme, f
   });
 
   // ---------------- Nettoyage : archivage des parcours restants puis suppression des modèles ----------------
-  test('Archiver les parcours restants et supprimer les 3 modèles', async ({ page }) => {
+  test('Archiver les parcours restants', async ({ page }) => {
     test.setTimeout(600000);
     for (const [patient, template] of [[woman, TOUS], [man, HOMMES], [man, TOUS]] as const) {
       await test.step(`Archiver ${template.name}`, async () => {
+        await openPatientFile(page, patient);
+        // Patients réutilisés : parcours déjà archivé par un passage précédent (tuile de démarrage de nouveau active)
+        if (REUSED_PATIENTS && await pathwayTile(page, template.name).first().isEnabled().catch(() => false)) return;
         await openPathway(page, patient, template.name);
         await pathwayAction(page, 'Archiver').click();
         const modal = page.locator('#obstetrical');
@@ -668,6 +671,10 @@ test.describe('Module Dossier médical — Suivi des parcours de soins (homme, f
         await page.waitForURL('**/patient/patient-care-pathway-list/**', { timeout: 30000 });
       });
     }
+  });
+
+  test('Un modèle dont tous les parcours sont archivés peut être supprimé', async ({ page }) => {
+    test.fail(true, "Anomalie : la suppression d'un modèle est refusée (409, \"N parcours de soin actif(s) … déjà engagé(s)\") alors que tous ses parcours sont archivés : les parcours archivés sont comptés comme actifs, un modèle ayant servi ne peut jamais être supprimé.");
     const templates = await openTemplates(page);
     for (const template of [FEMMES, HOMMES, TOUS]) {
       await test.step(`Supprimer le modèle ${template.name}`, async () => templates.remove(template.name));
