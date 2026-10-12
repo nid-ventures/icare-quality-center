@@ -173,7 +173,19 @@ async function realizeAllActs(page: Page, patient: DossierPatient, pathway: stri
     await test.step(`Acte ${i + 1}/${total} : ${title}`, async () => {
       if (await item.locator('.acc-item-badge').count() > 0) return;
       const reopen = async () => expandAct(await openDomain(page, domain), i);
-      const verify = await realize(await expandAct(current, i), title, reopen);
+      // Un rafraîchissement de la liste des actes peut replier le formulaire en cours de saisie :
+      // en cas d'échec, page rechargée et acte refait une fois (s'il n'a pas été enregistré entre-temps)
+      let verify: Verify;
+      try {
+        verify = await realize(await expandAct(current, i), title, reopen);
+      } catch (error) {
+        await page.reload();
+        await expect(page.locator('.pw-hero')).toBeVisible({ timeout: 20000 });
+        await goToStep(page, step);
+        const retry = (await openDomain(page, domain)).locator('.acc-item').nth(i);
+        if (await retry.locator('.acc-item-badge').count() > 0) throw error;
+        verify = await realize(await reopen(), title, reopen);
+      }
       await expect(async () => {
         const again = await openDomain(page, domain);
         await expect(again.locator('.acc-item').nth(i).locator('.acc-item-badge'), `"${title}" réalisé (N° de bon)`)
