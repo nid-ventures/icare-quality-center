@@ -18,7 +18,7 @@ const today = () => new Date().toISOString().slice(0, 10);
  * Les listes ng-select sont refermées par leur flèche et jamais par Échap, qui fermerait la
  * fenêtre Bootstrap contenant le formulaire.
  */
-export async function fillAllFields(page: Page, root: Locator, label = 'QA') {
+export async function fillAllFields(page: Page, root: Locator, label = 'QA'): Promise<FieldSnapshot> {
   for (let pass = 0; pass < 2; pass++) {
     const controls = root.locator('[formcontrolname]');
     const count = await controls.count();
@@ -92,6 +92,63 @@ export async function fillAllFields(page: Page, root: Locator, label = 'QA') {
       }
     }
   }
+  return snapshotFields(root);
+}
+
+/**
+ * Valeurs affichées des champs visibles d'un formulaire, par nom de champ (et rang parmi les
+ * champs de même nom, ex. fiches foetus) : `nom#rang` -> valeur affichée. Le gestionnaire de
+ * prescriptions et les pièces jointes sont exclus.
+ */
+export type FieldSnapshot = Record<string, string>;
+
+export async function snapshotFields(root: Locator): Promise<FieldSnapshot> {
+  return root.locator('[formcontrolname]').evaluateAll((els: HTMLElement[]) => {
+    const snapshot: Record<string, string> = {};
+    const ranks: Record<string, number> = {};
+    for (const el of els) {
+      if (el.getClientRects().length === 0 || el.closest('app-prescription-manager')) continue;
+      const input = el as HTMLInputElement;
+      if (el.tagName === 'INPUT' && (input.type === 'file' || input.type === 'hidden')) continue;
+      const name = el.getAttribute('formcontrolname') ?? '';
+      let value: string;
+      if (el.tagName === 'NG-SELECT') {
+        value = Array.from(el.querySelectorAll('.ng-value-label')).map(l => (l.textContent ?? '').trim()).filter(Boolean).join(' | ');
+      } else if (el.tagName === 'SELECT') {
+        value = ((el as HTMLSelectElement).selectedOptions[0]?.textContent ?? '').trim();
+      } else if (input.type === 'checkbox') {
+        value = String(input.checked);
+      } else if (input.type === 'radio') {
+        if (!input.checked) continue;
+        value = input.value;
+      } else {
+        value = (input.value ?? '').trim();
+      }
+      const rank = ranks[name] = (ranks[name] ?? -1) + 1;
+      snapshot[`${name}#${rank}`] = value.replace(/\s+/g, ' ');
+    }
+    return snapshot;
+  });
+}
+
+/**
+ * Écarts entre les valeurs saisies (`expected`) et celles réaffichées à la réouverture : liste
+ * "champ : attendu ≠ affiché" (vide si tout est conservé). `ignore` : champs recalculés par
+ * l'application (ex. description d'une consultation, réécrite avec le résumé des prescriptions).
+ */
+export async function keptFieldsDiff(root: Locator, expected: FieldSnapshot, ignore: string[] = []): Promise<string[]> {
+  const actual = await snapshotFields(root);
+  const diffs: string[] = [];
+  for (const [key, value] of Object.entries(expected)) {
+    const name = key.split('#')[0];
+    if (!value || ignore.includes(name)) continue;
+    const shown = actual[key];
+    const same = shown !== undefined && (shown === value
+      || (!isNaN(Number(shown)) && !isNaN(Number(value)) && Number(shown) === Number(value))
+      || shown.toLowerCase() === value.toLowerCase());
+    if (!same) diffs.push(`${key} : saisi "${value}" ≠ réaffiché "${shown ?? '(champ absent)'}"`);
+  }
+  return diffs;
 }
 
 /** Choisit la première option libre d'une ng-select (sans option : liste ignorée). */

@@ -6,7 +6,7 @@ import { CarePathwayPage } from '../../pages/structure/patient/care-pathway.page
 import { CarePathwayTemplatePage, ACT_DOMAINS, type CarePathwayTemplate, type SelectedActs } from '../../pages/structure/my-space/care-pathway-template.page';
 import { ConsultationFormPage } from '../../pages/structure/consultation/consultation-form.page';
 import { PrescriptionManagerPage } from '../../pages/structure/consultation/prescription-manager.page';
-import { fillAllFields } from '../../pages/structure/shared/fill-all-fields';
+import { fillAllFields, keptFieldsDiff, type FieldSnapshot } from '../../pages/structure/shared/fill-all-fields';
 import { isoDate } from '../../test-data/consultation-fields';
 
 test.setTimeout(300000);
@@ -126,12 +126,27 @@ async function expandAct(content: Locator, i: number): Promise<Locator> {
   return body;
 }
 
-type Realize = (body: Locator, title: string, reopen: () => Promise<Locator>) => Promise<void>;
+/** Vérification d'un acte rouvert (corps déplié), renvoyée par sa réalisation. */
+type Verify = (reopened: Locator) => Promise<void>;
+type Realize = (body: Locator, title: string, reopen: () => Promise<Locator>) => Promise<Verify>;
+
+/**
+ * Les valeurs saisies sont-elles réaffichées à la réouverture ? Attend le chargement depuis le
+ * serveur, puis signale tous les écarts (vérification non bloquante : tous les actes sont passés
+ * en revue et le test échoue à la fin s'il y a eu des écarts).
+ */
+async function expectKept(root: Locator, expected: FieldSnapshot, what: string, ignore: string[] = []) {
+  let diffs: string[] = [];
+  await expect.poll(async () => (diffs = await keptFieldsDiff(root, expected, ignore)).length, { timeout: 20000 })
+    .toBe(0).catch(() => {});
+  expect.soft(diffs, `${what} : données réaffichées à la réouverture`).toEqual([]);
+}
 
 /**
  * Réalise un à un TOUS les actes de la prestation `domain` de l'étape `step` : `realize` remplit
- * et enregistre l'acte déplié, puis on vérifie que l'acte porte un N° de bon. Un acte déjà réalisé
- * (passage précédent sur des patients réutilisés) est conservé tel quel.
+ * et enregistre l'acte déplié ; on vérifie que l'acte porte un N° de bon, puis on le rouvre pour
+ * contrôler que toutes les données saisies sont réaffichées. Un acte déjà réalisé (passage
+ * précédent sur des patients réutilisés) est conservé tel quel.
  */
 async function realizeAllActs(page: Page, patient: DossierPatient, pathway: string, step: number, domain: RegExp, realize: Realize) {
   await openPathway(page, patient, pathway);
@@ -146,12 +161,19 @@ async function realizeAllActs(page: Page, patient: DossierPatient, pathway: stri
     await test.step(`Acte ${i + 1}/${total} : ${title}`, async () => {
       if (await item.locator('.acc-item-badge').count() > 0) return;
       const reopen = async () => expandAct(await openDomain(page, domain), i);
-      await realize(await expandAct(current, i), title, reopen);
+      const verify = await realize(await expandAct(current, i), title, reopen);
       await expect(async () => {
         const again = await openDomain(page, domain);
         await expect(again.locator('.acc-item').nth(i).locator('.acc-item-badge'), `"${title}" réalisé (N° de bon)`)
           .toContainText('N°', { timeout: 3000 });
       }).toPass({ timeout: 30000 });
+      await test.step(`Réouverture : données de "${title}" conservées`, async () => {
+        // Rechargement complet : les données viennent bien du serveur, pas du formulaire en mémoire
+        await page.reload();
+        await expect(page.locator('.pw-hero')).toBeVisible({ timeout: 20000 });
+        await goToStep(page, step);
+        await verify(await reopen());
+      });
       // Acte replié : un seul formulaire (et gestionnaire de prescriptions) déplié à la fois
       const done = (await openDomain(page, domain)).locator('.acc-item').nth(i);
       if (await done.locator('.acc-item-body').isVisible().catch(() => false)) await done.locator('.acc-item-header').click();
@@ -162,7 +184,7 @@ async function realizeAllActs(page: Page, patient: DossierPatient, pathway: stri
 /** Consultation : tous les champs, une ordonnance, une prescription d'analyses et une d'imagerie. */
 const realizeConsultation = (page: Page): Realize => async (body, title) => {
   await new ConsultationFormPage(page, body).activate('date');
-  await fillAllFields(page, body, title);
+  const filled = await fillAllFields(page, body, title);
   const prescriptions = new PrescriptionManagerPage(page, body);
   await prescriptions.addMedicationPrescription({
     title: `Ordonnance ${title}`, medicationName: 'Paracétamol', posologie: '1 cp matin et soir', recommandations: 'Hydratation QA',
@@ -173,26 +195,49 @@ const realizeConsultation = (page: Page): Realize => async (body, title) => {
   await body.getByRole('button', { name: /^\W*(Mettre à jour( la consultation)?|Enregistrer la consultation)\s*$/ }).last().click();
   await confirm(page);
   await expect(success(page)).toBeVisible({ timeout: 20000 });
+  return async reopened => {
+    // La description est réécrite par l'application avec le résumé des prescriptions
+    await expectKept(reopened, filled, title, ['description']);
+    const kept = new PrescriptionManagerPage(page, reopened);
+    for (const kind of ['Ordonnance', 'Analyses', 'Imagerie'] as const) {
+      await expect.soft(kept.panelCount(kind), `${title} : prescription "${kind}" conservée`).toHaveText(/\b1\b/, { timeout: 15000 });
+    }
+  };
 };
 
 /** Échographie : tous les champs (dont pièce jointe et fiches foetus pour une obstétricale). */
 const realizeEchographie = (page: Page): Realize => async (body, title) => {
   await new ConsultationFormPage(page, body).activate('date');
-  await fillAllFields(page, body, title);
+  const filled = await fillAllFields(page, body, title);
   await body.locator('button.btn-success').last().click();
   await confirm(page);
   await expect(success(page)).toBeVisible({ timeout: 20000 });
+  // Le terme est recalculé par l'application à partir de la DDR
+  return async reopened => expectKept(reopened, filled, title, ['terme']);
 };
 
-/** Vaccination : première dose avec tous ses champs (date, terme, dose, lot). */
+/**
+ * Vaccination : premier enregistrement = la vaccination (consultant, date, actes à facturer,
+ * commentaire) et sa première dose (date, terme, dose, lot), tous les champs.
+ */
 const realizeVaccination = (page: Page): Realize => async (body, title) => {
   await body.getByRole('button', { name: /Nouvelle dose/ }).click();
   const dose = body.locator('app-vaccination-simple-item-static');
   await expect(dose).toBeVisible();
-  await fillAllFields(page, dose, title);
+  const filled = await fillAllFields(page, dose, title);
   await dose.getByRole('button', { name: /Enregistrer la dose/ }).click();
   await confirm(page);
   await expect(success(page)).toBeVisible({ timeout: 20000 });
+  return async reopened => {
+    // Champs de la vaccination, réaffichés dans son formulaire (la date de vaccination y porte le nom "date")
+    const vaccination: FieldSnapshot = {};
+    for (const [key, name] of [['caregiverId#0', 'caregiverId#0'], ['vaccinationDate#0', 'date#0'], ['commentary#0', 'commentary#0'], ['billableActs#0', 'billableActs#0']]) {
+      if (filled[key]) vaccination[name] = filled[key];
+    }
+    expect.soft(Object.keys(vaccination).length, `${title} : champs de la vaccination saisis au premier enregistrement`).toBeGreaterThan(0);
+    await expectKept(reopened.locator('form').first(), vaccination, `${title} (vaccination)`);
+    await expect.soft(reopened.locator('.card[id^="accordionItemV_"]'), `${title} : première dose listée`).not.toHaveCount(0, { timeout: 15000 });
+  };
 };
 
 /** Bilan : création avec tous les champs, puis résultat complet (dates, pièce jointe, résultats). */
@@ -203,20 +248,25 @@ const realizeBilan = (page: Page): Realize => async (body, title, reopen) => {
   await create.getByRole('button', { name: /^\W*Enregistrer\s*$/ }).click();
   await expect(success(page)).toBeVisible({ timeout: 20000 });
 
-  let care: Locator | undefined;
-  await expect(async () => {
-    care = (await reopen()).locator('app-health-check-care');
-    await expect(care).toBeVisible({ timeout: 3000 });
-  }).toPass({ timeout: 30000 });
-  await care!.locator('a.nav-link', { hasText: 'Résultat' }).click();
-  const result = care!.locator('[id^="result-content-"]');
-  await expect(result).toBeVisible();
+  const openResult = async (opened: () => Promise<Locator>) => {
+    let care: Locator | undefined;
+    await expect(async () => {
+      care = (await opened()).locator('app-health-check-care');
+      await expect(care).toBeVisible({ timeout: 3000 });
+    }).toPass({ timeout: 30000 });
+    await care!.locator('a.nav-link', { hasText: 'Résultat' }).click();
+    const result = care!.locator('[id^="result-content-"]');
+    await expect(result).toBeVisible();
+    return result;
+  };
+  const result = await openResult(reopen);
   await result.getByRole('button', { name: /Activer le formulaire/ }).click();
   await expect(result.locator('textarea[formcontrolname="diagnostic"]')).toBeEnabled();
-  await fillAllFields(page, result, title);
+  const filled = await fillAllFields(page, result, title);
   await result.locator('button.btn-submit').click();
   await confirm(page);
   await expect(success(page)).toBeVisible({ timeout: 20000 });
+  return async reopened => expectKept(await openResult(async () => reopened), filled, `${title} (résultat)`);
 };
 
 test.describe('Module Dossier médical — Suivi des parcours de soins (homme, femme, tous les sexes)', () => {
@@ -380,9 +430,13 @@ test.describe('Module Dossier médical — Suivi des parcours de soins (homme, f
   // ---------------- Clôture des étapes ----------------
   test("Clôturer l'étape 1 (tous les actes réalisés) : étape terminée", async ({ page }) => {
     await openPathway(page, woman, FEMMES.name);
-    await activeStep(page).getByRole('button', { name: /Clôturer cette étape/ }).click();
-    await confirm(page);
-    await expect(page.getByText(/clôture de cet étape a\s+reussi/i).first()).toBeVisible({ timeout: 20000 });
+    const close = activeStep(page).getByRole('button', { name: /Clôturer cette étape/ });
+    // Patients réutilisés : étape déjà clôturée par un passage précédent, on vérifie seulement son état
+    if (!(REUSED_PATIENTS && await close.count() === 0)) {
+      await close.click();
+      await confirm(page);
+      await expect(page.getByText(/clôture de cet étape a\s+reussi/i).first()).toBeVisible({ timeout: 20000 });
+    }
     await expect(stepButton(page, 1)).toHaveClass(/pw-step-success/, { timeout: 20000 });
     await expect(activeStep(page).getByRole('button', { name: /Clôturer cette étape/ })).toHaveCount(0);
   });

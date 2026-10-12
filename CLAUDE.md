@@ -54,7 +54,7 @@ npx playwright show-report
   - `3-vaccination`: vaccination and doses.
   - `4-bilans`: one bilan per type, full result form with attachment, PDF bulletins, analyses.
   - `5-parcours`: care pathway templates created by the tests with every act, then started; offered by target sex (male patient too); vaccinal pathway and archives.
-  - `6-parcours-suivi`: full follow-up on 3 pathways (women only, men only, all sexes) with the 4 act types (every act of each type) in 2 steps; every act of step 1 is done with all its fields (`pages/structure/shared/fill-all-fields.ts`), consultations with the 3 prescriptions, bilans with their result, on a female and a male patient: offer by sex, start, detail and step navigation, acts done inside a step, step closing (complete / incomplete), summary, edit, archiving (with exception and anomaly), archives list in read-only, cleanup.
+  - `6-parcours-suivi`: full follow-up on 3 pathways (women only, men only, all sexes) with the 4 act types (every act of each type) in 2 steps; every act of step 1 is done with all its fields (`pages/structure/shared/fill-all-fields.ts`), consultations with the 3 prescriptions, bilans with their result, then reopened after a page reload to check every saved value is shown again, on a female and a male patient: offer by sex, start, detail and step navigation, acts done inside a step, step closing (complete / incomplete), summary, edit, archiving (with exception and anomaly), archives list in read-only, cleanup.
 
   Each file has its own exception cases.
   Then `04-facturation`, `05-honoraires`, `06-reporting`, `07-administration`, `08-laboratoire-imagerie` (worklists only: the module is hidden in the app and opened by URL).
