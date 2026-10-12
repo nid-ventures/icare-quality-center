@@ -121,6 +121,10 @@ test.describe("Module Dossier médical — Bilans d'analyses", () => {
         const analyses = await chosenLabels(modal(page).locator('ng-select[formcontrolname="analyses"]'));
         const acts = await chosenLabels(modal(page).locator('ng-select[formcontrolname="billableActs"]'));
         preselected[type] = { analyses: analyses.length, acts: acts.length };
+        // Règle métier : le bilan standard n'a aucune analyse rattachée (choix manuel)
+        if (/standard/i.test(type)) {
+          expect.soft(analyses, `Aucune analyse présélectionnée pour "${type}"`).toHaveLength(0);
+        }
 
         await form.fill([{ name: 'diagnostic', kind: 'textarea', value: `Bilan ${type} QA` }]);
         await list.saveBilan();
