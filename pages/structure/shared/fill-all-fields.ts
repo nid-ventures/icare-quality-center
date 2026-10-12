@@ -39,7 +39,10 @@ export async function fillAllFields(page: Page, root: Locator, label = 'QA') {
       if (!info || info.inPrescriptions || info.disabled) continue;
 
       if (info.tag === 'ng-select') {
-        if (await control.locator('.ng-value-label').count() > 0) continue;
+        // Valeur réellement choisie = libellé non vide (certaines listes affichent la croix
+        // d'effacement avec une valeur vide, ex. le consultant d'une consultation de parcours)
+        const chosen = (await control.locator('.ng-value-label').allTextContents()).join('').trim();
+        if (chosen) continue;
         await pickFirstOption(page, control);
       } else if (info.tag === 'select') {
         const selected = await control.evaluate((el: HTMLSelectElement) => el.selectedIndex);
