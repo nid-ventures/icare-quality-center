@@ -100,7 +100,9 @@ test.describe("Module Dossier médical — Bilans d'analyses", () => {
       const options = page.locator('.ng-dropdown-panel .ng-option:not(.ng-option-disabled)');
       await expect(options.first()).toBeVisible();
       types = (await options.allTextContents()).map(t => t.replace(/\s+/g, ' ').trim());
-      await page.keyboard.press('Escape');
+      // Liste refermée par sa flèche : Échap fermerait aussi la fenêtre "Ajouter Bilan"
+      await typeSelect.locator('.ng-arrow-wrapper').click();
+      await expect(options.first()).toBeHidden();
       await modal(page).getByRole('button', { name: /Annuler/ }).click();
       await expect(modal(page)).toBeHidden();
       expect(types.length, 'Types de bilan paramétrés').toBeGreaterThan(0);

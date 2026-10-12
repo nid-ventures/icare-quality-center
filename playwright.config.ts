@@ -54,6 +54,9 @@ export default defineConfig({
   use: {
     baseURL: process.env.BASE_URL,
     trace: 'on-first-retry',
+    // Délai maximal d'une action (clic, saisie…) : sans lui, un élément absent fait attendre
+    // jusqu'au délai du test (30 min en visuel), ce qui ressemble à un blocage.
+    actionTimeout: 30000,
     // Nécessaire pour l'environnement local (nid-dev.localhost.com) qui utilise un certificat
     // auto-signé non approuvé par défaut ; sans impact sur les environnements distants qui ont
     // un certificat valide.
