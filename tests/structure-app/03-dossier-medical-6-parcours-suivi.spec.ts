@@ -200,8 +200,10 @@ const realizeConsultation = (page: Page): Realize => async (body, title) => {
   await confirm(page);
   await expect(success(page)).toBeVisible({ timeout: 20000 });
   return async reopened => {
-    // La description est réécrite par l'application avec le résumé des prescriptions
-    await expectKept(reopened, filled, title, ['description']);
+    // L'application réécrit avec le résumé des prescriptions la description (et, pour une
+    // consultation dentaire, la conclusion) : champs exclus de la comparaison
+    const dental = await reopened.locator('app-consultation-tooth-edit').count() > 0;
+    await expectKept(reopened, filled, title, dental ? ['description', 'conclusion'] : ['description']);
     const kept = new PrescriptionManagerPage(page, reopened);
     for (const kind of ['Ordonnance', 'Analyses', 'Imagerie'] as const) {
       await expect.soft(kept.panelCount(kind), `${title} : prescription "${kind}" conservée`).toHaveText(/\b1\b/, { timeout: 15000 });
