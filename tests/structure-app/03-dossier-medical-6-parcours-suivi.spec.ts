@@ -611,7 +611,8 @@ test.describe('Module Dossier médical — Suivi des parcours de soins (homme, f
     await carePathway.openArchivesFromDashboard();
     const rows = page.locator('table.cpl-table tbody tr').filter({ has: page.locator('.cpl-action-btn') });
     await expect(rows.first()).toBeVisible();
-    const row = rows.filter({ hasText: /clôtur/i }).first();
+    const row = rows.filter({ hasText: FEMMES.name }).first();
+    await expect(row, 'Parcours femmes archivé').toContainText('Archivé');
     await row.locator('.cpl-action-btn').click();
     await row.getByRole('link', { name: /Voir les détails/ }).click();
     await page.waitForURL('**/patient/patient-care-pathway-detail/**');
