@@ -21,6 +21,10 @@ const stamp = REUSED_STAMP || Date.now().toString().slice(-6);
 // SUIVI_WOMAN / SUIVI_MAN=<identifiant> (avec SUIVI_STAMP) : réutilise la patiente et le patient de ce
 // passage, dont les parcours sont déjà démarrés (les tests de démarrage sont alors sautés).
 const REUSED_PATIENTS = !!REUSED_STAMP && !!process.env.SUIVI_WOMAN && !!process.env.SUIVI_MAN;
+// Consultations sans spécialité disponible : le paramétrage ne les propose pas (formulaire d'étape
+// non préremplissable) et l'indique sous la liste des actes
+const BLOCKED_CONSULTATIONS = ['Sage-Femme', 'Contrôle', 'Infirmière'];
+
 // Chaque type d'acte choisi est associé à TOUS ses actes médicaux du catalogue
 const allTypesStep = (plannedPeriod: string) => ({ plannedPeriod, groups: ACT_DOMAINS.map(domain => ({ domain, acts: 'all' as const })) });
 
@@ -307,6 +311,10 @@ test.describe('Module Dossier médical — Suivi des parcours de soins (homme, f
         selectedActs[template.name] = acts;
         for (const [i, stepActs] of acts.entries()) {
           expect(stepActs.length, `Étape ${i + 1} : tous les actes des 4 types`).toBeGreaterThanOrEqual(ACT_DOMAINS.length);
+          // Consultations sans spécialité disponible : non proposées dans le paramétrage
+          for (const blocked of BLOCKED_CONSULTATIONS) {
+            expect(stepActs.map(a => a.toLowerCase()), `Étape ${i + 1} : "${blocked}" non proposée`).not.toContain(blocked.toLowerCase());
+          }
         }
       });
     }

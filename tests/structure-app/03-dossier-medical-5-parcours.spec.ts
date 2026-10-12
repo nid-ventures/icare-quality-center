@@ -230,6 +230,32 @@ test.describe('Module Dossier médical — Parcours de soins paramétrés', () =
     await templates.modal.getByRole('button', { name: /Fermer/ }).click();
   });
 
+  test('Les consultations sans spécialité disponible ne sont pas proposées dans un parcours', async ({ page }) => {
+    // Leur formulaire d'étape s'ouvrirait avec Spécialité et Type vides (non préremplissables)
+    const blocked = ['Sage-Femme', 'Contrôle', 'Infirmière'];
+    const templates = await openTemplates(page);
+    await templates.section.getByRole('button', { name: /Nouveau type de parcours/ }).click();
+    await expect(templates.modal).toBeVisible();
+    const step = templates.modal.locator('.step-card').first();
+    if (await step.locator('.act-group').count() === 0) await step.getByRole('button', { name: /Ajouter un type d'acte/ }).click();
+    const group = step.locator('.act-group').first();
+    await group.locator('ng-select[formcontrolname="domain"] .ng-select-container').click();
+    await templates.modal.locator('.ng-dropdown-panel .ng-option').filter({ hasText: /^\s*Consultation\s*$/ }).first().click();
+
+    const info = group.getByText(/Non proposées \(aucune spécialité disponible\)/);
+    await expect(info, 'Message des consultations non proposées').toBeVisible();
+    for (const name of blocked) await expect(info).toContainText(name);
+
+    await group.locator('ng-select[formcontrolname="acts"] .ng-select-container').click();
+    const options = templates.modal.locator('.ng-dropdown-panel .ng-option');
+    await expect(options.first()).toBeVisible();
+    const labels = (await options.allTextContents()).map(t => t.replace(/\s+/g, ' ').trim().toLowerCase());
+    expect(labels.length, 'Consultations proposées').toBeGreaterThan(0);
+    for (const name of blocked) expect(labels, `"${name}" non proposée`).not.toContain(name.toLowerCase());
+    await group.locator('ng-select[formcontrolname="acts"] .ng-arrow-wrapper').click();
+    await templates.modal.getByRole('button', { name: /Fermer/ }).click();
+  });
+
   test('Un parcours créé depuis une autre session est proposé sans reconnexion', async ({ page, browser }) => {
     test.fail(true, "Anomalie : les modèles de parcours sont mis en cache dans le navigateur à la connexion (localStorage 'careplantemplates') ; une session déjà ouverte ne voit un nouveau parcours qu'après reconnexion.");
     const other = await browser.newContext({ baseURL: process.env.BASE_URL, storageState: ADMIN_STORAGE_STATE, viewport: null, ignoreHTTPSErrors: true });
