@@ -12,7 +12,10 @@ test.setTimeout(300000);
 // Suivi complet d'un parcours de soins, sur 3 parcours paramétrés par les tests, un par sexe cible.
 // Chaque parcours a 2 étapes contenant chacune les 4 types d'actes (consultation, échographie,
 // vaccination, bilan). Ils sont démarrés sur une patiente et un patient dédiés.
-const stamp = Date.now().toString().slice(-6);
+// SUIVI_STAMP=<6 chiffres> (usage exceptionnel) : réutilise les 3 parcours QA-SUIVI-*-<stamp> déjà
+// paramétrés par un passage précédent, pour éviter leur paramétrage (≈ 15 min en visuel).
+const REUSED_STAMP = process.env.SUIVI_STAMP;
+const stamp = REUSED_STAMP || Date.now().toString().slice(-6);
 // Chaque type d'acte choisi est associé à TOUS ses actes médicaux du catalogue
 const allTypesStep = (plannedPeriod: string) => ({ plannedPeriod, groups: ACT_DOMAINS.map(domain => ({ domain, acts: 'all' as const })) });
 
@@ -142,6 +145,13 @@ test.describe('Module Dossier médical — Suivi des parcours de soins (homme, f
   // ---------------- Paramétrage et proposition selon le sexe ----------------
   test('Paramétrer 3 parcours (femmes, hommes, tous les sexes) avec tous les types d\'actes', async ({ page }) => {
     const templates = await openTemplates(page);
+    if (REUSED_STAMP) {
+      // Parcours réutilisés : on vérifie seulement qu'ils existent avec leurs 2 étapes
+      for (const template of [FEMMES, HOMMES, TOUS]) {
+        await expect(templates.row(template.name), `Parcours réutilisé ${template.name}`).toContainText('2 étape(s) configurée(s)');
+      }
+      return;
+    }
     for (const template of [FEMMES, HOMMES, TOUS]) {
       await test.step(`Parcours ${template.name} (${template.targetSex})`, async () => {
         const acts = await templates.create(template);
@@ -208,7 +218,12 @@ test.describe('Module Dossier médical — Suivi des parcours de soins (homme, f
     await expect(planned, 'Actes prévus : une ligne par étape').toHaveCount(2);
     for (let i = 0; i < 2; i++) {
       await expect(planned.nth(i)).toContainText(`Étape ${i + 1}`);
-      const expected = selectedActs[FEMMES.name]?.[i] ?? [];
+      const expected = selectedActs[FEMMES.name]?.[i];
+      if (!expected) {
+        // Parcours réutilisé : actes paramétrés inconnus, au moins un par type
+        expect(await planned.nth(i).locator('.pw-act-badge').count(), `Étape ${i + 1} : actes des 4 types`).toBeGreaterThanOrEqual(ACT_DOMAINS.length);
+        continue;
+      }
       await expect(planned.nth(i).locator('.pw-act-badge'), `Étape ${i + 1} : tous les actes paramétrés`).toHaveCount(expected.length);
       for (const act of expected) {
         await expect(planned.nth(i), `Étape ${i + 1} : acte "${act}"`).toContainText(act, { ignoreCase: true });
