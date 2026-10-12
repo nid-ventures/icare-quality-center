@@ -16,6 +16,9 @@ test.setTimeout(300000);
 // paramétrés par un passage précédent, pour éviter leur paramétrage (≈ 15 min en visuel).
 const REUSED_STAMP = process.env.SUIVI_STAMP;
 const stamp = REUSED_STAMP || Date.now().toString().slice(-6);
+// SUIVI_WOMAN / SUIVI_MAN=<identifiant> (avec SUIVI_STAMP) : réutilise la patiente et le patient de ce
+// passage, dont les parcours sont déjà démarrés (les tests de démarrage sont alors sautés).
+const REUSED_PATIENTS = !!REUSED_STAMP && !!process.env.SUIVI_WOMAN && !!process.env.SUIVI_MAN;
 // Chaque type d'acte choisi est associé à TOUS ses actes médicaux du catalogue
 const allTypesStep = (plannedPeriod: string) => ({ plannedPeriod, groups: ACT_DOMAINS.map(domain => ({ domain, acts: 'all' as const })) });
 
@@ -134,6 +137,11 @@ test.describe('Module Dossier médical — Suivi des parcours de soins (homme, f
 
   test.beforeAll(async ({ browser }) => {
     test.setTimeout(DOSSIER_SETUP_TIMEOUT * 2);
+    if (REUSED_PATIENTS) {
+      woman = { identifier: process.env.SUIVI_WOMAN!, firstName: '', lastName: '' };
+      man = { identifier: process.env.SUIVI_MAN!, firstName: '', lastName: '' };
+      return;
+    }
     woman = await createDossierPatient(browser);
     man = await createDossierPatient(browser, 'HOMME');
   });
@@ -166,21 +174,27 @@ test.describe('Module Dossier médical — Suivi des parcours de soins (homme, f
   test('La patiente voit les parcours femmes et tous les sexes, pas celui des hommes', async ({ page }) => {
     const carePathway = new CarePathwayPage(page);
     await openPatientFile(page, woman);
-    await expect(carePathway.startLink(FEMMES.name)).toHaveCount(1);
-    await expect(carePathway.startLink(TOUS.name)).toHaveCount(1);
+    for (const template of [FEMMES, TOUS]) {
+      // Patients réutilisés : parcours déjà en cours, donc tuile grisée au lieu d'un lien de démarrage
+      if (REUSED_PATIENTS) await expect(pathwayTile(page, template.name), `${template.name} affiché`).toHaveCount(1);
+      else await expect(carePathway.startLink(template.name)).toHaveCount(1);
+    }
     await expect(pathwayTile(page, HOMMES.name), 'Parcours hommes ni proposé ni grisé').toHaveCount(0);
   });
 
   test('Le patient voit les parcours hommes et tous les sexes, pas celui des femmes', async ({ page }) => {
     const carePathway = new CarePathwayPage(page);
     await openPatientFile(page, man);
-    await expect(carePathway.startLink(HOMMES.name)).toHaveCount(1);
-    await expect(carePathway.startLink(TOUS.name)).toHaveCount(1);
+    for (const template of [HOMMES, TOUS]) {
+      if (REUSED_PATIENTS) await expect(pathwayTile(page, template.name), `${template.name} affiché`).toHaveCount(1);
+      else await expect(carePathway.startLink(template.name)).toHaveCount(1);
+    }
     await expect(pathwayTile(page, FEMMES.name), 'Parcours femmes ni proposé ni grisé').toHaveCount(0);
   });
 
   // ---------------- Démarrage ----------------
   test('Démarrer le parcours femmes et le parcours tous les sexes chez la patiente', async ({ page }) => {
+    test.skip(REUSED_PATIENTS, 'Patients réutilisés : parcours déjà démarrés par un passage précédent');
     for (const template of [FEMMES, TOUS]) {
       await test.step(`Démarrer ${template.name}`, async () => {
         await openPatientFile(page, woman);
@@ -190,6 +204,7 @@ test.describe('Module Dossier médical — Suivi des parcours de soins (homme, f
   });
 
   test('Démarrer le parcours hommes et le parcours tous les sexes chez le patient', async ({ page }) => {
+    test.skip(REUSED_PATIENTS, 'Patients réutilisés : parcours déjà démarrés par un passage précédent');
     for (const template of [HOMMES, TOUS]) {
       await test.step(`Démarrer ${template.name}`, async () => {
         await openPatientFile(page, man);
