@@ -5,6 +5,8 @@ import { PortalPage } from '../../pages/structure/portal/portal.page';
 import { CarePathwayPage } from '../../pages/structure/patient/care-pathway.page';
 import { CarePathwayTemplatePage, ACT_DOMAINS, type CarePathwayTemplate, type SelectedActs } from '../../pages/structure/my-space/care-pathway-template.page';
 import { ConsultationFormPage } from '../../pages/structure/consultation/consultation-form.page';
+import { PrescriptionManagerPage } from '../../pages/structure/consultation/prescription-manager.page';
+import { fillAllFields } from '../../pages/structure/shared/fill-all-fields';
 import { isoDate } from '../../test-data/consultation-fields';
 
 test.setTimeout(300000);
@@ -104,29 +106,117 @@ async function goToStep(page: Page, n: number) {
 /** Contenu de l'étape affichée. */
 const activeStep = (page: Page) => page.locator('.pw-tab-pane--active');
 
-/** Ouvre la tuile de prestation `domain` de l'étape affichée et déplie son acte ; renvoie le corps. */
-async function openAct(page: Page, domain: RegExp): Promise<Locator> {
+/** Ouvre la tuile de prestation `domain` de l'étape affichée ; renvoie son contenu (liste des actes). */
+async function openDomain(page: Page, domain: RegExp): Promise<Locator> {
   const step = activeStep(page);
   const tile = step.locator('.quick-actions a.qa-btn').filter({ hasText: domain });
   await expect(tile, `Prestation ${domain}`).toBeVisible();
   await tile.click();
   const content = step.locator('.embed-block > div:not([hidden])');
-  const item = content.locator('.acc-item').first();
-  await expect(item).toBeVisible();
+  await expect(content.locator('.acc-item').first()).toBeVisible();
+  return content;
+}
+
+/** Déplie l'acte n° i de la prestation ouverte ; renvoie son corps. */
+async function expandAct(content: Locator, i: number): Promise<Locator> {
+  const item = content.locator('.acc-item').nth(i);
   const body = item.locator('.acc-item-body');
   if (!(await body.isVisible().catch(() => false))) await item.locator('.acc-item-header').click();
   await expect(body).toBeVisible();
   return body;
 }
 
-/** L'acte de la prestation `domain` est réalisé : son en-tête porte un N° de bon. */
-async function expectActDone(page: Page, domain: RegExp) {
-  await expect(async () => {
-    const step = activeStep(page);
-    await step.locator('.quick-actions a.qa-btn').filter({ hasText: domain }).click();
-    await expect(step.locator('.embed-block > div:not([hidden]) .acc-item-badge').first()).toContainText('N°', { timeout: 3000 });
-  }).toPass({ timeout: 30000 });
+type Realize = (body: Locator, title: string, reopen: () => Promise<Locator>) => Promise<void>;
+
+/**
+ * Réalise un à un TOUS les actes de la prestation `domain` de l'étape `step` : `realize` remplit
+ * et enregistre l'acte déplié, puis on vérifie que l'acte porte un N° de bon. Un acte déjà réalisé
+ * (passage précédent sur des patients réutilisés) est conservé tel quel.
+ */
+async function realizeAllActs(page: Page, patient: DossierPatient, pathway: string, step: number, domain: RegExp, realize: Realize) {
+  await openPathway(page, patient, pathway);
+  await goToStep(page, step);
+  const content = await openDomain(page, domain);
+  const total = await content.locator('.acc-item').count();
+  expect(total, `Actes de la prestation ${domain}`).toBeGreaterThan(0);
+  for (let i = 0; i < total; i++) {
+    const current = await openDomain(page, domain);
+    const item = current.locator('.acc-item').nth(i);
+    const title = ((await item.locator('.acc-item-title').textContent()) ?? '').trim();
+    await test.step(`Acte ${i + 1}/${total} : ${title}`, async () => {
+      if (await item.locator('.acc-item-badge').count() > 0) return;
+      const reopen = async () => expandAct(await openDomain(page, domain), i);
+      await realize(await expandAct(current, i), title, reopen);
+      await expect(async () => {
+        const again = await openDomain(page, domain);
+        await expect(again.locator('.acc-item').nth(i).locator('.acc-item-badge'), `"${title}" réalisé (N° de bon)`)
+          .toContainText('N°', { timeout: 3000 });
+      }).toPass({ timeout: 30000 });
+      // Acte replié : un seul formulaire (et gestionnaire de prescriptions) déplié à la fois
+      const done = (await openDomain(page, domain)).locator('.acc-item').nth(i);
+      if (await done.locator('.acc-item-body').isVisible().catch(() => false)) await done.locator('.acc-item-header').click();
+    });
+  }
 }
+
+/** Consultation : tous les champs, une ordonnance, une prescription d'analyses et une d'imagerie. */
+const realizeConsultation = (page: Page): Realize => async (body, title) => {
+  await new ConsultationFormPage(page, body).activate('date');
+  await fillAllFields(page, body, title);
+  const prescriptions = new PrescriptionManagerPage(page, body);
+  await prescriptions.addMedicationPrescription({
+    title: `Ordonnance ${title}`, medicationName: 'Paracétamol', posologie: '1 cp matin et soir', recommandations: 'Hydratation QA',
+  });
+  await prescriptions.addLaboratoryPrescription(`Analyses ${title}`);
+  await prescriptions.addImagingPrescription(`Imagerie ${title}`, isoDate());
+  await body.getByRole('button', { name: /Mettre à jour la consultation|Enregistrer la consultation/ }).click();
+  await confirm(page);
+  await expect(success(page)).toBeVisible({ timeout: 20000 });
+};
+
+/** Échographie : tous les champs (dont pièce jointe et fiches foetus pour une obstétricale). */
+const realizeEchographie = (page: Page): Realize => async (body, title) => {
+  await new ConsultationFormPage(page, body).activate('date');
+  await fillAllFields(page, body, title);
+  await body.locator('button.btn-success').last().click();
+  await confirm(page);
+  await expect(success(page)).toBeVisible({ timeout: 20000 });
+};
+
+/** Vaccination : première dose avec tous ses champs (date, terme, dose, lot). */
+const realizeVaccination = (page: Page): Realize => async (body, title) => {
+  await body.getByRole('button', { name: /Nouvelle dose/ }).click();
+  const dose = body.locator('app-vaccination-simple-item-static');
+  await expect(dose).toBeVisible();
+  await fillAllFields(page, dose, title);
+  await dose.getByRole('button', { name: /Enregistrer la dose/ }).click();
+  await confirm(page);
+  await expect(success(page)).toBeVisible({ timeout: 20000 });
+};
+
+/** Bilan : création avec tous les champs, puis résultat complet (dates, pièce jointe, résultats). */
+const realizeBilan = (page: Page): Realize => async (body, title, reopen) => {
+  const create = body.locator('app-create-health-check');
+  await expect(create, 'Formulaire de création du bilan').toBeVisible();
+  await fillAllFields(page, create, title);
+  await create.getByRole('button', { name: /^\s*Enregistrer\s*$/ }).click();
+  await expect(success(page)).toBeVisible({ timeout: 20000 });
+
+  let care: Locator | undefined;
+  await expect(async () => {
+    care = (await reopen()).locator('app-health-check-care');
+    await expect(care).toBeVisible({ timeout: 3000 });
+  }).toPass({ timeout: 30000 });
+  await care!.locator('a.nav-link', { hasText: 'Résultat' }).click();
+  const result = care!.locator('[id^="result-content-"]');
+  await expect(result).toBeVisible();
+  await result.getByRole('button', { name: /Activer le formulaire/ }).click();
+  await expect(result.locator('textarea[formcontrolname="diagnostic"]')).toBeEnabled();
+  await fillAllFields(page, result, title);
+  await result.locator('button.btn-submit').click();
+  await confirm(page);
+  await expect(success(page)).toBeVisible({ timeout: 20000 });
+};
 
 test.describe('Module Dossier médical — Suivi des parcours de soins (homme, femme, tous les sexes)', () => {
   test.describe.configure({ mode: 'serial' });
@@ -263,65 +353,27 @@ test.describe('Module Dossier médical — Suivi des parcours de soins (homme, f
     }
   });
 
-  // ---------------- Réalisation des actes de l'étape 1 ----------------
-  test("Réaliser la consultation de l'étape 1", async ({ page }) => {
-    await openPathway(page, woman, FEMMES.name);
-    const body = await openAct(page, /Consultation/i);
-    await new ConsultationFormPage(page, body).activate('date');
-    // Consultant toujours choisi : le champ peut sembler rempli (croix d'effacement) avec une valeur vide
-    await new ConsultationFormPage(page, body).fill([{ name: 'caregiverId', kind: 'select' }]);
-    await body.getByRole('button', { name: /Mettre à jour la consultation|Enregistrer la consultation/ }).click();
-    await confirm(page);
-    await expect(success(page)).toBeVisible({ timeout: 20000 });
-    await expectActDone(page, /Consultation/i);
+  // ---------------- Réalisation de TOUS les actes de l'étape 1, tous les champs ----------------
+  // Chaque type d'acte du parcours porte tous les actes de son catalogue : les tests les
+  // réalisent tous, un par un (délai allongé en conséquence).
+  test("Réaliser toutes les consultations de l'étape 1 (tous les champs + prescriptions)", async ({ page }) => {
+    test.setTimeout(3600000);
+    await realizeAllActs(page, woman, FEMMES.name, 1, /Consultation/i, realizeConsultation(page));
   });
 
-  test("Réaliser l'échographie de l'étape 1", async ({ page }) => {
-    await openPathway(page, woman, FEMMES.name);
-    const body = await openAct(page, /chographie/i);
-    const form = new ConsultationFormPage(page, body);
-    await form.activate('date');
-    await form.fill([
-      { name: 'caregiverId', kind: 'select' },
-      { name: 'date', kind: 'date', value: isoDate() },
-      { name: 'region', kind: 'select' },
-    ]);
-    await body.locator('button.btn-success').last().click();
-    await confirm(page);
-    await expect(success(page)).toBeVisible({ timeout: 20000 });
-    await expectActDone(page, /chographie/i);
+  test("Réaliser toutes les échographies de l'étape 1 (tous les champs)", async ({ page }) => {
+    test.setTimeout(3600000);
+    await realizeAllActs(page, woman, FEMMES.name, 1, /chographie/i, realizeEchographie(page));
   });
 
-  test("Réaliser la vaccination de l'étape 1 (première dose)", async ({ page }) => {
-    await openPathway(page, woman, FEMMES.name);
-    const body = await openAct(page, /Vaccination/i);
-    await body.getByRole('button', { name: /Nouvelle dose/ }).click();
-    const doseForm = body.locator('app-vaccination-simple-item-static');
-    await expect(doseForm).toBeVisible();
-    // Dans un parcours, la dose porte aussi le terme
-    await new ConsultationFormPage(page, doseForm).fill([
-      { name: 'date', kind: 'date', value: isoDate() },
-      { name: 'terme', kind: 'text', value: 'Rappel QA' },
-      { name: 'dose', kind: 'select' },
-    ]);
-    await doseForm.getByRole('button', { name: /Enregistrer la dose/ }).click();
-    await confirm(page);
-    await expect(success(page)).toBeVisible({ timeout: 20000 });
-    await expectActDone(page, /Vaccination/i);
+  test("Réaliser toutes les vaccinations de l'étape 1 (première dose, tous les champs)", async ({ page }) => {
+    test.setTimeout(3600000);
+    await realizeAllActs(page, woman, FEMMES.name, 1, /Vaccination/i, realizeVaccination(page));
   });
 
-  test("Réaliser le bilan de l'étape 1", async ({ page }) => {
-    await openPathway(page, woman, FEMMES.name);
-    const body = await openAct(page, /Bilan/i);
-    const create = body.locator('app-create-health-check');
-    await expect(create, 'Formulaire de création du bilan').toBeVisible();
-    await new ConsultationFormPage(page, create).fill([
-      { name: 'caregiverId', kind: 'select' },
-      { name: 'diagnostic', kind: 'textarea', value: 'Bilan du parcours QA' },
-    ]);
-    await create.getByRole('button', { name: /^\s*Enregistrer\s*$/ }).click();
-    await expect(success(page)).toBeVisible({ timeout: 20000 });
-    await expectActDone(page, /Bilan/i);
+  test("Réaliser tous les bilans de l'étape 1 (création et résultat, tous les champs)", async ({ page }) => {
+    test.setTimeout(3600000);
+    await realizeAllActs(page, woman, FEMMES.name, 1, /Bilan/i, realizeBilan(page));
   });
 
   // ---------------- Clôture des étapes ----------------
@@ -434,16 +486,9 @@ test.describe('Module Dossier médical — Suivi des parcours de soins (homme, f
   });
 
   // ---------------- Parcours du patient homme ----------------
-  test("Patient homme : réaliser la consultation de l'étape 1 du parcours hommes", async ({ page }) => {
-    await openPathway(page, man, HOMMES.name);
-    const body = await openAct(page, /Consultation/i);
-    await new ConsultationFormPage(page, body).activate('date');
-    // Consultant toujours choisi : le champ peut sembler rempli (croix d'effacement) avec une valeur vide
-    await new ConsultationFormPage(page, body).fill([{ name: 'caregiverId', kind: 'select' }]);
-    await body.getByRole('button', { name: /Mettre à jour la consultation|Enregistrer la consultation/ }).click();
-    await confirm(page);
-    await expect(success(page)).toBeVisible({ timeout: 20000 });
-    await expectActDone(page, /Consultation/i);
+  test("Patient homme : réaliser toutes les consultations de l'étape 1 du parcours hommes (avec prescriptions)", async ({ page }) => {
+    test.setTimeout(3600000);
+    await realizeAllActs(page, man, HOMMES.name, 1, /Consultation/i, realizeConsultation(page));
   });
 
   // ---------------- Nettoyage : archivage des parcours restants puis suppression des modèles ----------------

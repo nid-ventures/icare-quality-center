@@ -18,8 +18,9 @@ export type PrescriptionKind = 'Ordonnance' | 'Analyses' | 'Imagerie';
 export class PrescriptionManagerPage {
   readonly root: Locator;
 
-  constructor(private readonly page: Page) {
-    this.root = page.locator('app-prescription-manager').filter({ visible: true }).first();
+  /** `scope` : zone contenant le gestionnaire (ex. l'acte d'un parcours), sinon toute la page. */
+  constructor(private readonly page: Page, scope?: Locator) {
+    this.root = (scope ?? page).locator('app-prescription-manager').filter({ visible: true }).first();
   }
 
   private panel(kind: PrescriptionKind): Locator {
