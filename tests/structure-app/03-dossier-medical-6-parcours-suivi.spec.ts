@@ -625,7 +625,12 @@ test.describe('Module Dossier médical — Suivi des parcours de soins (homme, f
 
   test("Après archivage, le parcours femmes est de nouveau proposé à la patiente", async ({ page }) => {
     await openPatientFile(page, woman);
-    await expect(new CarePathwayPage(page).startLink(FEMMES.name)).toHaveCount(1);
+    // Tuile de démarrage de nouveau active (le bloc de suivi des parcours affiche aussi, une fois
+    // le parcours archivé, un lien "Voir le parcours 0" qui mène au formulaire de démarrage)
+    const tile = pathwayTile(page, FEMMES.name);
+    await expect(tile).toHaveCount(1);
+    await expect(tile).toBeEnabled();
+    await expect(tile).toHaveAttribute('href', /\/patient\/create-careplan\//);
   });
 
   // ---------------- Parcours du patient homme ----------------
