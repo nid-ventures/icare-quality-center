@@ -609,12 +609,14 @@ test.describe('Module Dossier médical — Suivi des parcours de soins (homme, f
     const carePathway = new CarePathwayPage(page);
     await openPatientFile(page, woman);
     await carePathway.openArchivesFromDashboard();
-    const rows = page.locator('table.cpl-table tbody tr').filter({ has: page.locator('.cpl-action-btn') });
+    // Même design que les autres listes : section avec compteur, tableau data-table, bouton "Voir les détails"
+    await expect(page.getByRole('heading', { name: /Liste des parcours archivés/ })).toBeVisible();
+    const rows = page.locator('table.data-table tbody tr.row-clickable');
     await expect(rows.first()).toBeVisible();
+    await expect(page.locator('.count-badge').first()).toHaveText(String(await rows.count()));
     const row = rows.filter({ hasText: FEMMES.name }).first();
     await expect(row, 'Parcours femmes archivé').toContainText('Archivé');
-    await row.locator('.cpl-action-btn').click();
-    await row.getByRole('link', { name: /Voir les détails/ }).click();
+    await row.getByRole('button', { name: /Voir les détails/ }).click();
     await page.waitForURL('**/patient/patient-care-pathway-detail/**');
     await expect(page.locator('.pw-hero-status')).toHaveText(/Archivé/);
     await expect(page.getByRole('button', { name: /Clôturer cette étape/ })).toHaveCount(0);
