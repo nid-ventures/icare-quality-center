@@ -143,7 +143,9 @@ export async function keptFieldsDiff(root: Locator, expected: FieldSnapshot, ign
     const name = key.split('#')[0];
     if (!value || ignore.includes(name)) continue;
     const shown = actual[key];
-    const same = shown !== undefined && (shown === value
+    // Liste à choix multiples ("a | b | c") : mêmes valeurs, quel que soit l'ordre réaffiché
+    const asSet = (v: string) => v.split(' | ').map(x => x.toLowerCase()).sort().join(' | ');
+    const same = shown !== undefined && (shown === value || asSet(shown) === asSet(value)
       || (!isNaN(Number(shown)) && !isNaN(Number(value)) && Number(shown) === Number(value))
       || shown.toLowerCase() === value.toLowerCase());
     if (!same) diffs.push(`${key} : saisi "${value}" ≠ réaffiché "${shown ?? '(champ absent)'}"`);
