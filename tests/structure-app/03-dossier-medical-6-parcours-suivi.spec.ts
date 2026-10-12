@@ -107,6 +107,14 @@ async function goToStep(page: Page, n: number) {
   await expect(activeStep(page)).toContainText(`Étape ${n}`);
 }
 
+/**
+ * Bouton de la barre d'actions du parcours ("Modifier …", "Archiver …"). Le libellé prévu porte le
+ * titre du parcours, mais ce titre vient du référentiel des parcours prédéfinis : il est vide pour
+ * un parcours paramétré (bouton "Modifier" / "Archiver" seul).
+ */
+const pathwayAction = (page: Page, action: 'Modifier' | 'Archiver') =>
+  page.locator('.pw-actions-bar').getByRole('button', { name: new RegExp(`^\\W*${action}\\b`) });
+
 /** Contenu de l'étape affichée. */
 const activeStep = (page: Page) => page.locator('.pw-tab-pane--active');
 
@@ -519,6 +527,12 @@ test.describe('Module Dossier médical — Suivi des parcours de soins (homme, f
   });
 
   // ---------------- Résumé et modification ----------------
+  test('Les boutons du parcours portent le nom du parcours', async ({ page }) => {
+    test.fail(true, "Anomalie : les boutons \"Modifier …\", \"Archiver …\" et \"Voir les archives …\" affichent le titre du parcours lu dans le référentiel des parcours prédéfinis (careplantemplateTitle) : il est vide pour un parcours paramétré.");
+    await openPathway(page, woman, FEMMES.name);
+    await expect(pathwayAction(page, 'Modifier')).toContainText(FEMMES.name, { timeout: 5000 });
+  });
+
   test('Ouvrir le résumé du parcours', async ({ page }) => {
     await openPathway(page, woman, FEMMES.name);
     await page.getByRole('button', { name: /Voir résumé/ }).click();
@@ -531,7 +545,7 @@ test.describe('Module Dossier médical — Suivi des parcours de soins (homme, f
 
   test('Modifier le parcours (praticien et date de début)', async ({ page }) => {
     await openPathway(page, woman, FEMMES.name);
-    await page.getByRole('button', { name: new RegExp(`Modifier ${FEMMES.name}`) }).click();
+    await pathwayAction(page, 'Modifier').click();
     const modal = page.locator('#bd-careplan');
     await expect(modal).toBeVisible();
     await new ConsultationFormPage(page, modal).fill([
@@ -546,7 +560,7 @@ test.describe('Module Dossier médical — Suivi des parcours de soins (homme, f
   // ---------------- Archivage ----------------
   test("Archiver sans renseigner l'année ni le sexe de l'enfant est refusé", async ({ page }) => {
     await openPathway(page, woman, FEMMES.name);
-    await page.getByRole('button', { name: new RegExp(`Archiver ${FEMMES.name}`) }).click();
+    await pathwayAction(page, 'Archiver').click();
     const modal = page.locator('#obstetrical');
     await expect(modal).toBeVisible();
     await modal.getByRole('button', { name: /^\W*Enregistrer\s*$/ }).click();
@@ -559,7 +573,7 @@ test.describe('Module Dossier médical — Suivi des parcours de soins (homme, f
   test("Archiver un parcours non prénatal ne demande pas d'antécédent obstétrical", async ({ page }) => {
     test.fail(true, "Anomalie : l'archivage de tout parcours (vaccinal, pédiatrique, parcours d'un homme…) ouvre le formulaire d'issue de grossesse et crée un antécédent obstétrical (care-pathways-step openModalArchive / openModalAntecedentObstetrical).");
     await openPathway(page, man, HOMMES.name);
-    await page.getByRole('button', { name: new RegExp(`Archiver ${HOMMES.name}`) }).click();
+    await pathwayAction(page, 'Archiver').click();
     const modal = page.locator('#obstetrical');
     await expect(modal).toBeVisible();
     await expect(modal.getByText('Issue de la grossesse'), 'Pas de question de grossesse').toHaveCount(0, { timeout: 3000 });
@@ -567,7 +581,7 @@ test.describe('Module Dossier médical — Suivi des parcours de soins (homme, f
 
   test('Archiver le parcours de la patiente avec tous les champs', async ({ page }) => {
     await openPathway(page, woman, FEMMES.name);
-    await page.getByRole('button', { name: new RegExp(`Archiver ${FEMMES.name}`) }).click();
+    await pathwayAction(page, 'Archiver').click();
     const modal = page.locator('#obstetrical');
     await expect(modal).toBeVisible();
     await new ConsultationFormPage(page, modal).fill([
@@ -619,7 +633,7 @@ test.describe('Module Dossier médical — Suivi des parcours de soins (homme, f
     for (const [patient, template] of [[woman, TOUS], [man, HOMMES], [man, TOUS]] as const) {
       await test.step(`Archiver ${template.name}`, async () => {
         await openPathway(page, patient, template.name);
-        await page.getByRole('button', { name: new RegExp(`Archiver ${template.name}`) }).click();
+        await pathwayAction(page, 'Archiver').click();
         const modal = page.locator('#obstetrical');
         await expect(modal).toBeVisible();
         await new ConsultationFormPage(page, modal).fill([
