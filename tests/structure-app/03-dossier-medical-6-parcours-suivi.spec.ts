@@ -298,9 +298,16 @@ const realizeBilan = (page: Page): Realize => async (body, title, reopen) => {
     await expect(result.locator('textarea[formcontrolname="diagnostic"]')).toBeEnabled({ timeout: 1000 });
   }).toPass({ timeout: 30000 });
   const filled = await fillAllFields(page, result, title);
+  // Zones de résultat liées par formControlName="{{ analyse.id }}" : pas d'attribut formcontrolname
+  // dans la page, fillAllFields ne les voit pas. Saisie explicite, chaque zone étant repérée par son
+  // name (identifiant de l'analyse) -- l'ordre des lignes n'est pas stable d'un affichage à l'autre.
+  const results: Record<string, string> = {};
   const count = await inputs.count();
   for (let k = 0; k < count; k++) {
-    await expect(inputs.nth(k), `${title} : résultat de l'analyse ${k + 1}/${count} saisi`).not.toHaveValue('');
+    const id = (await inputs.nth(k).getAttribute('name')) ?? String(k);
+    results[id] = `Résultat ${k + 1} de ${title} QA`;
+    await inputs.nth(k).fill(results[id]);
+    await expect(inputs.nth(k), `${title} : résultat de l'analyse ${k + 1}/${count} saisi`).toHaveValue(results[id]);
   }
   await result.locator('button.btn-submit').click();
   await confirm(page);
@@ -308,10 +315,10 @@ const realizeBilan = (page: Page): Realize => async (body, title, reopen) => {
   return async reopened => {
     const kept = await openResult(async () => reopened);
     await expectKept(kept, filled, `${title} (résultat)`);
-    const keptInputs = kept.locator('textarea.result-input');
-    await expect.soft(keptInputs, `${title} : une zone de résultat par analyse`).toHaveCount(count);
-    for (let k = 0; k < count; k++) {
-      await expect.soft(keptInputs.nth(k), `${title} : résultat de l'analyse ${k + 1}/${count} réaffiché`).not.toHaveValue('');
+    await expect.soft(kept.locator('textarea.result-input'), `${title} : une zone de résultat par analyse`).toHaveCount(count);
+    for (const [id, value] of Object.entries(results)) {
+      await expect.soft(kept.locator(`textarea.result-input[name="${id}"]`), `${title} : résultat de l'analyse ${id} réaffiché`)
+        .toHaveValue(value, { timeout: 15000 });
     }
   };
 };
