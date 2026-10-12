@@ -94,6 +94,7 @@ test.describe("Module Dossier médical — Bilans d'analyses", () => {
     const typeSelect = modal(page).locator('ng-select[formcontrolname="type"]');
 
     let types: string[] = [];
+    const preselected: Record<string, { analyses: number; acts: number }> = {};
     await test.step('Lire les types de bilan proposés', async () => {
       await list.openNewBilanModal();
       await typeSelect.locator('.ng-select-container').click();
@@ -115,11 +116,11 @@ test.describe("Module Dossier médical — Bilans d'analyses", () => {
         const form = new ConsultationFormPage(page, modal(page));
         await form.fill([{ name: 'caregiverId', kind: 'select' }, { name: 'type', kind: 'select', index }]);
 
-        // Le choix du type présélectionne ses analyses et les actes à facturer correspondants
+        // Le choix du type présélectionne les analyses rattachées à ce type dans le paramétrage
+        // (aucune pour un type sans analyse rattachée, ex. "BILAN standard") et leurs actes à facturer
         const analyses = await chosenLabels(modal(page).locator('ng-select[formcontrolname="analyses"]'));
         const acts = await chosenLabels(modal(page).locator('ng-select[formcontrolname="billableActs"]'));
-        expect.soft(analyses.length, `Analyses présélectionnées pour "${type}"`).toBeGreaterThan(0);
-        expect.soft(acts.length, `Actes à facturer présélectionnés pour "${type}"`).toBeGreaterThan(0);
+        preselected[type] = { analyses: analyses.length, acts: acts.length };
 
         await form.fill([{ name: 'diagnostic', kind: 'textarea', value: `Bilan ${type} QA` }]);
         await list.saveBilan();
@@ -133,7 +134,8 @@ test.describe("Module Dossier médical — Bilans d'analyses", () => {
         for (const analyse of analyses) {
           await expect(page.locator('.analyses-modern table'), `Analyse "${analyse}" au bulletin`).toContainText(analyse, { ignoreCase: true });
         }
-        if (index === 0) {
+        // Bilan de référence pour la suite (résultat, bulletins, analyses) : le premier avec des analyses
+        if (!bilanUrl && analyses.length > 0) {
           bilanUrl = page.url();
           bilanOrder = order;
           bilanAnalyses = analyses;
@@ -142,6 +144,14 @@ test.describe("Module Dossier médical — Bilans d'analyses", () => {
         await expect(page.getByRole('heading', { name: /Liste des bilans d'analyses/ })).toBeVisible();
       });
     }
+
+    await test.step('Au moins un type présélectionne des analyses et des actes à facturer', async () => {
+      const withAnalyses = Object.entries(preselected).filter(([, c]) => c.analyses > 0);
+      expect(withAnalyses.length, `Présélections par type : ${JSON.stringify(preselected)}`).toBeGreaterThan(0);
+      for (const [type, c] of withAnalyses) {
+        expect.soft(c.acts, `Actes à facturer présélectionnés pour "${type}"`).toBeGreaterThan(0);
+      }
+    });
   });
 
   test('Ajouter manuellement des analyses lors de la création', async ({ page }) => {
