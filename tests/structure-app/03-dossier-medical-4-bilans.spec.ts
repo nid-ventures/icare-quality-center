@@ -28,6 +28,21 @@ const confirm = async (page: Page) => {
   await expect(button).toBeHidden({ timeout: 30000 });
 };
 
+/**
+ * Zone de résultat d'une analyse dans l'onglet Résultat, retrouvée par le nom de l'analyse :
+ * l'ordre des lignes n'est pas stable d'un affichage à l'autre.
+ */
+async function resultInput(pane: Locator, analyse: string): Promise<Locator> {
+  const rows = pane.locator('table.analyses-table tbody tr');
+  const wanted = analyse.replace(/\s+/g, ' ').trim().toUpperCase();
+  const count = await rows.count();
+  for (let i = 0; i < count; i++) {
+    const label = ((await rows.nth(i).locator('td.analyse-type').textContent()) ?? '').replace(/\s+/g, ' ').trim().toUpperCase();
+    if (label === wanted) return rows.nth(i).locator('textarea.result-input');
+  }
+  throw new Error(`Ligne de résultat de l'analyse "${analyse}" introuvable`);
+}
+
 /** Libellés des valeurs choisies d'un ng-select multiple. */
 const chosenLabels = async (select: Locator) =>
   (await select.locator('.ng-value-label').allTextContents()).map(t => t.replace(/\s+/g, ' ').trim()).filter(Boolean);
@@ -40,7 +55,7 @@ test.describe("Module Dossier médical — Bilans d'analyses", () => {
   let bilanOrder = '';
   let bilanAnalyses: string[] = [];
   let results: FilledValues = {};
-  let resultTexts: string[] = [];
+  let resultTexts: Record<string, string> = {};
 
   test.beforeAll(async ({ browser }) => {
     test.setTimeout(DOSSIER_SETUP_TIMEOUT);
@@ -186,11 +201,11 @@ test.describe("Module Dossier médical — Bilans d'analyses", () => {
 
     const inputs = pane.locator('textarea.result-input');
     await expect(inputs, 'Une zone de résultat par analyse').toHaveCount(bilanAnalyses.length);
-    resultTexts = [];
-    for (let i = 0; i < bilanAnalyses.length; i++) {
-      const text = `Résultat ${bilanAnalyses[i]} : valeur normale QA ${i + 1}`;
-      await inputs.nth(i).fill(text);
-      resultTexts.push(text);
+    resultTexts = {};
+    for (const [i, analyse] of bilanAnalyses.entries()) {
+      const text = `Résultat ${analyse} : valeur normale QA ${i + 1}`;
+      await (await resultInput(pane, analyse)).fill(text);
+      resultTexts[analyse] = text;
     }
 
     await pane.locator('button.btn-submit').click();
@@ -202,8 +217,9 @@ test.describe("Module Dossier médical — Bilans d'analyses", () => {
     await page.goto(bilanUrl);
     const pane = await openResultTab(page);
     await new ConsultationFormPage(page, pane).expectValues(resultFields(), results);
-    const inputs = pane.locator('textarea.result-input');
-    for (let i = 0; i < resultTexts.length; i++) await expect(inputs.nth(i)).toHaveValue(resultTexts[i]);
+    for (const [analyse, text] of Object.entries(resultTexts)) {
+      await expect(await resultInput(pane, analyse), `Résultat de "${analyse}"`).toHaveValue(text);
+    }
     await expect(pane.getByText('Modifier la pièce jointe')).toBeVisible();
   });
 
@@ -225,8 +241,9 @@ test.describe("Module Dossier médical — Bilans d'analyses", () => {
     await activateResult(page, pane);
     const diagnostic = 'Diagnostic modifié QA';
     await pane.locator('textarea[formcontrolname="diagnostic"]').fill(diagnostic);
-    resultTexts[0] = 'Résultat modifié QA';
-    await pane.locator('textarea.result-input').first().fill(resultTexts[0]);
+    const first = bilanAnalyses[0];
+    resultTexts[first] = 'Résultat modifié QA';
+    await (await resultInput(pane, first)).fill(resultTexts[first]);
     await pane.locator('button.btn-submit').click();
     await confirm(page);
     await expect(page.getByText(/enregistrement de ce\(s\) résultat\(s\) a réussi/).first()).toBeVisible({ timeout: 20000 });
@@ -234,7 +251,7 @@ test.describe("Module Dossier médical — Bilans d'analyses", () => {
     await page.reload();
     const reloaded = await openResultTab(page);
     await expect(reloaded.locator('textarea[formcontrolname="diagnostic"]')).toHaveValue(diagnostic);
-    await expect(reloaded.locator('textarea.result-input').first()).toHaveValue(resultTexts[0]);
+    await expect(await resultInput(reloaded, first)).toHaveValue(resultTexts[first]);
   });
 
   // ======================================================================
