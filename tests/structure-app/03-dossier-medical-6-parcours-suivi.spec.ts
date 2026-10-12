@@ -455,60 +455,69 @@ test.describe('Module Dossier médical — Suivi des parcours de soins (homme, f
     }
   });
 
-  // ---------------- Réalisation de TOUS les actes de l'étape 1, tous les champs ----------------
-  // Chaque type d'acte du parcours porte tous les actes de son catalogue : les tests les
-  // réalisent tous, un par un (délai allongé en conséquence).
-  test("Réaliser toutes les consultations de l'étape 1 (tous les champs + prescriptions)", async ({ page }) => {
-    test.setTimeout(3600000);
-    await realizeAllActs(page, woman, FEMMES.name, 1, /Consultation/i, realizeConsultation(page));
-  });
-
-  test("Réaliser toutes les échographies de l'étape 1 (tous les champs)", async ({ page }) => {
-    test.setTimeout(3600000);
-    await realizeAllActs(page, woman, FEMMES.name, 1, /chographie/i, realizeEchographie(page));
-  });
-
-  test("Réaliser toutes les vaccinations de l'étape 1 (première dose, tous les champs)", async ({ page }) => {
-    test.setTimeout(3600000);
-    await realizeAllActs(page, woman, FEMMES.name, 1, /Vaccination/i, realizeVaccination(page));
-  });
-
-  test("Réaliser tous les bilans de l'étape 1 (création et résultat, tous les champs)", async ({ page }) => {
-    test.setTimeout(3600000);
-    await realizeAllActs(page, woman, FEMMES.name, 1, /Bilan/i, realizeBilan(page));
-  });
-
-  // ---------------- Clôture des étapes ----------------
-  test("Clôturer l'étape 1 (tous les actes réalisés) : étape terminée", async ({ page }) => {
-    await openPathway(page, woman, FEMMES.name);
-    const close = activeStep(page).getByRole('button', { name: /Clôturer cette étape/ });
-    // Patients réutilisés : étape déjà clôturée par un passage précédent, on vérifie seulement son état
-    if (!(REUSED_PATIENTS && await close.count() === 0)) {
-      await close.click();
-      await confirm(page);
-      await expect(page.getByText(/clôture de cet étape a\s+reussi/i).first()).toBeVisible({ timeout: 20000 });
-    }
-    await expect(stepButton(page, 1)).toHaveClass(/pw-step-success/, { timeout: 20000 });
-    await expect(activeStep(page).getByRole('button', { name: /Clôturer cette étape/ })).toHaveCount(0);
-
-    // Étape clôturée : plus aucun bouton de modification dans ses actes, quel que soit le type
-    await page.reload();
-    await expect(page.locator('.pw-hero')).toBeVisible({ timeout: 20000 });
-    const editButtons = /^\W*(Activer|Activer le formulaire|Verrouiller|Mettre à jour.*|Enregistrer.*|Modifier la vaccination|Nouvelle dose)\s*$/;
-    for (const domain of [/Consultation/i, /chographie/i, /Vaccination/i, /Bilan/i]) {
-      const body = await expandAct(await openDomain(page, domain), 0);
-      await page.waitForTimeout(2000); // chargement de l'acte depuis le serveur
-      await expect.soft(body.getByRole('button', { name: editButtons }), `${domain} : aucun bouton de modification, étape clôturée`).toHaveCount(0);
-    }
-  });
-
+  // Avant toute saisie : l'étape 2, prévue plus tard, est "à venir" et ne peut pas être clôturée.
+  // (Ses formulaires restent saisissables : seule une étape clôturée ou un parcours archivé les verrouille.)
   test("Une étape à venir ne peut pas être clôturée", async ({ page }) => {
-    // Étape 2 prévue 7 jours plus tard : "À venir" (en attente), sans bouton de clôture
     await openPathway(page, woman, FEMMES.name);
     await goToStep(page, 2);
+    const content = await openDomain(page, /Consultation/i);
+    test.skip(await content.locator('.acc-item-badge').count() > 0, 'Patients réutilisés : des actes ont déjà été saisis dans cette étape');
     await expect(stepButton(page, 2)).toHaveClass(/pw-step-secondary/);
     await expect(activeStep(page).getByRole('button', { name: /Clôturer cette étape/ })).toHaveCount(0);
   });
+
+  // ---------------- Réalisation de TOUS les actes de TOUTES les étapes, tous les champs ----------------
+  // Chaque type d'acte du parcours porte tous les actes de son catalogue : les tests les
+  // réalisent tous, un par un, étape après étape (délai allongé en conséquence).
+  for (const step of FEMMES.steps.map((_, i) => i + 1)) {
+    test(`Étape ${step} : réaliser toutes les consultations (tous les champs + prescriptions)`, async ({ page }) => {
+      test.setTimeout(3600000);
+      await realizeAllActs(page, woman, FEMMES.name, step, /Consultation/i, realizeConsultation(page));
+    });
+
+    test(`Étape ${step} : réaliser toutes les échographies (tous les champs)`, async ({ page }) => {
+      test.setTimeout(3600000);
+      await realizeAllActs(page, woman, FEMMES.name, step, /chographie/i, realizeEchographie(page));
+    });
+
+    test(`Étape ${step} : réaliser toutes les vaccinations (première dose, tous les champs)`, async ({ page }) => {
+      test.setTimeout(3600000);
+      await realizeAllActs(page, woman, FEMMES.name, step, /Vaccination/i, realizeVaccination(page));
+    });
+
+    test(`Étape ${step} : réaliser tous les bilans (création et résultat, tous les champs)`, async ({ page }) => {
+      test.setTimeout(3600000);
+      await realizeAllActs(page, woman, FEMMES.name, step, /Bilan/i, realizeBilan(page));
+    });
+  }
+
+  // ---------------- Clôture des étapes ----------------
+  for (const step of FEMMES.steps.map((_, i) => i + 1)) {
+    test(`Clôturer l'étape ${step} (tous les actes réalisés) : étape terminée`, async ({ page }) => {
+      await openPathway(page, woman, FEMMES.name);
+      await goToStep(page, step);
+      const close = activeStep(page).getByRole('button', { name: /Clôturer cette étape/ });
+      // Patients réutilisés : étape déjà clôturée par un passage précédent, on vérifie seulement son état
+      if (!(REUSED_PATIENTS && await close.count() === 0)) {
+        await close.click();
+        await confirm(page);
+        await expect(page.getByText(/clôture de cet étape a\s+reussi/i).first()).toBeVisible({ timeout: 20000 });
+      }
+      await expect(stepButton(page, step)).toHaveClass(/pw-step-success/, { timeout: 20000 });
+      await expect(activeStep(page).getByRole('button', { name: /Clôturer cette étape/ })).toHaveCount(0);
+
+      // Étape clôturée : plus aucun bouton de modification dans ses actes, quel que soit le type
+      await page.reload();
+      await expect(page.locator('.pw-hero')).toBeVisible({ timeout: 20000 });
+      await goToStep(page, step);
+      const editButtons = /^\W*(Activer|Activer le formulaire|Verrouiller|Mettre à jour.*|Enregistrer.*|Modifier la vaccination|Nouvelle dose)\s*$/;
+      for (const domain of [/Consultation/i, /chographie/i, /Vaccination/i, /Bilan/i]) {
+        const body = await expandAct(await openDomain(page, domain), 0);
+        await page.waitForTimeout(2000); // chargement de l'acte depuis le serveur
+        await expect.soft(body.getByRole('button', { name: editButtons }), `Étape ${step} ${domain} : aucun bouton de modification, étape clôturée`).toHaveCount(0);
+      }
+    });
+  }
 
   test("Une étape sans acte réalisé reste en attente et ne peut pas être clôturée", async ({ page }) => {
     // Étape 1 du parcours tous les sexes de la patiente : aucun acte réalisé, étape "en attente"
@@ -646,10 +655,12 @@ test.describe('Module Dossier médical — Suivi des parcours de soins (homme, f
   });
 
   // ---------------- Parcours du patient homme ----------------
-  test("Patient homme : réaliser toutes les consultations de l'étape 1 du parcours hommes (avec prescriptions)", async ({ page }) => {
-    test.setTimeout(3600000);
-    await realizeAllActs(page, man, HOMMES.name, 1, /Consultation/i, realizeConsultation(page));
-  });
+  for (const step of HOMMES.steps.map((_, i) => i + 1)) {
+    test(`Patient homme : réaliser toutes les consultations de l'étape ${step} du parcours hommes (avec prescriptions)`, async ({ page }) => {
+      test.setTimeout(3600000);
+      await realizeAllActs(page, man, HOMMES.name, step, /Consultation/i, realizeConsultation(page));
+    });
+  }
 
   // ---------------- Nettoyage : archivage des parcours restants puis suppression des modèles ----------------
   test('Archiver les parcours restants', async ({ page }) => {
