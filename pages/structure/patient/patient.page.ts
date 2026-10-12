@@ -387,7 +387,7 @@ export class PatientPage {
 
   // ======================== RECHERCHE CIBLÉE & ACTIONS PAR PATIENT ========================
   private async waitForLoader() {
-    await this.page.locator('app-loader .backdrop.full-screen').waitFor({ state: 'hidden', timeout: 10000 }).catch(() => {});
+    await this.page.locator('app-loader .backdrop.full-screen').waitFor({ state: 'hidden', timeout: 90000 }).catch(() => {});
   }
 
   /**

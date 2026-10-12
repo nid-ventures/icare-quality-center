@@ -55,8 +55,9 @@ export default defineConfig({
     baseURL: process.env.BASE_URL,
     trace: 'on-first-retry',
     // Délai maximal d'une action (clic, saisie…) : sans lui, un élément absent fait attendre
-    // jusqu'au délai du test (30 min en visuel), ce qui ressemble à un blocage.
-    actionTimeout: 30000,
+    // jusqu'au délai du test (30 min en visuel), ce qui ressemble à un blocage. Doublé en visuel
+    // (SLOWMO) où l'application, ralentie par les pauses, met plus de temps à se stabiliser.
+    actionTimeout: Number(process.env.SLOWMO) > 0 ? 60000 : 30000,
     // Nécessaire pour l'environnement local (nid-dev.localhost.com) qui utilise un certificat
     // auto-signé non approuvé par défaut ; sans impact sur les environnements distants qui ont
     // un certificat valide.
