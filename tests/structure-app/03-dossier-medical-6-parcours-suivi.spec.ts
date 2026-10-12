@@ -200,7 +200,7 @@ const realizeBilan = (page: Page): Realize => async (body, title, reopen) => {
   const create = body.locator('app-create-health-check');
   await expect(create, 'Formulaire de création du bilan').toBeVisible();
   await fillAllFields(page, create, title);
-  await create.getByRole('button', { name: /^\s*Enregistrer\s*$/ }).click();
+  await create.getByRole('button', { name: /^\W*Enregistrer\s*$/ }).click();
   await expect(success(page)).toBeVisible({ timeout: 20000 });
 
   let care: Locator | undefined;
@@ -417,7 +417,7 @@ test.describe('Module Dossier médical — Suivi des parcours de soins (homme, f
       { name: 'startDate', kind: 'date', value: isoDate(-1) },
       { name: 'caregiverId', kind: 'select', index: 1 },
     ]);
-    await modal.getByRole('button', { name: /^\s*Enregistrer\s*$/ }).click();
+    await modal.getByRole('button', { name: /^\W*Enregistrer\s*$/ }).click();
     await confirm(page);
     await expect(page.getByText(/modification de ce parcours .* a réussi/i).first()).toBeVisible({ timeout: 20000 });
   });
@@ -428,7 +428,7 @@ test.describe('Module Dossier médical — Suivi des parcours de soins (homme, f
     await page.getByRole('button', { name: new RegExp(`Archiver ${FEMMES.name}`) }).click();
     const modal = page.locator('#obstetrical');
     await expect(modal).toBeVisible();
-    await modal.getByRole('button', { name: /^\s*Enregistrer\s*$/ }).click();
+    await modal.getByRole('button', { name: /^\W*Enregistrer\s*$/ }).click();
     await expect(modal.getByText("L'année est obligatoire")).toBeVisible();
     await expect(modal.getByText("Le sexe de l'enfant 1 est obligatoire")).toBeVisible();
     await expect(modal.getByText('Veuillez remplir tous les champs obligatoires')).toBeVisible();
@@ -461,7 +461,7 @@ test.describe('Module Dossier médical — Suivi des parcours de soins (homme, f
       { name: 'evolution_commentaire', kind: 'select' },
       { name: 'precisions', kind: 'textarea', value: 'Archivage du parcours de suivi QA' },
     ]);
-    await modal.getByRole('button', { name: /^\s*Enregistrer\s*$/ }).click();
+    await modal.getByRole('button', { name: /^\W*Enregistrer\s*$/ }).click();
     await expect(page.getByText(/archivage a reussie/i).first()).toBeVisible({ timeout: 20000 });
     await page.waitForURL('**/patient/patient-care-pathway-list/**');
   });
@@ -505,7 +505,7 @@ test.describe('Module Dossier médical — Suivi des parcours de soins (homme, f
           { name: 'annee', kind: 'number', value: String(new Date().getFullYear()) },
           { name: 'sexe', kind: 'select' },
         ]);
-        await modal.getByRole('button', { name: /^\s*Enregistrer\s*$/ }).click();
+        await modal.getByRole('button', { name: /^\W*Enregistrer\s*$/ }).click();
         await page.waitForURL('**/patient/patient-care-pathway-list/**', { timeout: 30000 });
       });
     }
