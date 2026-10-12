@@ -268,10 +268,8 @@ test.describe('Module Dossier médical — Suivi des parcours de soins (homme, f
     await openPathway(page, woman, FEMMES.name);
     const body = await openAct(page, /Consultation/i);
     await new ConsultationFormPage(page, body).activate('date');
-    const caregiver = body.locator('ng-select[formcontrolname="caregiverId"]').first();
-    if (await caregiver.locator('.ng-value').count() === 0) {
-      await new ConsultationFormPage(page, body).fill([{ name: 'caregiverId', kind: 'select' }]);
-    }
+    // Consultant toujours choisi : le champ peut sembler rempli (croix d'effacement) avec une valeur vide
+    await new ConsultationFormPage(page, body).fill([{ name: 'caregiverId', kind: 'select' }]);
     await body.getByRole('button', { name: /Mettre à jour la consultation|Enregistrer la consultation/ }).click();
     await confirm(page);
     await expect(success(page)).toBeVisible({ timeout: 20000 });
@@ -440,10 +438,8 @@ test.describe('Module Dossier médical — Suivi des parcours de soins (homme, f
     await openPathway(page, man, HOMMES.name);
     const body = await openAct(page, /Consultation/i);
     await new ConsultationFormPage(page, body).activate('date');
-    const caregiver = body.locator('ng-select[formcontrolname="caregiverId"]').first();
-    if (await caregiver.locator('.ng-value').count() === 0) {
-      await new ConsultationFormPage(page, body).fill([{ name: 'caregiverId', kind: 'select' }]);
-    }
+    // Consultant toujours choisi : le champ peut sembler rempli (croix d'effacement) avec une valeur vide
+    await new ConsultationFormPage(page, body).fill([{ name: 'caregiverId', kind: 'select' }]);
     await body.getByRole('button', { name: /Mettre à jour la consultation|Enregistrer la consultation/ }).click();
     await confirm(page);
     await expect(success(page)).toBeVisible({ timeout: 20000 });
