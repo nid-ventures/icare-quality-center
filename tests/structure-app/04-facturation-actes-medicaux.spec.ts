@@ -9,6 +9,7 @@ import { BillingListPatientPage } from '../../pages/structure/billing/billing-li
 import { VaccinationPage } from '../../pages/structure/vaccination/vaccination.page';
 import { ConsultationFormPage, type FieldSpec } from '../../pages/structure/consultation/consultation-form.page';
 import { ImagerieDashboardPage } from '../../pages/structure/imagerie/imagerie-dashboard.page';
+import { HealthChecksListPage, HealthCheckDetailPage } from '../../pages/structure/analyse/health-check.page';
 import { isoDate } from '../../test-data/consultation-fields';
 
 test.setTimeout(300000);
@@ -264,6 +265,135 @@ test.describe('Module Facturation — Actes à facturer depuis le dossier médic
       });
     });
   }
+
+  test.describe("Bilan d'analyses", () => {
+    // Le type du bilan présélectionne ses actes à facturer : un seul est facturé
+    test.describe.configure({ mode: 'serial' });
+    let patient: DossierPatient;
+    let acts: string[] = [];
+    let bilanOrder = '';
+    let invoiceOrder = '';
+    const bilanModal = (page: Page) => page.locator('#createBilanModal');
+
+    test.beforeAll(async ({ browser }) => {
+      test.setTimeout(DOSSIER_SETUP_TIMEOUT);
+      patient = await createDossierPatient(browser);
+    });
+
+    async function openBilans(portal: PortalPage, page: Page) {
+      await portal.enterModule('Dossier médical');
+      await openDossier(page, patient);
+      const list = new HealthChecksListPage(page);
+      await list.goToHealthChecksList();
+      return list;
+    }
+
+    /** Ouvre le bilan du patient (page de détail). */
+    async function openBilan(portal: PortalPage, page: Page) {
+      const list = await openBilans(portal, page);
+      await list.openBilanByOrderNumber(bilanOrder);
+      await new HealthCheckDetailPage(page).expectDetailLoaded();
+    }
+
+    async function openBilling(portal: PortalPage, page: Page) {
+      const invoicePage = new BillingInvoicePage(page);
+      await portal.enterModule('Facturation');
+      await page.waitForURL('**/billing/billings-create');
+      await invoicePage.searchPatientByIdentifier(patient.identifier);
+      await invoicePage.selectFirstSearchResult();
+      return invoicePage;
+    }
+
+    const confirm = async (page: Page) => {
+      const button = page.getByRole('button', { name: /^\W*Confirmer$/ }).last();
+      await expect(button).toBeVisible({ timeout: 10000 });
+      await button.click();
+    };
+
+    test('Créer un bilan dont le type présélectionne des actes à facturer', async ({ portal, page }) => {
+      const list = await openBilans(portal, page);
+      const before = await list.getBilanOrderNumbers();
+      await list.openNewBilanModal();
+      const form = new ConsultationFormPage(page, bilanModal(page));
+      await form.fill([{ name: 'caregiverId', kind: 'select' }]);
+      const chosen = bilanModal(page).locator('ng-select[formcontrolname="billableActs"] .ng-value-label');
+      await test.step('Choisir le premier type qui présélectionne des actes à facturer', async () => {
+        for (let index = 0; index < 20 && acts.length === 0; index++) {
+          await form.fill([{ name: 'type', kind: 'select', index }]);
+          await page.waitForTimeout(1000);
+          acts = (await chosen.allTextContents()).map(t => t.replace(/\s+/g, ' ').trim()).filter(Boolean);
+        }
+        expect(acts.length, 'Actes à facturer présélectionnés par le type').toBeGreaterThan(0);
+      });
+      await list.saveBilan();
+      await expect(async () => {
+        bilanOrder = (await list.getBilanOrderNumbers()).find(o => o && !before.includes(o)) ?? '';
+        expect(bilanOrder, 'Nouveau bilan dans la liste').toBeTruthy();
+      }).toPass({ timeout: 30000 });
+    });
+
+    test('Les actes présélectionnés sont à facturer dans le module Facturation', async ({ portal, page }) => {
+      const invoicePage = await openBilling(portal, page);
+      await expect.poll(async () => (await invoicePage.counters()).toBill, { message: `${acts.length} acte(s) à facturer` }).toBe(acts.length);
+      for (const act of acts) expect(await invoicePage.showPendingAct(act), `"${act}" à facturer`).not.toBeNull();
+    });
+
+    test("Facturer le premier acte du bilan", async ({ portal, page }) => {
+      const invoicePage = await openBilling(portal, page);
+      await invoicePage.setActAmount(acts[0], 2500);
+      await invoicePage.proceedToBilling();
+      await invoicePage.generateInvoice();
+      const invoices = await new BillingListPatientPage(page).invoicesOf(patient.identifier);
+      expect(invoices.map(i => i.amount), 'Une facture patient de 2 500').toEqual([2500]);
+      invoiceOrder = invoices[0].order;
+    });
+
+    test("Modifier le résultat du bilan : l'acte facturé est grisé", async ({ portal, page }) => {
+      await openBilan(portal, page);
+      await page.getByRole('tab', { name: /Résultat/ }).or(page.locator('a.nav-link', { hasText: 'Résultat' })).first().click();
+      const pane = page.locator('[id^="result-content-"]');
+      await expect(pane).toBeVisible();
+      const toggle = pane.locator('.btn-action-activate');
+      await expect(async () => {
+        if (!/Verrouiller/.test(await toggle.innerText())) await toggle.click();
+        await expect(pane.locator('textarea[formcontrolname="diagnostic"]')).toBeEnabled({ timeout: 3000 });
+      }).toPass({ timeout: 30000 });
+      const chips = pane.locator('ng-select[formcontrolname="billableActs"] .ng-value');
+      await expect(chips.filter({ hasText: acts[0] }), `"${acts[0]}" facturé : non retirable`).toHaveClass(/ng-value-disabled/);
+      for (const act of acts.slice(1)) {
+        await expect.soft(chips.filter({ hasText: act }), `"${act}" non facturé : retirable`).not.toHaveClass(/ng-value-disabled/);
+      }
+    });
+
+    test('Supprimer le bilan est bloqué tant que la facture existe', async ({ portal, page }) => {
+      await openBilan(portal, page);
+      await page.locator('.btn-action-delete', { hasText: 'Supprimer cette prestation' }).click();
+      await confirm(page);
+      await expect(page.getByText(BLOCKED).first(), 'Suppression refusée : une facture existe').toBeVisible({ timeout: 15000 });
+      const list = await openBilans(portal, page);
+      expect(await list.getBilanOrderNumbers(), 'Bilan toujours présent').toContain(bilanOrder);
+    });
+
+    test('Après suppression de la facture, le bilan peut être supprimé', async ({ portal, page }) => {
+      await test.step(`Supprimer la facture ${invoiceOrder}`, async () => {
+        await portal.enterModule('Facturation');
+        await portal.openMenu('Factures patients', '**/billing/billings-patients');
+        const list = new BillingListPatientPage(page);
+        await list.invoicesOf(patient.identifier);
+        await list.deleteInvoice(invoiceOrder);
+      });
+      await test.step('Supprimer le bilan', async () => {
+        await openBilan(portal, page);
+        await page.locator('.btn-action-delete', { hasText: 'Supprimer cette prestation' }).click();
+        await confirm(page);
+        await expect(page.getByText('La suppression du bilan a réussi').first()).toBeVisible({ timeout: 15000 });
+      });
+      await test.step("Ses actes ne sont plus à facturer", async () => {
+        const invoicePage = await openBilling(portal, page);
+        await expect.poll(() => invoicePage.counters(), { message: 'Plus aucun acte à facturer' }).toEqual({ toBill: 0, inInvoice: 0 });
+      });
+    });
+  });
 
   test.describe('Vaccination', () => {
     test.describe.configure({ mode: 'serial' });
