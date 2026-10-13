@@ -1,4 +1,4 @@
-import { type Page } from '@playwright/test';
+import { type Page, type Locator } from '@playwright/test';
 import { test, expect } from '../../fixtures/structure.fixture';
 import { createDossierPatient, openDossier, DOSSIER_SETUP_TIMEOUT, type DossierPatient } from '../../fixtures/dossier-patient';
 import { type PortalPage } from '../../pages/structure/portal/portal.page';
@@ -7,7 +7,8 @@ import { ConsultationStandardDataGenerator } from '../../pages/structure/generat
 import { BillingInvoicePage } from '../../pages/structure/billing/billing-invoice.page';
 import { BillingListPatientPage } from '../../pages/structure/billing/billing-list.page';
 import { VaccinationPage } from '../../pages/structure/vaccination/vaccination.page';
-import { ConsultationFormPage } from '../../pages/structure/consultation/consultation-form.page';
+import { ConsultationFormPage, type FieldSpec } from '../../pages/structure/consultation/consultation-form.page';
+import { ImagerieDashboardPage } from '../../pages/structure/imagerie/imagerie-dashboard.page';
 import { isoDate } from '../../test-data/consultation-fields';
 
 test.setTimeout(300000);
@@ -130,6 +131,139 @@ test.describe('Module Facturation — Actes à facturer depuis le dossier médic
       });
     });
   });
+
+  // Échographie (écran propre) et scanner (écran commun au scanner, à l'IRM et à la radiographie)
+  for (const imaging of [
+    {
+      label: 'Échographie', kind: 'ECHOGRAPHIE' as const, key: 'echographie', root: 'app-echographie-simple-static',
+      submit: /Enregistrer l'échographie/, first: [{ name: 'type', kind: 'select', option: 'Standard' }] as FieldSpec[], withExamDate: false,
+    },
+    {
+      label: 'Scanner', kind: 'SCANNER' as const, key: 'scanner', root: 'app-scanner-static',
+      submit: /Enregistrer le scanner/, first: [] as FieldSpec[], withExamDate: true,
+    },
+  ]) {
+    test.describe(imaging.label, () => {
+      test.describe.configure({ mode: 'serial' });
+      let patient: DossierPatient;
+      let act = '';
+      let invoiceOrder = '';
+      const items = (page: Page) => page.locator(`.imaging-item.imaging-item--${imaging.key}`);
+
+      test.beforeAll(async ({ browser }) => {
+        test.setTimeout(DOSSIER_SETUP_TIMEOUT);
+        patient = await createDossierPatient(browser);
+      });
+
+      async function openImaging(portal: PortalPage, page: Page) {
+        await portal.enterModule('Dossier médical');
+        await openDossier(page, patient);
+        const imagerie = new ImagerieDashboardPage(page);
+        await imagerie.gotoFromPatientDashboard();
+        return imagerie;
+      }
+
+      /** Déplie l'acte d'imagerie du patient et renvoie son formulaire. */
+      async function openItem(portal: PortalPage, page: Page): Promise<Locator> {
+        await openImaging(portal, page);
+        const item = items(page).first();
+        await expect(item, `${imaging.label} dans l'historique`).toBeVisible({ timeout: 15000 });
+        const body = item.locator('.imaging-item-body');
+        if (!(await body.isVisible().catch(() => false))) await item.locator('.imaging-item-header').click();
+        await expect(body).toBeVisible();
+        return body.locator(imaging.key === 'echographie' ? 'app-echographie-simple-item' : 'app-imaging-item');
+      }
+
+      async function openBilling(portal: PortalPage, page: Page) {
+        const invoicePage = new BillingInvoicePage(page);
+        await portal.enterModule('Facturation');
+        await page.waitForURL('**/billing/billings-create');
+        await invoicePage.searchPatientByIdentifier(patient.identifier);
+        await invoicePage.selectFirstSearchResult();
+        return invoicePage;
+      }
+
+      const confirm = async (page: Page) => {
+        const button = page.getByRole('button', { name: /^\W*Confirmer$/ }).last();
+        await expect(button).toBeVisible({ timeout: 10000 });
+        await button.click();
+      };
+
+      test(`Créer un acte "${imaging.label}" avec un acte à facturer`, async ({ portal, page }) => {
+        const imagerie = await openImaging(portal, page);
+        await imagerie.openNewActeModal();
+        await imagerie.chooseType(imaging.kind);
+        const root = page.locator(imaging.root).filter({ visible: true }).first();
+        await expect(root).toBeVisible();
+        const form = new ConsultationFormPage(page, root);
+        if (imaging.first.length) await form.fill(imaging.first);
+        const values = await form.fill([
+          { name: 'caregiverId', kind: 'select' },
+          { name: 'date', kind: 'date', value: isoDate(-2) },
+          ...(imaging.withExamDate ? [{ name: 'dateExam', kind: 'date', value: isoDate(-1) } as FieldSpec] : []),
+          { name: 'region', kind: 'select' },
+          { name: 'billableActs', kind: 'multiselect', count: 1 },
+        ]);
+        act = (values.billableActs as string[])[0];
+        expect(act, 'Acte à facturer choisi').toBeTruthy();
+        await root.getByRole('button', { name: imaging.submit }).click();
+        await confirm(page);
+        await expect(items(page).first()).toBeVisible({ timeout: 20000 });
+      });
+
+      test("L'acte choisi est à facturer dans le module Facturation", async ({ portal, page }) => {
+        const invoicePage = await openBilling(portal, page);
+        await expect.poll(() => invoicePage.counters(), { message: 'Un acte à facturer' }).toEqual({ toBill: 1, inInvoice: 0 });
+        expect(await invoicePage.showPendingAct(act), `"${act}" à facturer`).not.toBeNull();
+      });
+
+      test(`Facturer l'acte de l'acte "${imaging.label}"`, async ({ portal, page }) => {
+        const invoicePage = await openBilling(portal, page);
+        await invoicePage.setActAmount(act, 6000);
+        await invoicePage.proceedToBilling();
+        await invoicePage.generateInvoice();
+        const invoices = await new BillingListPatientPage(page).invoicesOf(patient.identifier);
+        expect(invoices.map(i => i.amount), 'Une facture patient de 6 000').toEqual([6000]);
+        invoiceOrder = invoices[0].order;
+      });
+
+      test(`Modifier l'acte "${imaging.label}" : l'acte facturé est grisé`, async ({ portal, page }) => {
+        const item = await openItem(portal, page);
+        await new ConsultationFormPage(page, item).activate('date');
+        await expect(item.locator('ng-select[formcontrolname="billableActs"] .ng-value').filter({ hasText: act }), `"${act}" facturé : non retirable`)
+          .toHaveClass(/ng-value-disabled/);
+      });
+
+      test(`Supprimer l'acte "${imaging.label}" est bloqué tant que la facture existe`, async ({ portal, page }) => {
+        const item = await openItem(portal, page);
+        await item.getByRole('button', { name: /^\W*Supprimer$/ }).first().click();
+        await confirm(page);
+        await expect(page.getByText(BLOCKED).first(), 'Suppression refusée : une facture existe').toBeVisible({ timeout: 15000 });
+        await openImaging(portal, page);
+        await expect(items(page), `${imaging.label} toujours présent`).toHaveCount(1);
+      });
+
+      test(`Après suppression de la facture, l'acte "${imaging.label}" peut être supprimé`, async ({ portal, page }) => {
+        await test.step(`Supprimer la facture ${invoiceOrder}`, async () => {
+          await portal.enterModule('Facturation');
+          await portal.openMenu('Factures patients', '**/billing/billings-patients');
+          const list = new BillingListPatientPage(page);
+          await list.invoicesOf(patient.identifier);
+          await list.deleteInvoice(invoiceOrder);
+        });
+        await test.step(`Supprimer l'acte "${imaging.label}"`, async () => {
+          const item = await openItem(portal, page);
+          await item.getByRole('button', { name: /^\W*Supprimer$/ }).first().click();
+          await confirm(page);
+          await expect(items(page)).toHaveCount(0, { timeout: 20000 });
+        });
+        await test.step("Son acte n'est plus à facturer", async () => {
+          const invoicePage = await openBilling(portal, page);
+          await expect.poll(() => invoicePage.counters(), { message: 'Plus aucun acte à facturer' }).toEqual({ toBill: 0, inInvoice: 0 });
+        });
+      });
+    });
+  }
 
   test.describe('Vaccination', () => {
     test.describe.configure({ mode: 'serial' });
