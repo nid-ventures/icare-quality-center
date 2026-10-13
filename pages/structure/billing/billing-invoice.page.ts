@@ -338,12 +338,13 @@ export class BillingInvoicePage {
     }
 
     /**
-     * Saisit le montant (journalier pour une chambre) d'un acte non encore saisi, en parcourant les
-     * onglets de catégories : la saisie coche l'acte pour la facturation.
+     * Affiche, dans l'onglet "Actes Médicaux", la ligne à facturer d'un acte (première dont le
+     * montant n'est pas saisi, sauf `anyRow`) en parcourant les onglets de catégories ; null si absente.
      */
-    async setActAmount(act: string, amount: number): Promise<void> {
+    async showPendingAct(act: string, anyRow = false): Promise<Locator | null> {
         const parentTabs = this.page.locator('.modern-tabs ul.nav-pills > li.nav-item > button.nav-link');
         const name = new RegExp(escapeRegExp(act).replace(/\s+/g, '\\s+'), 'i');
+        if (!await parentTabs.first().isVisible().catch(() => false)) return null;
         for (let i = 0; i < await parentTabs.count(); i++) {
             await parentTabs.nth(i).click();
             const subTabs = this.page.locator('.tab-pane.show.active .nav-tabs-custom .nav-link');
@@ -352,16 +353,81 @@ export class BillingInvoicePage {
                 if (subCount > 0) await subTabs.nth(j).click();
                 const rows = this.page.locator('app-billing-space-prestation-medical:visible tbody tr').filter({ hasText: name });
                 for (let k = 0; k < await rows.count(); k++) {
-                    const input = rows.nth(k).locator('input[type="text"]');
-                    if ((await input.inputValue()) !== '') continue;
-                    await rows.nth(k).locator('td').nth(1).click();
-                    await expect(input).toBeEnabled({ timeout: 3000 });
-                    await input.fill(String(amount));
-                    return;
+                    if (anyRow || (await rows.nth(k).locator('input[type="text"]').inputValue()) === '') return rows.nth(k);
                 }
             }
         }
-        throw new Error(`Acte "${act}" à facturer introuvable (ou déjà saisi) dans l'onglet Actes Médicaux`);
+        return null;
+    }
+
+    /**
+     * Saisit le montant (journalier pour une chambre) d'un acte non encore saisi, en parcourant les
+     * onglets de catégories : la saisie coche l'acte pour la facturation.
+     */
+    async setActAmount(act: string, amount: number): Promise<void> {
+        const row = await this.showPendingAct(act);
+        if (!row) throw new Error(`Acte "${act}" à facturer introuvable (ou déjà saisi) dans l'onglet Actes Médicaux`);
+        const input = row.locator('input[type="text"]');
+        await row.locator('td').nth(1).click();
+        await expect(input).toBeEnabled({ timeout: 3000 });
+        await input.fill(String(amount));
+    }
+
+    /** Compteurs de l'en-tête patient : actes à facturer et actes dans la facture en cours. */
+    async counters(): Promise<{ toBill: number; inInvoice: number }> {
+        const read = async (selector: string) => Number(((await this.page.locator(selector).first().innerText()).match(/\d+/) ?? ['0'])[0]);
+        return {
+            toBill: await read('.patient-badge-header.notification-global'),
+            inInvoice: await read('.patient-badge-header.notification-global-invoice'),
+        };
+    }
+
+    get proceedButton(): Locator {
+        return this.procederFacturationButton;
+    }
+
+    /** Étape Facturation : ligne d'un acte de la facture en cours (avec sa case à cocher). */
+    invoiceLine(act: string): Locator {
+        return this.page.locator('app-billing-space-facturation-item ul')
+            .filter({ has: this.page.locator('input[type="checkbox"]') })
+            .filter({ hasText: new RegExp(escapeRegExp(act).replace(/\s+/g, '\\s+'), 'i') });
+    }
+
+    /** Étape Facturation : retire les actes indiqués de la facture en cours (case + "Retirer"). */
+    async removeFromInvoice(acts: string[]): Promise<void> {
+        for (const act of acts) await this.invoiceLine(act).first().locator('input[type="checkbox"]').check();
+        await this.page.getByRole('button', { name: 'Retirer' }).click();
+        await expect(this.page.getByText(/voulez-vous retirer/i)).toBeVisible();
+        await this.confirmerButton.click();
+        await expect(this.page.getByText(/retrait.*r[ée]ussi/i).first()).toBeVisible({ timeout: 15000 });
+    }
+
+    /** Étape Facturation : bouton d'affichage d'une liste d'exceptions de la prise en charge. */
+    exceptionsButton(list: 'Actes Exclus' | 'Cas Spécifiques'): Locator {
+        return this.page.getByRole('button', { name: new RegExp(`^\\W*${list}\\s*$`) });
+    }
+
+    /** Étape Facturation : tableau "Liste des actes exclus" ou "Liste des cas spécifiques". */
+    exceptionsTable(list: 'actes exclus' | 'cas spécifiques'): Locator {
+        return this.page.locator('div').filter({ has: this.page.getByRole('heading', { name: new RegExp(`Liste des ${list}`, 'i') }) }).locator('table').last();
+    }
+
+    /** Étape Facturation : retire la prise en charge choisie (croix du sélecteur). */
+    async clearCover(): Promise<void> {
+        await this.assuranceSelect.locator('.ng-clear-wrapper').click();
+        await expect(this.assuranceSelect.locator('.ng-value')).toHaveCount(0);
+    }
+
+    /** Onglet "Facturation" de l'assistant (facture en cours). */
+    async openInvoiceTab(): Promise<void> {
+        await this.facturationTabButton.click();
+        await expect(this.facturationTabButton).toHaveClass(/active/, { timeout: 10000 });
+    }
+
+    /** Onglet "Actes Médicaux" de l'assistant (actes à facturer). */
+    async openActsTab(): Promise<void> {
+        await this.actesTabButton.first().click();
+        await expect(this.actesTabButton.first()).toHaveClass(/active/, { timeout: 10000 });
     }
 
     /** Étape Facturation : choisit la prise en charge de l'assureur indiqué. */
