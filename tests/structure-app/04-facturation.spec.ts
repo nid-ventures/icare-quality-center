@@ -2,7 +2,7 @@ import { type Page } from '@playwright/test';
 import { test, expect } from '../../fixtures/structure.fixture';
 import { type PortalPage } from '../../pages/structure/portal/portal.page';
 import { PatientPage } from '../../pages/structure/patient/patient.page';
-import { BillingInvoicePage } from '../../pages/structure/billing/billing-invoice.page';
+import { BillingInvoicePage, dateTimeLocal } from '../../pages/structure/billing/billing-invoice.page';
 import { BillingListPatientPage, BillingListGarantPage } from '../../pages/structure/billing/billing-list.page';
 import { PatientCarePage } from '../../pages/structure/patient/patient-care.page';
 import { createDossierPatient, DOSSIER_SETUP_TIMEOUT, type DossierPatient } from '../../fixtures/dossier-patient';
@@ -220,6 +220,85 @@ test.describe('Module Facturation', () => {
         await listPage.expectListLoaded();
       });
     });
+  });
+
+  // ======================================================================
+  // Chambres : nombre de jours facturés (règle des 18 h)
+  // ======================================================================
+  test.describe('Chambres : nombre de jours (règle des 18 h)', () => {
+    // Jours calendaires de l'entrée à la sortie, inclus ; une entrée à 18 h ou après ne compte pas
+    // son premier jour (minimum 1 jour). Séjours acceptés enregistrés sur un patient dédié, puis
+    // retrouvés dans l'onglet "Actes Médicaux" avec leur nombre de jours et leurs dates.
+    const STAYS = [
+      { title: 'Entrée avant 18 h : chaque jour calendaire compte', entry: [-3, '10:00'], exit: [0, '10:00'], days: 4 },
+      { title: 'Entrée à 17 h 59 : le premier jour compte', entry: [-3, '17:59'], exit: [0, '10:00'], days: 4 },
+      { title: "Entrée à 18 h : le premier jour n'est pas compté", entry: [-3, '18:00'], exit: [0, '10:00'], days: 3 },
+      { title: 'Une nuit, entrée après 18 h : 1 jour', entry: [-1, '20:00'], exit: [0, '08:00'], days: 1 },
+      { title: 'Entrée et sortie le même jour : 1 jour', entry: [0, '08:00'], exit: [0, '12:00'], days: 1 },
+      { title: 'Même jour, entrée après 18 h : au moins 1 jour', entry: [0, '19:00'], exit: [0, '22:00'], days: 1 },
+    ] as const;
+
+    const ROOM = 'CHAMBRE CATÉGORIE 1';
+    let patient: DossierPatient;
+
+    test.beforeAll(async ({ browser }) => {
+      test.setTimeout(DOSSIER_SETUP_TIMEOUT);
+      patient = await createDossierPatient(browser);
+    });
+
+    /** "AAAA-MM-JJTHH:mm" → "JJ/MM/AAAA HH:mm" (affichage des dates de séjour). */
+    const shown = (value: string) => { const [d, t] = value.split('T'); const [y, m, j] = d.split('-'); return `${j}/${m}/${y} ${t}`; };
+
+    /** Ouvre la fenêtre "Ajouter un acte" d'une chambre pour le patient dédié. */
+    async function openRoomForm(portal: PortalPage, page: Page): Promise<BillingInvoicePage> {
+      const invoicePage = new BillingInvoicePage(page);
+      await test.step('Ouvrir la fenêtre "Ajouter un acte" sur une chambre', async () => {
+        await portal.enterModule('Facturation');
+        await page.waitForURL('**/billing/billings-create');
+        await invoicePage.searchPatientByIdentifier(patient.identifier);
+        await invoicePage.selectFirstSearchResult();
+        await invoicePage.openRoomForm(ROOM);
+      });
+      return invoicePage;
+    }
+
+    for (const stay of STAYS) {
+      test(`${stay.title} (${stay.days} jour(s))`, async ({ portal, page }) => {
+        const invoicePage = await openRoomForm(portal, page);
+        const entry = dateTimeLocal(stay.entry[0], stay.entry[1]);
+        const exit = dateTimeLocal(stay.exit[0], stay.exit[1]);
+        await test.step(`Séjour du J${stay.entry[0]} ${stay.entry[1]} au J${stay.exit[0]} ${stay.exit[1]}`, async () => {
+          await invoicePage.setRoomStay(entry, exit);
+          await expect(invoicePage.roomStayError, 'Séjour accepté').toBeHidden();
+          await expect(invoicePage.roomQuantity, 'Nombre de jours calculé').toHaveValue(String(stay.days));
+          await expect(invoicePage.addActSaveButton).toBeEnabled();
+        });
+        await test.step('Enregistrer la chambre', async () => {
+          await invoicePage.submitAddActForm();
+        });
+        await test.step(`Chambre en attente de facturation : ${stay.days} jour(s), du ${shown(entry)} au ${shown(exit)}`, async () => {
+          const row = await invoicePage.findPendingRoom(ROOM, shown(entry));
+          await expect(row.locator('td').nth(2), 'Quantité enregistrée').toHaveText(String(stay.days));
+          await expect(row.locator('td').nth(4), "Date d'entrée enregistrée").toHaveText(shown(entry));
+          await expect(row.locator('td').nth(5), 'Date de sortie enregistrée').toHaveText(shown(exit));
+        });
+      });
+    }
+
+    for (const refused of [
+      { title: "Une sortie avant l'entrée est refusée", entry: [0, '10:00'], exit: [-1, '10:00'] },
+      { title: "Une sortie à la même heure que l'entrée est refusée", entry: [0, '10:00'], exit: [0, '10:00'] },
+    ] as const) {
+      test(refused.title, async ({ portal, page }) => {
+        const invoicePage = await openRoomForm(portal, page);
+        await test.step('Saisir le séjour et constater le refus', async () => {
+          await invoicePage.setRoomStay(dateTimeLocal(refused.entry[0], refused.entry[1]), dateTimeLocal(refused.exit[0], refused.exit[1]));
+          await expect(invoicePage.roomStayError, "Message : la date de sortie doit être supérieure à la date d'entrée").toBeVisible();
+          await expect(invoicePage.addActSaveButton, 'Enregistrement impossible').toBeDisabled();
+        });
+        await invoicePage.closeAddActModal();
+      });
+    }
   });
 
   // ======================================================================

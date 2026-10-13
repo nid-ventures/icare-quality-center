@@ -266,16 +266,75 @@ export class BillingInvoicePage {
         await this.selectNgOptionByText(this.addActBillableActsSelect, act.act);
         await this.selectFirstNgOption(this.addActCaregiverSelect);
         if (act.days) {
-            const at10 = (offset: number) => {
-                const d = new Date(Date.now() + offset * 86400000);
-                const pad = (n: number) => String(n).padStart(2, '0');
-                return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}T10:00`;
-            };
-            await this.page.locator('#date').fill(at10(-(act.days - 1)));
-            await this.page.locator('#endDate').fill(at10(0));
-            await expect(this.page.locator('#quantity'), `Chambre : ${act.days} jour(s)`).toHaveValue(String(act.days));
+            await this.setRoomStay(dateTimeLocal(-(act.days - 1), '10:00'), dateTimeLocal(0, '10:00'));
+            await expect(this.roomQuantity, `Chambre : ${act.days} jour(s)`).toHaveValue(String(act.days));
         }
         await this.submitAddActForm();
+    }
+
+    // ======================== Chambre : séjour ========================
+
+    /** Quantité (nombre de jours) calculée par la fenêtre "Ajouter un acte" pour une chambre. */
+    get roomQuantity(): Locator {
+        return this.page.locator('#quantity');
+    }
+
+    /** Message affiché quand la date de sortie n'est pas après la date d'entrée. */
+    get roomStayError(): Locator {
+        return this.page.getByText(/date de sortie doit\s+être supérieure à la date\s+d'entrée/i);
+    }
+
+    get addActSaveButton(): Locator {
+        return this.addActEnregistrerButton;
+    }
+
+    /**
+     * Ouvre la fenêtre "Ajouter un acte" sur une chambre (catégorie ACTE DE CHAMBRE), praticien
+     * choisi : seules les dates restent à saisir.
+     */
+    async openRoomForm(room = 'CHAMBRE CATÉGORIE 1'): Promise<void> {
+        await this.openAddActModal();
+        await this.selectNgOptionByText(this.addActCategorySelect, 'ACTE DE CHAMBRE');
+        await this.selectNgOptionByText(this.addActBillableActsSelect, room);
+        await this.selectFirstNgOption(this.addActCaregiverSelect);
+        await expect(this.addActCaregiverSelect.locator('.ng-value'), 'Praticien choisi').toBeVisible();
+        await expect(this.page.locator('#endDate'), 'Date de sortie demandée pour une chambre').toBeVisible();
+    }
+
+    /** Saisit les dates d'entrée et de sortie ("AAAA-MM-JJTHH:mm") d'un séjour en chambre. */
+    async setRoomStay(entry: string, exit: string): Promise<void> {
+        await this.page.locator('#date').fill(entry);
+        await this.page.locator('#endDate').fill(exit);
+        await this.page.locator('#endDate').dispatchEvent('change');
+    }
+
+    /**
+     * Ligne d'une chambre en attente de facturation (onglet "Actes Médicaux"), retrouvée par son
+     * entrée "JJ/MM/AAAA HH:mm" en parcourant les onglets de catégories. Colonnes : case, acte,
+     * quantité, consultant, date d'entrée, date de sortie, montant journalier.
+     */
+    async findPendingRoom(room: string, entry: string): Promise<Locator> {
+        const parentTabs = this.page.locator('.modern-tabs ul.nav-pills > li.nav-item > button.nav-link');
+        const name = new RegExp(escapeRegExp(room).replace(/\s+/g, '\\s+'), 'i');
+        await expect(parentTabs.first(), 'Actes en attente affichés').toBeVisible({ timeout: 15000 });
+        for (let i = 0; i < await parentTabs.count(); i++) {
+            await parentTabs.nth(i).click();
+            const subTabs = this.page.locator('.tab-pane.show.active .nav-tabs-custom .nav-link');
+            const subCount = await subTabs.count();
+            for (let j = 0; j < Math.max(subCount, 1); j++) {
+                if (subCount > 0) await subTabs.nth(j).click();
+                const row = this.page.locator('app-billing-space-prestation-medical:visible tbody tr')
+                    .filter({ hasText: name }).filter({ hasText: entry });
+                if (await row.count() > 0) return row.first();
+            }
+        }
+        throw new Error(`Chambre "${room}" entrée le ${entry} introuvable dans l'onglet Actes Médicaux`);
+    }
+
+    /** Ferme la fenêtre "Ajouter un acte" sans enregistrer. */
+    async closeAddActModal(): Promise<void> {
+        await this.page.locator('.ama-footer').getByRole('button', { name: 'Fermer' }).click();
+        await expect(this.addActHeading).toBeHidden();
     }
 
     /**
@@ -377,6 +436,13 @@ export class BillingInvoicePage {
         await this.tryApplyFirstAvailableInsurance();
         await this.generateInvoice();
     }
+}
+
+/** Date-heure locale "AAAA-MM-JJTHH:mm" à `offsetDays` jours d'aujourd'hui (champ datetime-local). */
+export function dateTimeLocal(offsetDays: number, time: string): string {
+    const d = new Date(Date.now() + offsetDays * 86400000);
+    const pad = (n: number) => String(n).padStart(2, '0');
+    return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}T${time}`;
 }
 
 function escapeRegExp(value: string): string {
