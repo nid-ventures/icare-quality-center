@@ -226,7 +226,8 @@ test.describe('Module Dossier médical — Parcours de soins paramétrés', () =
   });
 
   test("La description d'un parcours utilisé reste modifiable", async ({ page }) => {
-    test.fail(true, "Anomalie : modifier seulement la description d'un modèle verrouillé (type et étapes inchangés) est refusé par le backend : 409 ACTIVE_CAREPLANS_LINKED, la modale reste ouverte.");
+    // Type et étapes renvoyés inchangés : le backend n'applique le 409 ACTIVE_CAREPLANS_LINKED qu'à un
+    // changement de structure.
     const templates = await openTemplates(page);
     await templates.openEdit(ALL_ACTS.name);
     const description = `${ALL_ACTS.description} (modifiée)`;
