@@ -205,16 +205,35 @@ test.describe('Module Dossier médical — Parcours de soins paramétrés', () =
     await expect(templates.row(MEN_ONLY.name)).toContainText('Description modifiée QA');
   });
 
-  test('Modifier un parcours en cours d\'utilisation est refusé', async ({ page }) => {
-    // Règle métier (réponse 409) : un modèle utilisé par des parcours actifs ne peut pas être modifié.
+  test("Un parcours utilisé est verrouillé : type et étapes figés", async ({ page }) => {
+    // Un parcours patient retrouve son modèle par le type : type et étapes d'un modèle utilisé (en
+    // cours ou archivé) ne sont plus modifiables ; description, sexe cible et libellé de date le restent.
+    const templates = await openTemplates(page);
+    await expect(templates.usage(ALL_ACTS.name), "Ligne d'utilisation").toContainText('Utilisé par 1 parcours (dont 1 en cours)');
+    await expect(templates.usage(ALL_ACTS.name).locator('.ri-lock-line'), 'Cadenas affiché').toBeVisible();
+    await templates.openEdit(ALL_ACTS.name);
+    await expect(templates.modal.locator('.locked-notice'), 'Bandeau de verrouillage').toContainText(/utilisé par 1 parcours/);
+    await expect(templates.modal.locator('[formcontrolname="careplanType"]'), 'Type figé').toBeDisabled();
+    await expect(templates.modal.getByRole('button', { name: /Ajouter une étape/ }), "Pas d'ajout d'étape").toHaveCount(0);
+    await expect(templates.modal.getByRole('button', { name: /Ajouter un type d'acte/ }), "Pas d'ajout de type d'acte").toHaveCount(0);
+    await expect(templates.modal.locator('.btn-remove-step, .btn-remove-act-group'), 'Pas de suppression').toHaveCount(0);
+    const acts = templates.modal.locator('ng-select[formcontrolname="acts"]');
+    await expect(acts).toHaveCount(ACT_DOMAINS.length);
+    for (let i = 0; i < ACT_DOMAINS.length; i++) {
+      await expect(acts.nth(i), `Étape ${i + 1} : actes figés`).toHaveClass(/ng-select-disabled/);
+    }
+    await templates.modal.getByRole('button', { name: /Fermer/ }).click();
+  });
+
+  test("La description d'un parcours utilisé reste modifiable", async ({ page }) => {
+    test.fail(true, "Anomalie : modifier seulement la description d'un modèle verrouillé (type et étapes inchangés) est refusé par le backend : 409 ACTIVE_CAREPLANS_LINKED, la modale reste ouverte.");
     const templates = await openTemplates(page);
     await templates.openEdit(ALL_ACTS.name);
-    await templates.modal.locator('[formcontrolname="description"]').fill('Tentative de modification QA');
-    await templates.modal.getByRole('button', { name: /Enregistrer/ }).click();
-    await expect(page.locator('.toast-error').first(), "Message d'erreur affiché").toBeVisible({ timeout: 15000 });
-    await expect(templates.modal, 'Le formulaire reste ouvert').toBeVisible();
-    await templates.modal.getByRole('button', { name: /Fermer/ }).click();
-    await expect(templates.row(ALL_ACTS.name)).toContainText(ALL_ACTS.description);
+    const description = `${ALL_ACTS.description} (modifiée)`;
+    await templates.modal.locator('[formcontrolname="description"]').fill(description);
+    await templates.save();
+    await expect(templates.row(ALL_ACTS.name), 'Description enregistrée').toContainText(description);
+    await expect(templates.row(ALL_ACTS.name), 'Étapes inchangées').toContainText(`${ALL_ACTS.steps.length} étape(s) configurée(s)`);
   });
 
   test("Enregistrer un parcours sans type ni description est refusé", async ({ page }) => {
@@ -270,21 +289,34 @@ test.describe('Module Dossier médical — Parcours de soins paramétrés', () =
     await expect(new CarePathwayPage(page).startLink(OTHER_SESSION.name)).toHaveCount(1, { timeout: 5000 });
   });
 
-  test("Supprimer un parcours utilisé par un patient est refusé", async ({ page }) => {
-    // Règle métier (409) : impossible de supprimer un modèle ayant des parcours actifs. Les modèles
-    // démarrés sur la patiente de test restent donc en base (fin de parcours = formulaire obstétrical).
+  test("Un parcours en cours chez un patient ne peut être ni supprimé ni désactivé", async ({ page }) => {
+    // Les modèles démarrés sur la patiente de test restent donc actifs en base (fin de parcours =
+    // formulaire obstétrical).
     const templates = await openTemplates(page);
-    await templates.requestRemoval(ALL_ACTS.name);
-    await expect(page.locator('.toast-error').filter({ hasText: /Impossible de supprimer/ }).first()).toBeVisible({ timeout: 15000 });
-    await expect(templates.row(ALL_ACTS.name)).toHaveCount(1);
+    for (const template of [ALL_ACTS, COMBINED]) {
+      await expect(templates.deleteButton(template.name), `${template.name} : pas de suppression`).toHaveCount(0);
+      const deactivate = templates.deactivateButton(template.name);
+      await expect(deactivate, `${template.name} : désactivation grisée`).toBeDisabled();
+      await expect(deactivate).toHaveAttribute('title', /archivez-les avant de désactiver/);
+      await expect(templates.status(template.name)).toHaveText('Actif');
+    }
   });
 
   test("La suppression d'un parcours non utilisé confirme le succès et met à jour la liste", async ({ page }) => {
-    test.fail(true, "Anomalie : après une suppression réussie, le composant teste response.result.code == 200 (au lieu de response.code) : il affiche \"Erreur lors de la suppression\" et ne rafraîchit pas la liste.");
+    // Modèle jamais démarré : seul cas où la suppression est proposée ; elle est définitive (absent
+    // des actifs comme des désactivés).
     const templates = await openTemplates(page);
-    await templates.requestRemoval(MEN_ONLY.name);
-    await expect(page.locator('.toast-success').filter({ hasText: /supprimé avec succès/ }).first()).toBeVisible({ timeout: 10000 });
-    await expect(templates.row(MEN_ONLY.name)).toHaveCount(0, { timeout: 5000 });
+    await expect(templates.usage(MEN_ONLY.name)).toHaveText(/^\s*Jamais utilisé\s*$/);
+    await expect(templates.deactivateButton(MEN_ONLY.name), 'Désactivation possible').toBeEnabled();
+    await templates.deleteButton(MEN_ONLY.name).click();
+    const warning = page.locator('.warning-modal-card');
+    await expect(warning, 'Avertissement de suppression définitive').toContainText(/supprimer définitivement/);
+    await warning.getByRole('button', { name: /^Fermer$/ }).click();
+    await expect(warning).toBeHidden();
+    await expect(templates.row(MEN_ONLY.name), 'Annulation : modèle conservé').toHaveCount(1);
+    await templates.remove(MEN_ONLY.name);
+    await templates.filterStatus('Tous');
+    await expect(templates.row(MEN_ONLY.name), 'Supprimé définitivement (pas désactivé)').toHaveCount(0);
   });
 
   test('Supprimer les parcours non utilisés', async ({ page }) => {
@@ -294,8 +326,10 @@ test.describe('Module Dossier médical — Parcours de soins paramétrés', () =
         await test.step(`Supprimer ${template.name}`, async () => templates.remove(template.name));
       }
     }
-    // Modèles QA jamais démarrés laissés par une exécution précédente interrompue
-    const leftovers = templates.section.locator('.cpt-row-title')
+    // Modèles QA jamais démarrés (donc supprimables) laissés par une exécution précédente interrompue
+    const leftovers = templates.section.locator('.cpt-row')
+      .filter({ has: page.locator('button.cpt-btn--danger') })
+      .locator('.cpt-row-title')
       .filter({ hasText: /^\s*QA-(HOMMES|AUTRE-SESSION)-\d{6}/ });
     for (const title of await leftovers.allTextContents()) {
       const name = title.trim().split(/\s+/)[0];

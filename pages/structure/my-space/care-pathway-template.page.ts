@@ -72,7 +72,7 @@ export class CarePathwayTemplatePage {
   }
 
   /** Remplit le formulaire de modèle (ouvert) et renvoie les actes choisis par étape. */
-  private async fillForm(template: CarePathwayTemplate): Promise<SelectedActs> {
+  async fillForm(template: CarePathwayTemplate): Promise<SelectedActs> {
     await this.modal.locator('[formcontrolname="careplanType"]').fill(template.name);
     await this.modal.locator('[formcontrolname="description"]').fill(template.description);
     await this.pickSingle(this.modal.locator('ng-select[formcontrolname="targetSex"]'), template.targetSex);
@@ -99,14 +99,20 @@ export class CarePathwayTemplatePage {
     return selected;
   }
 
-  async create(template: CarePathwayTemplate): Promise<SelectedActs> {
+  /** Ouvre le formulaire d'un nouveau modèle. */
+  async openNew() {
     await this.section.getByRole('button', { name: /Nouveau type de parcours/ }).click();
     await expect(this.modal).toBeVisible();
     await expect(this.modal.getByRole('heading', { name: /Nouveau modèle de parcours/ })).toBeVisible();
+  }
+
+  async create(template: CarePathwayTemplate): Promise<SelectedActs> {
+    await this.openNew();
     const selected = await this.fillForm(template);
     await this.save();
     await expect(this.row(template.name)).toBeVisible({ timeout: 15000 });
     await expect(this.row(template.name)).toContainText(`${template.steps.length} étape(s) configurée(s)`);
+    await expect(this.status(template.name), 'Nouveau modèle actif').toHaveText('Actif');
     return selected;
   }
 
@@ -132,30 +138,122 @@ export class CarePathwayTemplatePage {
   }
 
   async save() {
-    await this.modal.getByRole('button', { name: /Enregistrer/ }).click();
+    // Après l'enregistrement, l'écran recharge tous les modèles (recherche sans pagination) dans le
+    // cache du navigateur lu par le dashboard patient : on attend cette réponse, sinon un dossier
+    // ouvert juste après ne propose pas encore le modèle.
+    const cacheRefreshed = this.page.waitForResponse(r => r.url().includes('/careplantemplates/search')
+      && r.request().method() === 'POST' && /"size":\s*9999/.test(r.request().postData() ?? ''), { timeout: 60000 });
+    cacheRefreshed.catch(() => {});
+    const { status, body, summary } = await this.submit();
+    // En cas de refus, code et motif (toast trop bref pour la capture d'échec) sont dans l'erreur.
+    if (status >= 400 || ![200, 201].includes(body?.code)) throw new Error(`Enregistrement refusé : ${summary}`);
     await expect(this.modal).toBeHidden({ timeout: 20000 });
-  }
-
-  /** Demande la suppression et confirme l'avertissement (sans présumer du résultat). */
-  async requestRemoval(name: string) {
-    await this.row(name).locator('button.cpt-btn--danger').click();
-    const warning = this.page.locator('.warning-modal-card');
-    // Le message est affiché en minuscules (titleCaseWord) : comparaison sans casse.
-    await expect(warning).toContainText(name, { ignoreCase: true });
-    await warning.getByRole('button', { name: /Confirmer/ }).click();
+    await cacheRefreshed;
   }
 
   /**
-   * Supprime un modèle non utilisé. La liste n'est pas rafraîchie après une suppression réussie
-   * (le composant teste response.result.code au lieu de response.code) : on recharge la page
-   * pour constater le résultat réel.
+   * Clique sur "Enregistrer" et renvoie la réponse du backend à la création (POST) / modification
+   * (PUT) du modèle, sans présumer du résultat.
    */
+  async submit(): Promise<{ status: number; body: any; summary: string }> {
+    const saved = this.page.waitForResponse(r => /\/careplantemplates\/?(\d+)?(\?.*)?$/.test(r.url())
+      && ['POST', 'PUT'].includes(r.request().method()), { timeout: 20000 });
+    await this.modal.getByRole('button', { name: /Enregistrer/ }).click();
+    const response = await saved.catch(() => null);
+    if (!response) throw new Error("Aucune requête d'enregistrement envoyée (formulaire jugé invalide ?)");
+    const body = await response.json().catch(() => null);
+    const summary = `HTTP ${response.status()}, code ${body?.code}, ${JSON.stringify(body?.result ?? body?.message ?? body)}`;
+    return { status: response.status(), body, summary };
+  }
+
+  /** Badge de statut ("Actif" / "Désactivé") d'un modèle de la liste. */
+  status(name: string): Locator {
+    return this.row(name).locator('.cpt-status-tag');
+  }
+
+  /** Filtre de statut de la liste (actifs par défaut) ; `Tous` vide le filtre (actifs et désactivés). */
+  async filterStatus(status: 'Actif' | 'Désactivé' | 'Tous') {
+    const select = this.section.locator('ng-select.cpt-status-select');
+    // Attend la nouvelle recherche : sans cela, la liste précédente serait vérifiée à sa place.
+    const searched = this.page.waitForResponse(r => r.url().includes('/careplantemplates/search') && r.request().method() === 'POST');
+    if (status === 'Tous') {
+      await select.locator('.ng-clear-wrapper').click();
+      await expect(select.locator('.ng-value')).toHaveCount(0);
+    } else {
+      await select.locator('.ng-select-container').click();
+      await this.page.locator('.ng-dropdown-panel .ng-option').filter({ hasText: new RegExp(`^\\s*${status}\\s*$`) }).first().click();
+      await expect(select.locator('.ng-value')).toContainText(status);
+    }
+    await searched;
+    await expect(this.section.locator('.cpt-row').or(this.section.locator('.cpt-empty')).first()).toBeVisible({ timeout: 15000 });
+  }
+
+  /** Ligne d'utilisation : "Jamais utilisé" ou "Utilisé par N parcours (dont M en cours | archivés)". */
+  usage(name: string): Locator {
+    return this.row(name).locator('.cpt-row-meta').filter({ hasText: /Utilisé|Jamais utilisé/ });
+  }
+
+  /** Bouton de suppression : affiché seulement pour un modèle jamais utilisé. */
+  deleteButton(name: string): Locator {
+    return this.row(name).locator('button.cpt-btn--danger');
+  }
+
+  deactivateButton(name: string): Locator {
+    return this.row(name).getByRole('button', { name: /Désactiver/ });
+  }
+
+  activateButton(name: string): Locator {
+    return this.row(name).getByRole('button', { name: /^\W*Activer$/ });
+  }
+
+  /** Toasts d'une action précédente refermés : la réponse lue ensuite est bien la nôtre. */
+  private async noToast() {
+    await expect(this.page.locator('.toast-success, .toast-error')).toHaveCount(0, { timeout: 15000 });
+  }
+
+  /** Réponse de l'application à une action sur `name` : un toast de succès portant `message`. */
+  private async expectSuccess(name: string, message: RegExp) {
+    const toast = this.page.locator('.toast-success, .toast-error').first();
+    await expect(toast, `Réponse à l'action sur "${name}"`).toBeVisible({ timeout: 15000 });
+    await expect(toast, `Action sur "${name}" acceptée`).toHaveClass(/toast-success/);
+    await expect(toast).toContainText(message);
+  }
+
+  /** Confirme la modale d'avertissement, qui doit citer le modèle et contenir `text`. */
+  private async confirmWarning(name: string, text: RegExp) {
+    const warning = this.page.locator('.warning-modal-card');
+    // Le message est affiché en minuscules (titleCaseWord) : comparaison sans casse.
+    await expect(warning).toContainText(name, { ignoreCase: true });
+    await expect(warning).toContainText(text);
+    await warning.getByRole('button', { name: /Confirmer/ }).click();
+  }
+
+  /** Supprime définitivement un modèle jamais utilisé : succès puis liste rafraîchie sans lui. */
   async remove(name: string) {
-    await this.requestRemoval(name);
-    await this.page.locator('.toast-success, .toast-error').first().waitFor({ state: 'visible', timeout: 15000 }).catch(() => {});
-    await this.page.reload();
-    await this.open();
+    await this.noToast();
+    await this.deleteButton(name).click();
+    await this.confirmWarning(name, /supprimer définitivement/i);
+    await this.expectSuccess(name, /supprimé avec succès/);
     await expect(this.row(name), `Le modèle "${name}" doit être supprimé`).toHaveCount(0, { timeout: 15000 });
+  }
+
+  /**
+   * Désactive un modèle (plus proposé à la création, parcours existants conservés) : il quitte la
+   * liste des actifs (filtre par défaut).
+   */
+  async deactivate(name: string) {
+    await this.noToast();
+    await this.deactivateButton(name).click();
+    await this.confirmWarning(name, /ne sera plus proposé/);
+    await this.expectSuccess(name, new RegExp(`"${escapeRegExp(name)}" désactivé`));
+    await expect(this.row(name), `"${name}" ne doit plus être listé parmi les actifs`).toHaveCount(0, { timeout: 15000 });
+  }
+
+  /** Réactive un modèle désactivé (liste filtrée sur "Désactivé" ou "Tous"), sans confirmation. */
+  async activate(name: string) {
+    await this.noToast();
+    await this.activateButton(name).click();
+    await this.expectSuccess(name, new RegExp(`"${escapeRegExp(name)}" activé`));
   }
 }
 

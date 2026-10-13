@@ -102,7 +102,8 @@ const stepButton = (page: Page, n: number) => page.locator('.pw-steps-track butt
  */
 async function goToStep(page: Page, n: number) {
   const button = stepButton(page, n);
-  await expect(button).toBeVisible();
+  // Les étapes se chargent après l'en-tête du parcours (lent après un rechargement complet)
+  await expect(button).toBeVisible({ timeout: 30000 });
   await button.dispatchEvent('click');
   await expect(activeStep(page)).toContainText(`Étape ${n}`);
 }
@@ -339,6 +340,8 @@ test.describe('Module Dossier médical — Suivi des parcours de soins (homme, f
     }
     woman = await createDossierPatient(browser);
     man = await createDossierPatient(browser, 'HOMME');
+    // Pour reprendre un passage interrompu (voir SUIVI_STAMP / SUIVI_WOMAN / SUIVI_MAN)
+    console.log(`Reprise possible : SUIVI_STAMP=${stamp} SUIVI_WOMAN=${woman.identifier} SUIVI_MAN=${man.identifier}`);
   });
 
   test.beforeEach(async ({ portal }) => {
@@ -419,6 +422,18 @@ test.describe('Module Dossier médical — Suivi des parcours de soins (homme, f
         await expect(pathwayTile(page, template.name).first(), `${template.name} grisé`).toBeDisabled();
         await expect(page.getByRole('link', { name: new RegExp(`${template.name}\\s*Voir le parcours`) })).toBeVisible();
       }
+    }
+  });
+
+  test('Un modèle dont des parcours sont en cours est verrouillé et ne peut être ni désactivé ni supprimé', async ({ page }) => {
+    const templates = await openTemplates(page);
+    for (const [template, count] of [[FEMMES, 1], [HOMMES, 1], [TOUS, 2]] as const) {
+      // Patients réutilisés : nombre de parcours dépendant des passages précédents
+      const usage = REUSED_PATIENTS ? /Utilisé par \d+ parcours \(dont \d+ en cours\)/ : `Utilisé par ${count} parcours (dont ${count} en cours)`;
+      await expect(templates.usage(template.name), `${template.name} : utilisation`).toContainText(usage);
+      await expect(templates.usage(template.name).locator('.ri-lock-line'), `${template.name} : verrouillé`).toBeVisible();
+      await expect(templates.deactivateButton(template.name), `${template.name} : désactivation grisée`).toBeDisabled();
+      await expect(templates.deleteButton(template.name), `${template.name} : pas de suppression`).toHaveCount(0);
     }
   });
 
@@ -691,11 +706,94 @@ test.describe('Module Dossier médical — Suivi des parcours de soins (homme, f
     }
   });
 
-  test('Un modèle dont tous les parcours sont archivés peut être supprimé', async ({ page }) => {
-    test.fail(true, "Anomalie : la suppression d'un modèle est refusée (409, \"N parcours de soin actif(s) … déjà engagé(s)\") alors que tous ses parcours sont archivés : les parcours archivés sont comptés comme actifs, un modèle ayant servi ne peut jamais être supprimé.");
+  // ---------------- Désactivation et réactivation des modèles ----------------
+  // Un modèle qui a servi n'est jamais supprimé : on le désactive (plus proposé à la création), ses
+  // parcours archivés restent consultables, et on peut le réactiver.
+  test('Un modèle dont tous les parcours sont archivés peut être désactivé (pas supprimé)', async ({ page }) => {
     const templates = await openTemplates(page);
     for (const template of [FEMMES, HOMMES, TOUS]) {
-      await test.step(`Supprimer le modèle ${template.name}`, async () => templates.remove(template.name));
+      // Passage précédent (données réutilisées) : modèle déjà désactivé, absent des actifs
+      if (REUSED_STAMP && await templates.row(template.name).count() === 0) continue;
+      await test.step(`Désactiver le modèle ${template.name}`, async () => {
+        await expect(templates.usage(template.name), 'Parcours tous archivés').toContainText(/Utilisé par \d+ parcours \(archivés\)/);
+        await expect(templates.usage(template.name).locator('.ri-lock-line'), 'Toujours verrouillé').toBeVisible();
+        await expect(templates.deleteButton(template.name), 'Pas de suppression').toHaveCount(0);
+        await expect(templates.deactivateButton(template.name), 'Désactivation possible').toBeEnabled();
+        await templates.deactivate(template.name);
+      });
     }
+    await templates.filterStatus('Désactivé');
+    for (const template of [FEMMES, HOMMES, TOUS]) {
+      await expect(templates.status(template.name), `${template.name} listé comme désactivé`).toHaveText('Désactivé');
+      await expect(templates.row(template.name), 'Étapes conservées').toContainText('2 étape(s) configurée(s)');
+      await expect(templates.activateButton(template.name), 'Réactivation proposée').toBeVisible();
+      await expect(templates.deactivateButton(template.name)).toHaveCount(0);
+    }
+  });
+
+  test("Un modèle désactivé n'est plus proposé aux patients", async ({ page }) => {
+    for (const [patient, offered] of [[woman, [FEMMES, TOUS]], [man, [HOMMES, TOUS]]] as const) {
+      await openPatientFile(page, patient);
+      for (const template of offered) {
+        await expect(pathwayTile(page, template.name), `${template.name} non proposé`).toHaveCount(0);
+      }
+    }
+  });
+
+  test("Les parcours archivés d'un modèle désactivé restent consultables avec leurs actes", async ({ page }) => {
+    const carePathway = new CarePathwayPage(page);
+    await openPatientFile(page, woman);
+    await carePathway.openArchivesFromDashboard();
+    const row = page.locator('table.data-table tbody tr.row-clickable').filter({ hasText: FEMMES.name }).first();
+    await expect(row, 'Parcours femmes toujours archivé').toContainText('Archivé');
+    await row.getByRole('button', { name: /Voir les détails/ }).click();
+    await page.waitForURL('**/patient/patient-care-pathway-detail/**');
+    await expect(page.locator('.pw-hero-status')).toHaveText(/Archivé/);
+    // Les actes prévus viennent du modèle, désormais désactivé
+    const planned = page.locator('.pw-acts-item');
+    await expect(planned, 'Actes prévus : une ligne par étape').toHaveCount(2);
+    for (let i = 0; i < 2; i++) {
+      expect(await planned.nth(i).locator('.pw-act-badge').count(), `Étape ${i + 1} : actes affichés`).toBeGreaterThanOrEqual(ACT_DOMAINS.length);
+    }
+  });
+
+  test("Créer un modèle du même type qu'un modèle désactivé est refusé", async ({ page }) => {
+    const templates = await openTemplates(page);
+    await templates.openNew();
+    await templates.fillForm({ ...HOMMES, steps: [{ plannedPeriod: '0', groups: [{ domain: 'Consultation', acts: 1 }] }] });
+    const { status, body, summary } = await templates.submit();
+    // Conflit métier en HTTP 200 + code 409 : un statut HTTP 4xx est réduit à un nombre par
+    // l'intercepteur du front (token.interceptor), qui perd alors la raison du refus.
+    expect(status, `Conflit renvoyé en HTTP 200 + code 409, réponse : ${summary}`).toBe(200);
+    expect(body?.result?.reason, `Refus attendu (409 TYPE_TAKEN_BY_INACTIVE_TEMPLATE), réponse : ${summary}`).toBe('TYPE_TAKEN_BY_INACTIVE_TEMPLATE');
+    const error = page.locator('.toast-error').first();
+    await expect(error, "Message d'erreur affiché").toBeVisible({ timeout: 15000 });
+    await expect(error).toContainText(`Un modèle désactivé existe déjà pour le type "${HOMMES.name}"`);
+    await expect(error, 'Le message propose de le réactiver').toContainText(/Réactivez-le/);
+    await expect(templates.modal, 'Le formulaire reste ouvert').toBeVisible();
+    await templates.modal.getByRole('button', { name: /Fermer/ }).click();
+    await expect(templates.row(HOMMES.name), "Aucun nouveau modèle actif").toHaveCount(0);
+  });
+
+  test('Réactiver un modèle désactivé : de nouveau proposé au patient', async ({ page }) => {
+    const templates = await openTemplates(page);
+    // Passage précédent interrompu avant le nettoyage : modèle resté actif, on le redésactive
+    if (REUSED_STAMP && await templates.row(HOMMES.name).count() > 0) await templates.deactivate(HOMMES.name);
+    await templates.filterStatus('Désactivé');
+    await templates.activate(HOMMES.name);
+    await expect(templates.row(HOMMES.name), 'Quitte la liste des désactivés').toHaveCount(0, { timeout: 15000 });
+    await templates.filterStatus('Actif');
+    await expect(templates.status(HOMMES.name)).toHaveText('Actif');
+
+    await openPatientFile(page, man);
+    // Tuile de démarrage (le bloc de suivi affiche aussi, après archivage, un lien "Voir le parcours 0"
+    // vers le formulaire de démarrage)
+    const tile = pathwayTile(page, HOMMES.name);
+    await expect(tile, 'Proposé de nouveau au patient').toHaveCount(1);
+    await expect(tile).toBeEnabled();
+    await expect(tile).toHaveAttribute('href', /\/patient\/create-careplan\//);
+
+    // Nettoyage : de nouveau désactivé
+    await (await openTemplates(page)).deactivate(HOMMES.name);
   });
 });
