@@ -6,6 +6,9 @@ import { ConsultationPage } from '../../pages/structure/consultation/consultatio
 import { ConsultationStandardDataGenerator } from '../../pages/structure/generator/consultation-standard-data-generator';
 import { BillingInvoicePage } from '../../pages/structure/billing/billing-invoice.page';
 import { BillingListPatientPage } from '../../pages/structure/billing/billing-list.page';
+import { VaccinationPage } from '../../pages/structure/vaccination/vaccination.page';
+import { ConsultationFormPage } from '../../pages/structure/consultation/consultation-form.page';
+import { isoDate } from '../../test-data/consultation-fields';
 
 test.setTimeout(300000);
 
@@ -122,6 +125,113 @@ test.describe('Module Facturation — Actes à facturer depuis le dossier médic
         await expect(page.getByText(/suppression de la consultation a\s+r[ée]ussi/i).first()).toBeVisible({ timeout: 15000 });
       });
       await test.step('Ses actes ne sont plus à facturer', async () => {
+        const invoicePage = await openBilling(portal, page);
+        await expect.poll(() => invoicePage.counters(), { message: 'Plus aucun acte à facturer' }).toEqual({ toBill: 0, inInvoice: 0 });
+      });
+    });
+  });
+
+  test.describe('Vaccination', () => {
+    test.describe.configure({ mode: 'serial' });
+    let patient: DossierPatient;
+    let act = '';
+    let invoiceOrder = '';
+
+    test.beforeAll(async ({ browser }) => {
+      test.setTimeout(DOSSIER_SETUP_TIMEOUT);
+      patient = await createDossierPatient(browser);
+    });
+
+    /** Ouvre la liste des vaccinations du patient. */
+    async function openVaccinations(portal: PortalPage, page: Page) {
+      await portal.enterModule('Dossier médical');
+      await openDossier(page, patient);
+      const vaccination = new VaccinationPage(page);
+      await vaccination.gotoFromPatientDashboard();
+      return vaccination;
+    }
+
+    async function openBilling(portal: PortalPage, page: Page) {
+      const invoicePage = new BillingInvoicePage(page);
+      await portal.enterModule('Facturation');
+      await page.waitForURL('**/billing/billings-create');
+      await invoicePage.searchPatientByIdentifier(patient.identifier);
+      await invoicePage.selectFirstSearchResult();
+      return invoicePage;
+    }
+
+    const confirm = async (page: Page) => {
+      const button = page.getByRole('button', { name: /^\W*Confirmer$/ }).last();
+      await expect(button).toBeVisible({ timeout: 10000 });
+      await button.click();
+    };
+
+    test('Créer une vaccination avec un acte à facturer', async ({ portal, page }) => {
+      const vaccination = await openVaccinations(portal, page);
+      await vaccination.openNewVaccinationModal();
+      const values = await new ConsultationFormPage(page, vaccination.modal).fill([
+        { name: 'type', kind: 'select' },
+        { name: 'caregiverId', kind: 'select' },
+        { name: 'dose', kind: 'select' },
+        { name: 'date', kind: 'date', value: isoDate(-1) },
+        { name: 'billableActs', kind: 'multiselect', count: 1 },
+      ]);
+      act = (values.billableActs as string[])[0];
+      expect(act, 'Acte à facturer choisi').toBeTruthy();
+      await vaccination.validerButton.click();
+      await expect(vaccination.modal).toBeHidden({ timeout: 20000 });
+      await expect(vaccination.firstVaccinationHeader).toBeVisible();
+    });
+
+    test("L'acte choisi est à facturer dans le module Facturation", async ({ portal, page }) => {
+      const invoicePage = await openBilling(portal, page);
+      await expect.poll(() => invoicePage.counters(), { message: 'Un acte à facturer' }).toEqual({ toBill: 1, inInvoice: 0 });
+      expect(await invoicePage.showPendingAct(act), `"${act}" à facturer`).not.toBeNull();
+    });
+
+    test("Facturer l'acte de la vaccination", async ({ portal, page }) => {
+      const invoicePage = await openBilling(portal, page);
+      await invoicePage.setActAmount(act, 4000);
+      await invoicePage.proceedToBilling();
+      await invoicePage.generateInvoice();
+      const invoices = await new BillingListPatientPage(page).invoicesOf(patient.identifier);
+      expect(invoices.map(i => i.amount), 'Une facture patient de 4 000').toEqual([4000]);
+      invoiceOrder = invoices[0].order;
+    });
+
+    test("Modifier la vaccination : l'acte facturé est grisé", async ({ portal, page }) => {
+      const vaccination = await openVaccinations(portal, page);
+      await vaccination.openFirstVaccination();
+      const item = page.locator('app-vaccination-simple-item').filter({ visible: true }).first();
+      await item.getByRole('button', { name: /Modifier la vaccination/ }).click();
+      await expect(item.locator('ng-select[formcontrolname="billableActs"] .ng-value').filter({ hasText: act }), `"${act}" facturé : non retirable`)
+        .toHaveClass(/ng-value-disabled/);
+    });
+
+    test('Supprimer la vaccination est bloqué tant que la facture existe', async ({ portal, page }) => {
+      const vaccination = await openVaccinations(portal, page);
+      await vaccination.openFirstVaccination();
+      await vaccination.supprimerButton.click();
+      await confirm(page);
+      await expect(page.getByText(BLOCKED).first(), 'Suppression refusée : une facture existe').toBeVisible({ timeout: 15000 });
+      const again = await openVaccinations(portal, page);
+      await expect(again.firstVaccinationHeader, 'Vaccination toujours présente').toBeVisible();
+    });
+
+    test('Après suppression de la facture, la vaccination peut être supprimée', async ({ portal, page }) => {
+      await test.step(`Supprimer la facture ${invoiceOrder}`, async () => {
+        await portal.enterModule('Facturation');
+        await portal.openMenu('Factures patients', '**/billing/billings-patients');
+        const list = new BillingListPatientPage(page);
+        await list.invoicesOf(patient.identifier);
+        await list.deleteInvoice(invoiceOrder);
+      });
+      await test.step('Supprimer la vaccination', async () => {
+        const vaccination = await openVaccinations(portal, page);
+        await vaccination.deleteFirstVaccination();
+        await expect(vaccination.firstVaccinationHeader).toHaveCount(0, { timeout: 15000 });
+      });
+      await test.step("Son acte n'est plus à facturer", async () => {
         const invoicePage = await openBilling(portal, page);
         await expect.poll(() => invoicePage.counters(), { message: 'Plus aucun acte à facturer' }).toEqual({ toBill: 0, inInvoice: 0 });
       });
