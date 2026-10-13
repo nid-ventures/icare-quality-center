@@ -276,6 +276,27 @@ export class BillingListPatientPage {
         return detail;
     }
 
+    /** Ligne de la facture N° `order` dans la liste affichée. */
+    rowOf(order: string): Locator {
+        return this.rows.filter({ has: this.page.locator('td:nth-child(1)', { hasText: new RegExp(`^\\s*${order}\\s*$`) }) });
+    }
+
+    /** Supprime la facture N° `order` (confirmation comprise). */
+    async deleteInvoice(order: string): Promise<void> {
+        await this.deleteRow(this.rowOf(order).first());
+    }
+
+    /**
+     * Imprime la facture N° `order` sans ouvrir la boîte d'impression du système : l'impression
+     * passe par un cadre caché dont on intercepte window.print, et renvoie le texte imprimé.
+     */
+    async printOf(order: string): Promise<string> {
+        await interceptPrint(this.page);
+        await this.rowOf(order).first().getByTitle('Imprimer').click();
+        await expect.poll(() => this.page.evaluate(() => (window as any).__qaPrinted ?? ''), { message: 'Contenu imprimé', timeout: 15000 }).not.toBe('');
+        return this.page.evaluate(() => (window as any).__qaPrinted as string);
+    }
+
     /** Toutes les factures du patient (N° et montant), sur la plus grande page de la liste. */
     async invoicesOf(patientIdentifier: string): Promise<InvoiceSummary[]> {
         await this.identifiantPatientInput.fill(patientIdentifier);
@@ -538,6 +559,27 @@ export class BillingListGarantPage {
         return detail;
     }
 
+    /** Ligne de la facture N° `order` dans la liste affichée. */
+    rowOf(order: string): Locator {
+        return this.rows.filter({ has: this.page.locator('td:nth-child(1)', { hasText: new RegExp(`^\\s*${order}\\s*$`) }) });
+    }
+
+    /** Supprime la facture N° `order` (confirmation comprise). */
+    async deleteInvoice(order: string): Promise<void> {
+        await this.deleteRow(this.rowOf(order).first());
+    }
+
+    /**
+     * Imprime la facture N° `order` sans ouvrir la boîte d'impression du système : l'impression
+     * passe par un cadre caché dont on intercepte window.print, et renvoie le texte imprimé.
+     */
+    async printOf(order: string): Promise<string> {
+        await interceptPrint(this.page);
+        await this.rowOf(order).first().getByTitle('Imprimer').click();
+        await expect.poll(() => this.page.evaluate(() => (window as any).__qaPrinted ?? ''), { message: 'Contenu imprimé', timeout: 15000 }).not.toBe('');
+        return this.page.evaluate(() => (window as any).__qaPrinted as string);
+    }
+
     /** Toutes les factures du patient (N° et montant), sur la plus grande page de la liste. */
     async invoicesOf(patientIdentifier: string): Promise<InvoiceSummary[]> {
         await this.identifiantPatientInput.fill(patientIdentifier);
@@ -594,4 +636,26 @@ async function readInvoiceDetail(modal: Locator): Promise<InvoiceDetail> {
         cap: amountAfter('Plafond global garant'),
         lines,
     };
+}
+
+/**
+ * Remplace window.print des cadres d'impression ajoutés à la page : le texte qui aurait été imprimé
+ * est gardé dans window.__qaPrinted (la boîte d'impression bloquerait le test).
+ */
+async function interceptPrint(page: Page): Promise<void> {
+    await page.evaluate(() => {
+        const w = window as any;
+        w.__qaPrinted = '';
+        if (w.__qaPrintIntercepted) return;
+        w.__qaPrintIntercepted = true;
+        const append = Node.prototype.appendChild;
+        Node.prototype.appendChild = function <T extends Node>(this: Node, child: T): T {
+            const result = append.call(this, child) as T;
+            if (child instanceof HTMLIFrameElement && child.contentWindow) {
+                const frame = child.contentWindow as any;
+                frame.print = () => { w.__qaPrinted = frame.document.body?.innerText ?? ''; };
+            }
+            return result;
+        };
+    });
 }

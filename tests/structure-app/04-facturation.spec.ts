@@ -484,6 +484,177 @@ test.describe('Module Facturation', () => {
   });
 
   // ======================================================================
+  // Cycle de vie d'une facture : détail, impression, suppression liée, actes de nouveau à facturer
+  // ======================================================================
+  test.describe("Cycle de vie d'une facture", () => {
+    // Un patient dédié, pris en charge à 80 % ; les mêmes deux actes sont facturés, supprimés puis
+    // refacturés. Supprimer la facture patient supprime sa facture garant et inversement, et les
+    // actes redeviennent à facturer.
+    test.describe.configure({ mode: 'serial' });
+    const COVER = { insurer: INSURER, rate: 80 };
+    const LINES = [{ ...ACTS.cardio, amount: 10000 }, { ...ACTS.pharmacie, amount: 5000 }];
+    const SCENARIO: CoverScenario = { title: 'Deux actes à 80 %', cover: COVER, lines: LINES, expected: { garant: 12000, patient: 3000 } };
+    const computed = computeCover(LINES, COVER);
+    let patient: DossierPatient;
+    // N° des factures déjà vues, et des factures patient / garant de la dernière facturation
+    const known = { patient: new Set<string>(), garant: new Set<string>() };
+    let last = { patient: '', garant: '' };
+
+    test.beforeAll(async ({ browser }) => {
+      test.setTimeout(DOSSIER_SETUP_TIMEOUT);
+      patient = await createDossierPatient(browser);
+    });
+
+    async function openBilling(portal: PortalPage, page: Page): Promise<BillingInvoicePage> {
+      const invoicePage = new BillingInvoicePage(page);
+      await portal.enterModule('Facturation');
+      await page.waitForURL('**/billing/billings-create');
+      await invoicePage.searchPatientByIdentifier(patient.identifier);
+      await invoicePage.selectFirstSearchResult();
+      return invoicePage;
+    }
+
+    /** Liste des factures patients ou garants, depuis le module Facturation (le test peut partir du portail). */
+    async function openList(portal: PortalPage, label: string, url: string) {
+      await portal.enterModule('Facturation');
+      await portal.openMenu(label, url);
+    }
+
+    /** N° de la seule nouvelle facture de la liste (patient ou garant) depuis la dernière lecture. */
+    async function newInvoices(portal: PortalPage, page: Page, side: 'patient' | 'garant') {
+      const list = side === 'patient' ? new BillingListPatientPage(page) : new BillingListGarantPage(page);
+      await openList(portal, side === 'patient' ? 'Factures patients' : 'Factures garants', side === 'patient' ? '**/billing/billings-patients' : '**/billing/billings-garants');
+      const all = await list.invoicesOf(patient.identifier);
+      const created = all.filter(i => !known[side].has(i.order));
+      created.forEach(i => known[side].add(i.order));
+      return { list, all, created };
+    }
+
+    /** Facture les deux actes (ajoutés si `addActs`) avec ou sans prise en charge ; relève les N°. */
+    async function bill(portal: PortalPage, page: Page, addActs: boolean, withCover = true) {
+      const invoicePage = await openBilling(portal, page);
+      await test.step(`Facturer ${LINES.map(l => l.act).join(' et ')}${withCover ? ' avec la prise en charge' : ' sans prise en charge'}`, async () => {
+        if (addActs) for (const line of LINES) await invoicePage.addAct(line);
+        for (const line of LINES) await invoicePage.setActAmount(line.act, line.amount);
+        await invoicePage.proceedToBilling();
+        if (withCover) await invoicePage.chooseCover(INSURER);
+        await invoicePage.generateInvoice();
+      });
+      const garant = await newInvoices(portal, page, 'garant');
+      const patientInvoices = await newInvoices(portal, page, 'patient');
+      expect(patientInvoices.created.map(i => i.amount), 'Une nouvelle facture patient').toEqual([withCover ? computed.patient : computed.total]);
+      expect(garant.created.map(i => i.amount), withCover ? 'Une nouvelle facture garant' : 'Aucune facture garant').toEqual(withCover ? [computed.garant] : []);
+      last = { patient: patientInvoices.created[0]?.order ?? '', garant: garant.created[0]?.order ?? '' };
+    }
+
+    /** Les deux actes sont de nouveau à facturer (sans montant), la facture en cours est vide. */
+    async function expectActsBillableAgain(portal: PortalPage, page: Page) {
+      const invoicePage = await openBilling(portal, page);
+      await expect.poll(() => invoicePage.counters(), { message: 'Actes de nouveau à facturer' }).toEqual({ toBill: LINES.length, inInvoice: 0 });
+      for (const line of LINES) {
+        const row = await invoicePage.showPendingAct(line.act);
+        expect(row, `"${line.act}" de nouveau à facturer`).not.toBeNull();
+        await expect(row!.locator('input[type="text"]'), 'Sans montant').toHaveValue('');
+      }
+    }
+
+    /** Montants du texte sans séparateurs de milliers ("15 000" → "15000"). */
+    const plain = (text: string) => text.replace(/(\d)[\s  ](?=\d{3}\b)/g, '$1');
+
+    test('Préparer le patient : prise en charge à 80 %', async ({ portal, page }) => {
+      await portal.enterModule('Base patients');
+      const patientPage = new PatientPage(page);
+      await patientPage.searchByName(patient.firstName, patient.lastName);
+      await patientPage.openPatient(patient.lastName);
+      await page.waitForURL('**/patient/patient-info-administration/**');
+      const carePage = new PatientCarePage(page);
+      await carePage.goToCareTab();
+      await carePage.addCover(COVER);
+    });
+
+    test('Facturer avec prise en charge : une facture patient et une facture garant', async ({ portal, page }) => {
+      await bill(portal, page, true);
+    });
+
+    test('Détail et impression de la facture patient', async ({ portal, page }) => {
+      const list = new BillingListPatientPage(page);
+      await openList(portal, 'Factures patients', '**/billing/billings-patients');
+      await list.invoicesOf(patient.identifier);
+      await test.step('Détail conforme', async () =>
+        expectDetailConformity(await list.detailOf(last.patient), 'patient', last.patient, patient, SCENARIO, computed));
+      await test.step('Impression : N°, patient, total et part patient', async () => {
+        const printed = plain(await list.printOf(last.patient));
+        expect.soft(printed, 'N° de facture imprimé').toContain(last.patient);
+        expect.soft(printed.toLowerCase(), 'Patient imprimé').toContain(patient.lastName.toLowerCase());
+        expect.soft(printed, 'Total imprimé').toContain(String(computed.total));
+        expect.soft(printed, 'Part patient imprimée').toContain(String(computed.patient));
+      });
+    });
+
+    test('Détail et impression de la facture garant', async ({ portal, page }) => {
+      const list = new BillingListGarantPage(page);
+      await openList(portal, 'Factures garants', '**/billing/billings-garants');
+      await list.invoicesOf(patient.identifier);
+      await test.step('Détail conforme', async () =>
+        expectDetailConformity(await list.detailOf(last.garant), 'garant', last.garant, patient, SCENARIO, computed));
+      await test.step('Impression : N°, patient, total et part garant', async () => {
+        const printed = plain(await list.printOf(last.garant));
+        expect.soft(printed, 'N° de facture imprimé').toContain(last.garant);
+        expect.soft(printed.toLowerCase(), 'Patient imprimé').toContain(patient.lastName.toLowerCase());
+        expect.soft(printed, 'Total imprimé').toContain(String(computed.total));
+        expect.soft(printed, 'Part garant imprimée').toContain(String(computed.garant));
+      });
+    });
+
+    test('Supprimer la facture patient supprime aussi la facture garant liée', async ({ portal, page }) => {
+      const { patient: patientOrder, garant: garantOrder } = last;
+      await test.step(`Supprimer la facture patient ${patientOrder}`, async () => {
+        const list = new BillingListPatientPage(page);
+        await openList(portal, 'Factures patients', '**/billing/billings-patients');
+        await list.invoicesOf(patient.identifier);
+        await list.deleteInvoice(patientOrder);
+      });
+      expect((await newInvoices(portal, page, 'patient')).all.map(i => i.order), 'Facture patient supprimée').not.toContain(patientOrder);
+      expect((await newInvoices(portal, page, 'garant')).all.map(i => i.order), 'Facture garant liée supprimée').not.toContain(garantOrder);
+    });
+
+    test('Après suppression de la facture patient, ses actes redeviennent à facturer', async ({ portal, page }) => {
+      await expectActsBillableAgain(portal, page);
+    });
+
+    test('Les actes de la facture supprimée peuvent être facturés de nouveau', async ({ portal, page }) => {
+      await bill(portal, page, false);
+    });
+
+    test('Supprimer la facture garant supprime aussi la facture patient liée', async ({ portal, page }) => {
+      const { patient: patientOrder, garant: garantOrder } = last;
+      await test.step(`Supprimer la facture garant ${garantOrder}`, async () => {
+        const list = new BillingListGarantPage(page);
+        await openList(portal, 'Factures garants', '**/billing/billings-garants');
+        await list.invoicesOf(patient.identifier);
+        await list.deleteInvoice(garantOrder);
+      });
+      expect((await newInvoices(portal, page, 'garant')).all.map(i => i.order), 'Facture garant supprimée').not.toContain(garantOrder);
+      expect((await newInvoices(portal, page, 'patient')).all.map(i => i.order), 'Facture patient liée supprimée').not.toContain(patientOrder);
+    });
+
+    test('Après suppression de la facture garant, ses actes redeviennent à facturer', async ({ portal, page }) => {
+      await expectActsBillableAgain(portal, page);
+    });
+
+    test('Sans prise en charge : facture patient seule, sa suppression rend les actes à facturer', async ({ portal, page }) => {
+      await bill(portal, page, false, false);
+      await test.step(`Supprimer la facture patient ${last.patient}`, async () => {
+        const list = new BillingListPatientPage(page);
+        await openList(portal, 'Factures patients', '**/billing/billings-patients');
+        await list.invoicesOf(patient.identifier);
+        await list.deleteInvoice(last.patient);
+      });
+      await expectActsBillableAgain(portal, page);
+    });
+  });
+
+  // ======================================================================
   // Prise en charge : calcul des quote-parts garant / patient
   // ======================================================================
   test.describe('Prise en charge : calcul des quote-parts', () => {
