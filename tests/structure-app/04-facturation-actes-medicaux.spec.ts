@@ -10,7 +10,7 @@ import { VaccinationPage } from '../../pages/structure/vaccination/vaccination.p
 import { ConsultationFormPage, type FieldSpec } from '../../pages/structure/consultation/consultation-form.page';
 import { ImagerieDashboardPage } from '../../pages/structure/imagerie/imagerie-dashboard.page';
 import { HealthChecksListPage, HealthCheckDetailPage } from '../../pages/structure/analyse/health-check.page';
-import { isoDate } from '../../test-data/consultation-fields';
+import { isoDate, prenatalFields, planificationFields, pediatricFields, dentalFields } from '../../test-data/consultation-fields';
 
 test.setTimeout(300000);
 
@@ -20,8 +20,11 @@ test.setTimeout(300000);
  * médical, et la suppression de l'acte médical est bloquée tant que la facture existe.
  */
 
-/** Message de l'application quand un acte médical à facturer est déjà facturé. */
-const BLOCKED = /suppression\s+a\s+échoué\s*:\s*au moins une facture existe/i;
+/**
+ * Message de l'application quand un acte médical à facturer est déjà facturé ("Suppression
+ * impossible : une facture existe déjà" pour la planification familiale).
+ */
+const BLOCKED = /suppression\s+a\s+échoué\s*:\s*au moins une facture existe|suppression impossible\s*:\s*une facture existe/i;
 
 test.describe('Module Facturation — Actes à facturer depuis le dossier médical', () => {
   test.describe('Consultation standard', () => {
@@ -132,6 +135,122 @@ test.describe('Module Facturation — Actes à facturer depuis le dossier médic
       });
     });
   });
+
+  // Consultations prénatale, de planification familiale, pédiatrique et dentaire : tous leurs champs
+  // (dont un acte à facturer) remplis comme dans les tests du dossier médical
+  for (const def of [
+    { label: 'Consultation prénatale', specialty: 'gynécologie-obstétrique', type: 'CONSULTATION prénatale', filter: 'CONSULTATION PRÉNATALE', createRoot: 'app-consultation-prenatal', editRoot: 'app-consultation-prenatal-edit', probe: 'appearance', fields: prenatalFields },
+    { label: 'Consultation de planification familiale', specialty: 'gynécologie-obstétrique', type: 'CONSULTATION planification familiale', filter: 'CONSULTATION PLANIFICATION', createRoot: 'app-consultation-planification-familiale', editRoot: 'app-consultation-planification-familiale-edit', probe: 'observations', fields: planificationFields },
+    { label: 'Consultation pédiatrique', specialty: 'pédiatrie', type: 'CONSULTATION pédiatrique', filter: 'CONSULTATION PÉDIATRIQUE', createRoot: 'app-consultation-pediatric', editRoot: 'app-consultation-pediatric-edit', probe: 'report', fields: pediatricFields },
+    { label: 'Consultation dentaire', specialty: 'dentiste', type: 'CONSULTATION dentaire', filter: 'CONSULTATION DENTAIRE', createRoot: 'app-consultation-tooth', editRoot: 'app-consultation-tooth-edit', probe: 'conclusion', fields: dentalFields },
+  ]) {
+    test.describe(def.label, () => {
+      test.describe.configure({ mode: 'serial' });
+      let patient: DossierPatient;
+      let act = '';
+      let invoiceOrder = '';
+      const root = (page: Page, selector: string) => page.locator(selector).filter({ visible: true }).first();
+
+      test.beforeAll(async ({ browser }) => {
+        test.setTimeout(DOSSIER_SETUP_TIMEOUT);
+        patient = await createDossierPatient(browser);
+      });
+
+      async function openConsultations(portal: PortalPage, page: Page) {
+        await portal.enterModule('Dossier médical');
+        await openDossier(page, patient);
+        const consultationPage = new ConsultationPage(page);
+        await consultationPage.goToConsultationTab();
+        await consultationPage.expectConsultationsListLoaded();
+        return consultationPage;
+      }
+
+      /** Rouvre la consultation du patient et renvoie son formulaire de modification. */
+      async function openConsultation(portal: PortalPage, page: Page) {
+        const consultationPage = await openConsultations(portal, page);
+        await consultationPage.filterByConsultationType(def.filter);
+        await consultationPage.openFirstConsultation();
+        const form = root(page, def.editRoot);
+        await expect(form, `Formulaire "${def.label}"`).toBeVisible({ timeout: 15000 });
+        return form;
+      }
+
+      async function openBilling(portal: PortalPage, page: Page) {
+        const invoicePage = new BillingInvoicePage(page);
+        await portal.enterModule('Facturation');
+        await page.waitForURL('**/billing/billings-create');
+        await invoicePage.searchPatientByIdentifier(patient.identifier);
+        await invoicePage.selectFirstSearchResult();
+        return invoicePage;
+      }
+
+      test(`Créer une ${def.label.toLowerCase()} avec un acte à facturer`, async ({ portal, page }) => {
+        const consultationPage = await openConsultations(portal, page);
+        await consultationPage.openNewConsultationModal();
+        await consultationPage.fillConsultationBasics({ specialty: def.specialty, consultationType: def.type });
+        await consultationPage.createConsultation();
+        const form = root(page, def.createRoot);
+        await expect(form).toBeVisible({ timeout: 15000 });
+        const values = await new ConsultationFormPage(page, form).fill(def.fields(1));
+        act = (values.billableActs as string[])[0];
+        expect(act, 'Acte à facturer choisi').toBeTruthy();
+        await new ConsultationFormPage(page, form).saveNew();
+      });
+
+      test("L'acte choisi est à facturer dans le module Facturation", async ({ portal, page }) => {
+        const invoicePage = await openBilling(portal, page);
+        await expect.poll(() => invoicePage.counters(), { message: 'Un acte à facturer' }).toEqual({ toBill: 1, inInvoice: 0 });
+        expect(await invoicePage.showPendingAct(act), `"${act}" à facturer`).not.toBeNull();
+      });
+
+      test("Facturer l'acte de la consultation", async ({ portal, page }) => {
+        const invoicePage = await openBilling(portal, page);
+        await invoicePage.setActAmount(act, 5000);
+        await invoicePage.proceedToBilling();
+        await invoicePage.generateInvoice();
+        const invoices = await new BillingListPatientPage(page).invoicesOf(patient.identifier);
+        expect(invoices.map(i => i.amount), 'Une facture patient de 5 000').toEqual([5000]);
+        invoiceOrder = invoices[0].order;
+      });
+
+      test("Modifier la consultation : l'acte facturé est grisé", async ({ portal, page }) => {
+        const form = await openConsultation(portal, page);
+        await new ConsultationFormPage(page, form).activate(def.probe);
+        await expect(form.locator('ng-select[formcontrolname="billableActs"] .ng-value').filter({ hasText: act }), `"${act}" facturé : non retirable`)
+          .toHaveClass(/ng-value-disabled/);
+      });
+
+      test('Supprimer la consultation est bloqué tant que la facture existe', async ({ portal, page }) => {
+        const form = await openConsultation(portal, page);
+        await new ConsultationFormPage(page, form).deleteConsultation();
+        await expect(page.getByText(BLOCKED).first(), 'Suppression refusée : une facture existe').toBeVisible({ timeout: 15000 });
+        const consultationPage = await openConsultations(portal, page);
+        await consultationPage.filterByConsultationType(def.filter);
+        await expect(page.locator('app-consultations').getByRole('button', { name: /Consultation/ }).first(), 'Consultation toujours présente').toBeVisible();
+      });
+
+      test('Après suppression de la facture, la consultation peut être supprimée', async ({ portal, page }) => {
+        await test.step(`Supprimer la facture ${invoiceOrder}`, async () => {
+          await portal.enterModule('Facturation');
+          await portal.openMenu('Factures patients', '**/billing/billings-patients');
+          const list = new BillingListPatientPage(page);
+          await list.invoicesOf(patient.identifier);
+          await list.deleteInvoice(invoiceOrder);
+        });
+        await test.step('Supprimer la consultation', async () => {
+          const form = await openConsultation(portal, page);
+          await new ConsultationFormPage(page, form).deleteConsultation();
+          const consultationPage = await openConsultations(portal, page);
+          await consultationPage.filterByConsultationType(def.filter);
+          await expect(page.locator('app-consultations').getByRole('button', { name: /Consultation/ })).toHaveCount(0, { timeout: 15000 });
+        });
+        await test.step("Son acte n'est plus à facturer", async () => {
+          const invoicePage = await openBilling(portal, page);
+          await expect.poll(() => invoicePage.counters(), { message: 'Plus aucun acte à facturer' }).toEqual({ toBill: 0, inInvoice: 0 });
+        });
+      });
+    });
+  }
 
   // Échographie (écran propre) et scanner (écran commun au scanner, à l'IRM et à la radiographie)
   for (const imaging of [
