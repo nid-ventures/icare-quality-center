@@ -4,6 +4,10 @@ import { type PortalPage } from '../../pages/structure/portal/portal.page';
 import { PatientPage } from '../../pages/structure/patient/patient.page';
 import { BillingInvoicePage } from '../../pages/structure/billing/billing-invoice.page';
 import { BillingListPatientPage, BillingListGarantPage } from '../../pages/structure/billing/billing-list.page';
+import { PatientCarePage } from '../../pages/structure/patient/patient-care.page';
+import { createDossierPatient, DOSSIER_SETUP_TIMEOUT, type DossierPatient } from '../../fixtures/dossier-patient';
+import { COVER_SCENARIOS, computeCover, scenarioTotal, type CoverComputation, type CoverScenario } from '../../test-data/cover-scenarios';
+import { type InvoiceDetail } from '../../pages/structure/billing/billing-list.page';
 
 test.setTimeout(120000);
 
@@ -37,6 +41,46 @@ async function findPatientInvoices(page: Page, patientIdentifier: string) {
   await listPage.search();
   expect(await listPage.getRowCount(), `Aucune facture retrouvée pour le patient "${patientIdentifier}"`).toBeGreaterThan(0);
   return listPage.getFirstRowData();
+}
+
+/** Règles générales de toute répartition garant / patient (étape Facturation). */
+function expectShareConformity(shares: { garant: number; patient: number }, total: number, cap?: number) {
+  expect.soft(shares.garant + shares.patient, 'Garant + patient = total des actes').toBe(total);
+  expect.soft(shares.garant, 'Part garant positive ou nulle').toBeGreaterThanOrEqual(0);
+  expect.soft(shares.patient, 'Part patient positive ou nulle').toBeGreaterThanOrEqual(0);
+  if (cap) expect.soft(shares.garant, 'Part garant dans la limite du plafond global').toBeLessThanOrEqual(cap);
+}
+
+/**
+ * Règles générales du détail d'une facture (patient ou garant) : N° et patient, une ligne par acte
+ * (quantité, montant unitaire, montant), total, taux, part due, plafond global (garant), et
+ * "Net à payer" de chaque acte selon les règles métier. Écarts relevés en souple, tous ensemble.
+ */
+function expectDetailConformity(detail: InvoiceDetail, side: 'patient' | 'garant', order: string,
+  patient: DossierPatient, scenario: CoverScenario, computed: CoverComputation) {
+  const label = side === 'patient' ? 'Facture patient' : 'Facture garant';
+  expect.soft(detail.text, `${label} : N° ${order}`).toContain(order);
+  expect.soft(detail.text.toLowerCase(), `${label} : nom du patient`).toContain(patient.lastName.toLowerCase());
+  expect.soft(detail.total, `${label} : total`).toBe(computed.total);
+  expect.soft(detail.rate, `${label} : taux garant`).toBe(scenario.cover?.rate ?? 0);
+  expect.soft(detail[side], `${label} : part ${side}`).toBe(computed[side]);
+  if (side === 'garant' && scenario.cover?.cap) expect.soft(detail.cap, `${label} : plafond global`).toBe(scenario.cover.cap);
+
+  expect.soft(detail.lines.length, `${label} : une ligne par acte`).toBe(scenario.lines.length);
+  const remaining = [...detail.lines];
+  for (const share of computed.lines) {
+    const { act, amount, days } = share.line;
+    const index = remaining.findIndex(l => l.act.toUpperCase().includes(act.toUpperCase()) && l.unit === amount);
+    expect.soft(index, `${label} : ligne "${act}" à ${amount}`).toBeGreaterThanOrEqual(0);
+    if (index < 0) continue;
+    const [detailLine] = remaining.splice(index, 1);
+    expect.soft(detailLine.quantity, `${label} : quantité de "${act}"`).toBe(days ?? 1);
+    expect.soft(detailLine.amount, `${label} : montant de "${act}"`).toBe(share.total);
+    expect.soft(detailLine.net, `${label} : net à payer de "${act}"`).toBe(Math.round(share[side]));
+  }
+  if (!computed.capReached) {
+    expect.soft(detail.lines.reduce((s, l) => s + l.net, 0), `${label} : somme des nets à payer = part ${side}`).toBe(computed[side]);
+  }
 }
 
 test.describe('Module Facturation', () => {
@@ -176,5 +220,109 @@ test.describe('Module Facturation', () => {
         await listPage.expectListLoaded();
       });
     });
+  });
+
+  // ======================================================================
+  // Prise en charge : calcul des quote-parts garant / patient
+  // ======================================================================
+  test.describe('Prise en charge : calcul des quote-parts', () => {
+    // Un patient dédié ; avant chaque scénario, sa prise en charge est remplacée par celle du scénario.
+    // Pas de mode série : un écart de conformité n'empêche pas les scénarios suivants (après un échec,
+    // le worker redémarre et un nouveau patient est créé).
+    let patient: DossierPatient;
+    // Factures déjà vues : la facture d'un scénario est la seule nouvelle de la liste.
+    const knownPatientInvoices = new Set<string>();
+    const knownGarantInvoices = new Set<string>();
+    // Montants des factures patient créées par chaque scénario (pour les anomalies vérifiées à part).
+    const patientInvoicesByScenario = new Map<string, number[]>();
+
+    test.beforeAll(async ({ browser }) => {
+      test.setTimeout(DOSSIER_SETUP_TIMEOUT);
+      patient = await createDossierPatient(browser);
+    });
+
+    for (const scenario of COVER_SCENARIOS) {
+      test(scenario.title, async ({ portal, page }) => {
+        // Jusqu'à 9 actes et 5 exceptions par scénario : au ralenti visuel, plus de 10 minutes.
+        test.setTimeout(1200000);
+        const { garant, patient: patientPart } = scenario.expected;
+        expect(garant + patientPart, 'Scénario : garant + patient = total facturé').toBe(scenarioTotal(scenario));
+        const computed = computeCover(scenario.lines, scenario.cover);
+        expect({ garant: computed.garant, patient: computed.patient }, 'Montants attendus = calcul des règles métier').toEqual(scenario.expected);
+        const invoicePage = new BillingInvoicePage(page);
+
+        await test.step(scenario.cover
+          ? `Prise en charge du patient : taux ${scenario.cover.rate} %, plafond ${scenario.cover.cap ?? 'aucun'}`
+          : 'Aucune prise en charge pour le patient', async () => {
+          await portal.enterModule('Base patients');
+          const patientPage = new PatientPage(page);
+          await patientPage.searchByName(patient.firstName, patient.lastName);
+          await patientPage.openPatient(patient.lastName);
+          await page.waitForURL('**/patient/patient-info-administration/**');
+          const carePage = new PatientCarePage(page);
+          await carePage.goToCareTab();
+          await carePage.removeAllCovers();
+          if (scenario.cover) await carePage.addCover(scenario.cover);
+        });
+
+        await test.step('Ajouter les actes du scénario et saisir leurs montants', async () => {
+          await portal.enterModule('Facturation');
+          await page.waitForURL('**/billing/billings-create');
+          await invoicePage.searchPatientByIdentifier(patient.identifier);
+          await invoicePage.selectFirstSearchResult();
+          for (const line of scenario.lines) await invoicePage.addAct(line);
+          for (const line of scenario.lines) await invoicePage.setActAmount(line.act, line.amount);
+        });
+
+        await test.step(`Facturer : garant ${garant}, patient ${patientPart}`, async () => {
+          await invoicePage.proceedToBilling();
+          if (scenario.cover) await invoicePage.chooseCover(scenario.cover.insurer);
+          await expect.poll(() => invoicePage.coverSummary(), { message: 'Taux, plafond et quote-parts affichés' })
+            .toEqual({ rate: scenario.cover?.rate ?? 0, cap: scenario.cover?.cap ?? 0, garant, patient: patientPart });
+          expectShareConformity(await invoicePage.coverSummary(), computed.total, scenario.cover?.cap);
+          await invoicePage.generateInvoice();
+        });
+
+        // Facture garant vérifiée en premier : elle est ainsi comptée même si la vérification de la
+        // facture patient échoue (anomalie connue), sans fausser le scénario suivant.
+        await test.step(garant > 0 ? `Facture garant de ${garant}` : 'Pas de facture garant', async () => {
+          await portal.openMenu('Factures garants', '**/billing/billings-garants');
+          const list = new BillingListGarantPage(page);
+          const created = (await list.invoicesOf(patient.identifier)).filter(i => !knownGarantInvoices.has(i.order));
+          created.forEach(i => knownGarantInvoices.add(i.order));
+          expect(created.map(i => i.amount), garant > 0 ? 'Une nouvelle facture garant, du montant de la part garant' : 'Aucune facture garant')
+            .toEqual(garant > 0 ? [garant] : []);
+          if (created.length === 1) {
+            await test.step('Conformité du détail de la facture garant', async () =>
+              expectDetailConformity(await list.detailOf(created[0].order), 'garant', created[0].order, patient, scenario, computed));
+          }
+        });
+
+        await test.step(`Facture patient de ${patientPart}`, async () => {
+          await portal.openMenu('Factures patients', '**/billing/billings-patients');
+          const list = new BillingListPatientPage(page);
+          const created = (await list.invoicesOf(patient.identifier)).filter(i => !knownPatientInvoices.has(i.order));
+          created.forEach(i => knownPatientInvoices.add(i.order));
+          patientInvoicesByScenario.set(scenario.title, created.map(i => i.amount));
+          // Anomalie connue : vérifiée à part (test.fail ci-dessous), pour que le calcul et la
+          // facture garant de ce scénario restent contrôlés normalement.
+          if (!scenario.anomaly) {
+            expect(created.map(i => i.amount), 'Une nouvelle facture patient, du montant de la part patient').toEqual([patientPart]);
+          }
+          if (created.length === 1) {
+            await test.step('Conformité du détail de la facture patient', async () =>
+              expectDetailConformity(await list.detailOf(created[0].order), 'patient', created[0].order, patient, scenario, computed));
+          }
+        });
+      });
+
+      if (scenario.anomaly) {
+        test(`${scenario.title} : une facture patient est créée`, async () => {
+          test.fail(true, scenario.anomaly);
+          expect(patientInvoicesByScenario.get(scenario.title), 'Une nouvelle facture patient, du montant de la part patient')
+            .toEqual([scenario.expected.patient]);
+        });
+      }
+    }
   });
 });

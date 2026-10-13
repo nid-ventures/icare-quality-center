@@ -168,6 +168,69 @@ export class PatientCarePage {
         }
     }
 
+    /** Choisit, dans un ng-select multiple du formulaire d'ajout, l'acte au libellé exact. */
+    private async pickAct(select: Locator, act: string) {
+        await select.locator('.ng-select-container').click();
+        const input = select.locator('input[type="text"]');
+        if (await input.isEditable().catch(() => false)) await input.fill(act.split(/\s+/)[0]);
+        const option = this.page.locator('.ng-dropdown-panel .ng-option:not(.ng-optgroup)')
+            .filter({ hasText: new RegExp(`^\\s*${escapeRegExp(act).replace(/\s+/g, '\\s+')}\\s*$`, 'i') }).first();
+        await expect(option, `Acte "${act}" proposé`).toBeVisible({ timeout: 10000 });
+        await option.click();
+        // Fermeture de la liste par un clic sur le titre de la fenêtre : Échap fermerait la fenêtre
+        // de prise en charge elle-même.
+        const panel = this.page.locator('.ng-dropdown-panel');
+        if (await panel.isVisible().catch(() => false)) await this.modalHeading.click();
+        await expect(panel).toBeHidden();
+        await expect(this.modalHeading, 'Fenêtre de prise en charge toujours ouverte').toBeVisible();
+    }
+
+    /**
+     * Ajoute une prise en charge configurée précisément : assureur, taux, plafond global (vide =
+     * sans plafond), actes exclus, cas spécifiques avec leur taux et leur plafond (vides si absents).
+     * Validité : du mois dernier à dans un an.
+     */
+    async addCover(cover: {
+        insurer: string; rate: number; cap?: number;
+        excluded?: { act: string }[];
+        specifics?: { act: string; rate?: number; cap?: number }[];
+    }) {
+        const day = (offset: number) => new Date(Date.now() + offset * 86400000).toISOString().slice(0, 10);
+        await this.openAddCareModal();
+        await this.insurerSelect.click();
+        await this.page.getByRole('option', { name: cover.insurer }).click();
+        await this.startingDateInput.fill(day(-30));
+        await this.endingDateInput.fill(day(365));
+        await this.insuranceNumberInput.fill(`QA${Date.now().toString().slice(-8)}`);
+        await this.cardNumberInput.fill(`CARTE${Date.now().toString().slice(-6)}`);
+        await this.coverageRateInput.fill(String(cover.rate));
+        if (cover.cap !== undefined) await this.paymentCapInput.fill(String(cover.cap));
+
+        const form = this.page.locator('#formAddPriseEnCharge');
+        for (const excluded of cover.excluded ?? []) {
+            await this.pickAct(form.locator('ng-select[formcontrolname="billableActsExclures"]'), excluded.act);
+        }
+        for (const specific of cover.specifics ?? []) {
+            await this.pickAct(form.locator('ng-select[formcontrolname="billableActs"]'), specific.act);
+            const row = form.locator('#table tbody tr').filter({ hasText: new RegExp(`^\\s*${escapeRegExp(specific.act)}\\s*$`, 'i') }).first();
+            await expect(row, `Ligne du cas spécifique "${specific.act}"`).toBeVisible();
+            if (specific.rate !== undefined) await row.locator('input[type="number"]').fill(String(specific.rate));
+            if (specific.cap !== undefined) await row.locator('input[type="text"]').fill(String(specific.cap));
+        }
+        await this.saveCare();
+        await expect(this.page.locator('#pills-prise-en-charge-fill tbody tr').filter({ hasText: cover.insurer }).first()).toBeVisible({ timeout: 15000 });
+    }
+
+    /** Supprime toutes les prises en charge du patient ouvert. */
+    async removeAllCovers() {
+        const rows = this.page.locator('#pills-prise-en-charge-fill tbody tr').filter({ has: this.page.getByRole('button', { name: 'Action' }) });
+        while (await rows.count() > 0) {
+            const before = await rows.count();
+            await this.deleteFirstCare();
+            await expect(rows).toHaveCount(before - 1, { timeout: 15000 });
+        }
+    }
+
     /**
      * Sauvegarde la prise en charge et attend la fermeture du modal
      */
@@ -255,4 +318,8 @@ export class PatientCarePage {
         await this.viewCloseButton.click();
         await expect(this.viewModalHeading).not.toBeVisible();
     }
+}
+
+function escapeRegExp(value: string): string {
+    return value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
 }

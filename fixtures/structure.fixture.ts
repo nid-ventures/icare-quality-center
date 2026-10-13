@@ -1,6 +1,6 @@
 import { test as base, expect, type Page } from '@playwright/test';
 import { PortalPage } from '../pages/structure/portal/portal.page';
-import { installVisualNotes, showVisualNote, visualNotesEnabled, type VisualNote } from './visual-notes';
+import { installVisualNotes, showVisualNote, visualNotesEnabled, visualPause, VISIBLE_STEPS, type VisualNote } from './visual-notes';
 
 type StructureFixtures = {
   /** Allonge le délai de chaque test quand le ralenti SLOWMO est activé (cf. playwright.config.ts). */
@@ -34,8 +34,8 @@ export const test = base.extend<StructureFixtures>({
     // titlePath : [fichier, "Module …", rubrique(s)…, titre du test]
     const [, ...describes] = testInfo.titlePath.slice(0, -1);
     currentPage = page;
-    currentNote = { context: describes.join(' › '), test: testInfo.title };
-    await installVisualNotes(page);
+    currentNote = { context: describes.join(' › '), test: testInfo.title, steps: [] };
+    await installVisualNotes(page, currentNote);
     page.on('load', () => { if (currentNote) void showVisualNote(page, currentNote); });
     await use();
     currentPage = null;
@@ -49,13 +49,16 @@ export const test = base.extend<StructureFixtures>({
   },
 });
 
-// Chaque étape (test.step) met à jour la ligne "étape" du bandeau visuel.
+// Chaque étape (test.step) s'ajoute au bandeau visuel (les dernières restent affichées), suivie d'une
+// courte pause pour laisser le temps de la lire.
 const originalStep = test.step.bind(test);
 test.step = (async (title: string, body: (...args: any[]) => any, options?: any) =>
   originalStep(title, async (...args: any[]) => {
     if (currentPage && currentNote) {
-      currentNote = { ...currentNote, step: title };
+      currentNote = { ...currentNote, steps: [...(currentNote.steps ?? []), title].slice(-VISIBLE_STEPS) };
       await showVisualNote(currentPage, currentNote);
+      const pause = visualPause();
+      if (pause > 0) await currentPage.waitForTimeout(pause).catch(() => {});
     }
     return body(...args);
   }, options)) as typeof test.step;

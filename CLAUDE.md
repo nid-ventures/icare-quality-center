@@ -57,7 +57,8 @@ npx playwright show-report
   - `6-parcours-suivi`: full follow-up on 3 pathways (women only, men only, all sexes) with the 4 act types (every act of each type) in 2 steps; every act of every step is done with all its fields (`pages/structure/shared/fill-all-fields.ts`), consultations with the 3 prescriptions, bilans with their result, then reopened after a page reload to check every saved value is shown again, on a female and a male patient: offer by sex, start, detail and step navigation, acts done inside a step, step closing (complete / incomplete), summary, edit, archiving (with exception and anomaly), archives list in read-only, cleanup: pathways archived, then their templates deactivated (a used template is locked and can only be deactivated, not deleted: no longer offered, archived pathways still viewable with their acts, same type cannot be re-created, reactivation offers it again).
 
   Each file has its own exception cases.
-  Then `04-facturation`, `05-honoraires`, `06-reporting`, `07-administration`, `08-laboratoire-imagerie` (worklists only: the module is hidden in the app and opened by URL).
+  `04-facturation`: invoice wizard, patient / garant invoice lists, plus 16 cover (prise en charge) scenarios on a dedicated patient (`test-data/cover-scenarios.ts`: global rate, excluded acts, specific cases with own rate / act cap, rooms × days, global cap). Each scenario checks the amounts against a reference calculator (`computeCover`), the shares shown at the Facturation step, the generated patient and garant invoices and their detail (one line per act, total, rate, per-act net, cap).
+  Then `05-honoraires`, `06-reporting`, `07-administration`, `08-laboratoire-imagerie` (worklists only: the module is hidden in the app and opened by URL).
   Each spec is a `test.describe('Module …')` with one nested `describe` per feature and one `test()` per action.
 - `tests/structure-app/auth.setup.ts` — logs in once as the structure admin and saves the session to `playwright/.auth/structure-admin.json` (project `setup`); the `structure-app` project reuses it via `storageState`. Tests needing a logged-out browser use `test.use({ storageState: { cookies: [], origins: [] } })`.
 - `fixtures/structure.fixture.ts` — `test`/`expect` to import in structure specs; the `portal` fixture opens `/modules` (`PortalPage`).
@@ -72,7 +73,7 @@ npx playwright show-report
 
 **Every-field consultation tests**: `pages/structure/consultation/consultation-form.page.ts` fills any consultation form by `formcontrolname` (text/number/date/radio/checkbox/ng-select) and re-checks every value after reopening; field sets live in `test-data/consultation-fields.ts`. Known app defects are kept as `test.fail(true, 'Anomalie : …')` tests so they turn red when fixed.
 
-**Visual runs**: with `SLOWMO>0` (`npm run test:visuel`, 1.5 s per action) a banner (`fixtures/visual-notes.ts`, closed shadow DOM, invisible to locators) shows module › section, test and current step.
+**Visual runs**: with `SLOWMO>0` (`npm run test:visuel`, 1.5 s per action) a banner (`fixtures/visual-notes.ts`, closed shadow DOM, invisible to locators) shows module › section, test and the last 3 steps (current one in green), from the very opening of each test page; each new step pauses `VISUAL_PAUSE` ms (1500 by default) so it can be read.
 
 **App behaviours to know**: creating a patient redirects to its medical dashboard (switching to the Dossier médical module) and may trigger the duplicate-detection panel; in the patient model `firstName` holds the family name and `lastName` the given name; Base patients opens the administrative file on row click, Dossier médical is "search first" and opens the medical dashboard.
 

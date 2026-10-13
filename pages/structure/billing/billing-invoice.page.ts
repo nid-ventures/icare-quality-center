@@ -253,6 +253,72 @@ export class BillingInvoicePage {
         await this.page.waitForURL('**/billing/billings-patients', { timeout: 15000 });
     }
 
+    // ======================== Actes et prise en charge précis ========================
+
+    /**
+     * Ajoute un acte précis au patient courant (premier praticien proposé). Pour une chambre,
+     * `days` jours : entrée à 10:00 il y a `days − 1` jours, sortie aujourd'hui à 10:00 (avant 18 h,
+     * donc chaque jour calendaire compte), et la quantité calculée doit valoir `days`.
+     */
+    async addAct(act: { category: string; act: string; days?: number }): Promise<void> {
+        await this.openAddActModal();
+        await this.selectNgOptionByText(this.addActCategorySelect, act.category);
+        await this.selectNgOptionByText(this.addActBillableActsSelect, act.act);
+        await this.selectFirstNgOption(this.addActCaregiverSelect);
+        if (act.days) {
+            const at10 = (offset: number) => {
+                const d = new Date(Date.now() + offset * 86400000);
+                const pad = (n: number) => String(n).padStart(2, '0');
+                return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}T10:00`;
+            };
+            await this.page.locator('#date').fill(at10(-(act.days - 1)));
+            await this.page.locator('#endDate').fill(at10(0));
+            await expect(this.page.locator('#quantity'), `Chambre : ${act.days} jour(s)`).toHaveValue(String(act.days));
+        }
+        await this.submitAddActForm();
+    }
+
+    /**
+     * Saisit le montant (journalier pour une chambre) d'un acte non encore saisi, en parcourant les
+     * onglets de catégories : la saisie coche l'acte pour la facturation.
+     */
+    async setActAmount(act: string, amount: number): Promise<void> {
+        const parentTabs = this.page.locator('.modern-tabs ul.nav-pills > li.nav-item > button.nav-link');
+        const name = new RegExp(escapeRegExp(act).replace(/\s+/g, '\\s+'), 'i');
+        for (let i = 0; i < await parentTabs.count(); i++) {
+            await parentTabs.nth(i).click();
+            const subTabs = this.page.locator('.tab-pane.show.active .nav-tabs-custom .nav-link');
+            const subCount = await subTabs.count();
+            for (let j = 0; j < Math.max(subCount, 1); j++) {
+                if (subCount > 0) await subTabs.nth(j).click();
+                const rows = this.page.locator('app-billing-space-prestation-medical:visible tbody tr').filter({ hasText: name });
+                for (let k = 0; k < await rows.count(); k++) {
+                    const input = rows.nth(k).locator('input[type="text"]');
+                    if ((await input.inputValue()) !== '') continue;
+                    await rows.nth(k).locator('td').nth(1).click();
+                    await expect(input).toBeEnabled({ timeout: 3000 });
+                    await input.fill(String(amount));
+                    return;
+                }
+            }
+        }
+        throw new Error(`Acte "${act}" à facturer introuvable (ou déjà saisi) dans l'onglet Actes Médicaux`);
+    }
+
+    /** Étape Facturation : choisit la prise en charge de l'assureur indiqué. */
+    async chooseCover(insurer: string): Promise<void> {
+        await this.assuranceSelect.click();
+        const option = this.page.locator('.ng-dropdown-panel:visible .ng-option').filter({ hasText: insurer }).first();
+        await expect(option, `Prise en charge "${insurer}" proposée`).toBeVisible({ timeout: 10000 });
+        await option.click();
+    }
+
+    /** Étape Facturation : taux, plafond et quote-parts affichés (montants convertis en nombres). */
+    async coverSummary(): Promise<{ rate: number; cap: number; garant: number; patient: number }> {
+        const read = async (id: string) => Number(((await this.page.locator(`#${id}`).inputValue()) || '0').replace(/[^\d,.-]/g, '').replace(',', '.')) || 0;
+        return { rate: await read('rate'), cap: await read('coverateMount'), garant: await read('mountGarant'), patient: await read('mountPatient') };
+    }
+
     // ======================== Flux complet ========================
 
     /**
@@ -311,4 +377,8 @@ export class BillingInvoicePage {
         await this.tryApplyFirstAvailableInsurance();
         await this.generateInvoice();
     }
+}
+
+function escapeRegExp(value: string): string {
+    return value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
 }

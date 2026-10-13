@@ -266,6 +266,21 @@ export class BillingListPatientPage {
         ]);
         await expect(this.listHeading).toBeVisible({ timeout: 15000 });
     }
+
+    /** Ouvre le détail de la facture N° `order` (liste déjà affichée), le lit puis le referme. */
+    async detailOf(order: string): Promise<InvoiceDetail> {
+        const row = this.rows.filter({ has: this.page.locator('td:nth-child(1)', { hasText: new RegExp(`^\\s*${order}\\s*$`) }) }).first();
+        await this.openDetailModal(row);
+        const detail = await readInvoiceDetail(this.detailModal);
+        await this.closeDetailModal();
+        return detail;
+    }
+
+    /** Toutes les factures du patient (N° et montant), sur la plus grande page de la liste. */
+    async invoicesOf(patientIdentifier: string): Promise<InvoiceSummary[]> {
+        await this.identifiantPatientInput.fill(patientIdentifier);
+        return readInvoices(this.page, this.rechercherButton, this.rows, 8);
+    }
 }
 
 /** Page des factures garants (`/billing/billings-garants`). */
@@ -513,4 +528,70 @@ export class BillingListGarantPage {
         ]);
         await expect(this.listHeading).toBeVisible({ timeout: 15000 });
     }
+
+    /** Ouvre le détail de la facture N° `order` (liste déjà affichée), le lit puis le referme. */
+    async detailOf(order: string): Promise<InvoiceDetail> {
+        const row = this.rows.filter({ has: this.page.locator('td:nth-child(1)', { hasText: new RegExp(`^\\s*${order}\\s*$`) }) }).first();
+        await this.openDetailModal(row);
+        const detail = await readInvoiceDetail(this.detailModal);
+        await this.closeDetailModal();
+        return detail;
+    }
+
+    /** Toutes les factures du patient (N° et montant), sur la plus grande page de la liste. */
+    async invoicesOf(patientIdentifier: string): Promise<InvoiceSummary[]> {
+        await this.identifiantPatientInput.fill(patientIdentifier);
+        return readInvoices(this.page, this.rechercherButton, this.rows, 9);
+    }
+}
+
+export type InvoiceSummary = { order: string; amount: number };
+
+/** Lance la recherche, affiche la plus grande page puis lit N° (colonne 1) et montant (colonne amountColumn). */
+async function readInvoices(page: Page, searchButton: Locator, rows: Locator, amountColumn: number): Promise<InvoiceSummary[]> {
+    await searchButton.click();
+    await page.locator('.loading-compact, .loader').first().waitFor({ state: 'hidden', timeout: 15000 }).catch(() => { });
+    const size = page.locator('ng-select.compact-select').first();
+    if (await size.isVisible().catch(() => false)) {
+        await size.click();
+        await page.locator('.ng-dropdown-panel .ng-option').last().click();
+        await page.waitForTimeout(1500);
+    }
+    const result: InvoiceSummary[] = [];
+    for (const row of await rows.all()) {
+        const order = (await row.locator('td:nth-child(1)').innerText()).trim();
+        const amount = Number((await row.locator(`td:nth-child(${amountColumn})`).innerText()).replace(/[^\d]/g, '')) || 0;
+        result.push({ order, amount });
+    }
+    return result;
+}
+
+/** Ligne d'acte du détail d'une facture (montants en F CFA). */
+export type InvoiceDetailLine = { act: string; quantity: number; unit: number; amount: number; cap: number; rate: number; net: number };
+
+/** Détail d'une facture : montants du résumé (0 si absents) et une ligne par acte. */
+export type InvoiceDetail = { text: string; total: number; rate: number; patient: number; garant: number; cap: number; lines: InvoiceDetailLine[] };
+
+const toNumber = (value: string) => Number(value.replace(/[^\d]/g, '')) || 0;
+
+async function readInvoiceDetail(modal: Locator): Promise<InvoiceDetail> {
+    await expect(modal.locator('table tbody tr').first()).toBeVisible({ timeout: 15000 });
+    const text = (await modal.innerText()).replace(/\s+/g, ' ');
+    // Montant qui suit le libell\u00e9 (s\u00e9parateurs de milliers : espace, espace ins\u00e9cable, virgule, point)
+    const amountAfter = (label: string) => toNumber(text.match(new RegExp(`${label}\\s*:?\\s*([\\d\\s.,\\u202f\\u00a0]+)`))?.[1] ?? '');
+    const lines: InvoiceDetailLine[] = [];
+    for (const row of await modal.locator('table tbody tr').all()) {
+        const cells = (await row.locator('td').allInnerTexts()).map(c => c.trim());
+        if (cells.length !== 8) continue;
+        lines.push({ act: cells[0], quantity: toNumber(cells[2]), unit: toNumber(cells[3]), amount: toNumber(cells[4]), cap: toNumber(cells[5]), rate: toNumber(cells[6]), net: toNumber(cells[7]) });
+    }
+    return {
+        text,
+        total: amountAfter('Total Facture'),
+        rate: amountAfter('Taux garant'),
+        patient: amountAfter('Reste à payer par le patient') || amountAfter('Quote-part du patient'),
+        garant: amountAfter('Reste à payer par le garant'),
+        cap: amountAfter('Plafond global garant'),
+        lines,
+    };
 }
