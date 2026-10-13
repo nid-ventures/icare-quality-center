@@ -305,4 +305,54 @@ export class BillableBillingReportingPage {
   async expectNoResults() {
     await expect(this.emptyRow).toBeVisible();
   }
+
+  /**
+   * Recherche avec les critères donnés (formulaire réinitialisé avant) et renvoie les lignes
+   * trouvées, une fois la liste stabilisée.
+   */
+  async searchActs(criteria: Partial<Record<'patientIdentifier' | 'invoicePatientOrder' | 'invoiceGarantOrder' | 'patientFirstname'
+    | 'patientLastname' | 'caregiverFullname' | 'billedBy', string>> & { status?: 'Tous les statuts' | 'Facturé' | 'Non Facturé' }): Promise<ReportingActRow[]> {
+    await this.reset();
+    const inputs = {
+      patientIdentifier: this.patientIdentifierInput, invoicePatientOrder: this.invoicePatientOrderInput,
+      invoiceGarantOrder: this.invoiceGarantOrderInput, patientFirstname: this.patientFirstnameInput,
+      patientLastname: this.patientLastnameInput, caregiverFullname: this.caregiverFullnameInput, billedBy: this.billedByInput,
+    };
+    for (const [key, value] of Object.entries(criteria)) {
+      if (key !== 'status' && value) await inputs[key as keyof typeof inputs].fill(value);
+    }
+    if (criteria.status) await this.selectStatus(criteria.status);
+    await this.rechercherButton.click();
+    await expect(this.rows.first().or(this.emptyRow)).toBeVisible({ timeout: 15000 });
+    await this.page.waitForTimeout(1000);
+    return this.readRows();
+  }
+
+  /** Lignes affichées : patient, médecin, N° de factures, montant, acte, statut et action. */
+  async readRows(): Promise<ReportingActRow[]> {
+    const result: ReportingActRow[] = [];
+    for (const row of await this.rows.all()) {
+      const cells = (await row.locator('td').allInnerTexts()).map(c => c.replace(/\s+/g, ' ').trim());
+      result.push({
+        row,
+        lastname: cells[0], firstname: cells[1], identifier: cells[2], caregiver: cells[4],
+        invoicePatient: cells[5], invoiceGarant: cells[6], amount: Number(cells[7].replace(/[^\d]/g, '')) || 0,
+        act: cells[8], status: cells[10],
+        deletable: await row.locator('button.btn-danger-modern').isEnabled(),
+      });
+    }
+    return result;
+  }
+
+  /** Supprime l'acte de la ligne (bouton de suppression puis confirmation). */
+  async deleteAct(row: Locator) {
+    await row.locator('button.btn-danger-modern').click();
+    await expect(this.page.getByText(/voulez-vous supprimer cet acte/i)).toBeVisible();
+    await this.page.getByRole('button', { name: 'Confirmer' }).click();
+  }
 }
+
+export type ReportingActRow = {
+  row: Locator; lastname: string; firstname: string; identifier: string; caregiver: string;
+  invoicePatient: string; invoiceGarant: string; amount: number; act: string; status: string; deletable: boolean;
+};
