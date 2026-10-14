@@ -1,11 +1,12 @@
-import { type Page } from '@playwright/test';
+import { type Page, type Browser } from '@playwright/test';
 import fs from 'fs';
 import { test, expect } from '../../fixtures/structure.fixture';
 import { AccountListPage } from '../../pages/structure/account/account-list.page';
 import { AccountCreateUpdatePage } from '../../pages/structure/account/account-create-update.page';
 import { AccountUpdatePwdPage } from '../../pages/structure/account/account-update-pwd.page';
 import { MyConfigurationPage } from '../../pages/structure/my-space/configuration.page';
-import { AccountDataGenerator } from '../../pages/structure/generator/account-data-generator';
+import { AccountDataGenerator, type AccountData } from '../../pages/structure/generator/account-data-generator';
+import { LoginPage } from '../../pages/structure/patient/login.page';
 import { adminUser } from '../../test-data/structure-users';
 import { GarantPage } from '../../pages/structure/my-space/garant.page';
 import { BillableActConfigPage, normalizeLabel, accentInsensitive } from '../../pages/structure/my-space/billable-act-config.page';
@@ -121,6 +122,305 @@ test.describe('Module Administration', () => {
         await listPage.expectUserInList(user.login);
         expect(await listPage.getEtatText(user.login)).toBe(etatInitial);
       });
+    });
+  });
+
+  // ======================================================================
+  // Utilisateurs : règles, connexion et consentement
+  // ======================================================================
+  test.describe('Utilisateurs : règles, connexion et consentement', () => {
+    // Le rôle Soignant (65) n'est pas proposé (règle voulue) ; les lignes des soignants n'ont ni
+    // modification ni mot de passe. Le consentement demandé à la création dépend des rôles : c'est
+    // le texte de la configuration du rôle prioritaire (plus petit identifiant : Administrateur 63
+    // avant Secrétaire 66) qui est présenté à la première connexion.
+    test.describe.configure({ mode: 'serial' });
+    const ADMIN = 'HI-ADMINISTRATOR';
+    const SECRETAIRE = 'MEDICAL-SECRETAIRE';
+    const userA = AccountDataGenerator.generate();
+    const userB = AccountDataGenerator.generate();
+    const userC = AccountDataGenerator.generate();
+    let newPasswordA = '';
+    const today = () => {
+      const d = new Date();
+      const pad = (n: number) => String(n).padStart(2, '0');
+      return { iso: `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`, fr: `${pad(d.getDate())}/${pad(d.getMonth() + 1)}/${d.getFullYear()}` };
+    };
+
+    async function openUsers(page: Page) {
+      const list = new AccountListPage(page);
+      await list.goto();
+      await list.expectListLoaded();
+      return list;
+    }
+
+    /** Crée un utilisateur avec ses rôles et la demande de consentement voulue. */
+    async function create(page: Page, data: AccountData, roles: string[], consent: 'Activé' | 'Désactivé') {
+      const list = await openUsers(page);
+      const form = new AccountCreateUpdatePage(page, 'create');
+      await list.openCreateModal();
+      await form.expectOpen();
+      await form.fillIdentity({ login: data.login, firstName: data.firstName, lastName: data.lastName });
+      for (const role of roles) await form.selectRole(role);
+      await form.fillPasswords(data.password);
+      await form.setConsent(consent);
+      await form.save();
+    }
+
+    /** Première attente qui aboutit ('rien' si aucune avant 35 s) ; les attentes échouées sont ignorées. */
+    function firstOf<T extends string>(waits: Promise<T>[]): Promise<T | 'rien'> {
+      const never = new Promise<T>(() => {});
+      return Promise.race([...waits.map(w => w.catch(() => never)), new Promise<'rien'>(r => setTimeout(() => r('rien'), 35000))]);
+    }
+
+    /**
+     * Connexion dans un navigateur séparé (sans la session de l'administrateur) ; renvoie ce qui
+     * s'affiche : le portail, la fenêtre de consentement (avec son texte) ou un message d'erreur.
+     */
+    async function tryLogin(browser: Browser, login: string, password: string) {
+      const context = await browser.newContext({ storageState: { cookies: [], origins: [] }, viewport: { width: 1920, height: 1080 }, ignoreHTTPSErrors: true, baseURL: process.env.BASE_URL });
+      const page = await context.newPage();
+      const loginPage = new LoginPage(page);
+      await loginPage.goto();
+      await loginPage.login(login, password);
+      const portal = page.waitForURL('**/modules', { timeout: 30000 }).then(() => 'portail' as const);
+      const consent = page.locator('#show_gcu').waitFor({ state: 'visible', timeout: 30000 }).then(() => 'consentement' as const);
+      const error = page.locator('.alert-danger').first().waitFor({ state: 'visible', timeout: 30000 }).then(() => 'erreur' as const);
+      const structure = page.getByText('Plusieurs structures sont').waitFor({ state: 'visible', timeout: 30000 }).then(() => 'structure' as const);
+      let outcome = await firstOf([portal, consent, error, structure]);
+      if (outcome === 'structure') {
+        await loginPage.selectStructure(adminUser.hi);
+        outcome = await firstOf([
+          page.waitForURL('**/modules', { timeout: 30000 }).then(() => 'portail' as const),
+          page.locator('#show_gcu').waitFor({ state: 'visible', timeout: 30000 }).then(() => 'consentement' as const),
+        ]);
+      }
+      const message = outcome === 'erreur' ? (await page.locator('.alert-danger').first().innerText()).trim()
+        : outcome === 'consentement' ? (await page.locator('#consentText').innerText()).trim() : '';
+      return { context, page, outcome, message };
+    }
+
+    test('Création : champs obligatoires, login au format e-mail, mots de passe identiques, rôle Soignant non proposé', async ({ page }) => {
+      const list = await openUsers(page);
+      const form = new AccountCreateUpdatePage(page, 'create');
+      await list.openCreateModal();
+      await form.expectOpen();
+      await expect(form.save_, 'Formulaire vide').toBeDisabled();
+      expect(await form.proposedRoles(), 'Rôles proposés').toEqual(expect.arrayContaining([ADMIN, SECRETAIRE]));
+      expect(await form.proposedRoles(), 'Soignant non proposé').not.toContain('CAREGIVER');
+      await form.fillIdentity({ login: 'pas-un-email', firstName: userA.firstName, lastName: userA.lastName });
+      await form.selectRole(SECRETAIRE);
+      await form.fillPasswords(userA.password);
+      await expect(form.save_, 'Login qui n\'est pas un e-mail').toBeDisabled();
+      await form.fillIdentity({ login: userA.login });
+      await expect(form.save_).toBeEnabled();
+      await test.step('Mot de passe resaisi différent', async () => {
+        await form.fillPasswordPair(userA.password, `${userA.password}x`);
+        await expect(form.form.getByText('Le mot de passe resaisi est incorrect')).toBeVisible();
+        await expect(form.save_).toBeDisabled();
+        await form.fillPasswordPair(userA.password, userA.password);
+        await expect(form.form.getByText('Le mot de passe resaisi est correct')).toBeVisible();
+        await expect(form.save_).toBeEnabled();
+      });
+      await test.step('Prénom puis nom vidés', async () => {
+        await form.fillIdentity({ firstName: '' });
+        await expect(form.save_).toBeDisabled();
+        await form.fillIdentity({ firstName: userA.firstName, lastName: '' });
+        await expect(form.save_).toBeDisabled();
+      });
+      await test.step('Consentement : "Activé" proposé pour un rôle configuré', async () => {
+        expect(await form.consentOptions()).toEqual(['Désactivé', 'Activé']);
+      });
+      await form.close();
+    });
+
+    test('Créer un utilisateur à deux rôles sans consentement : listé, puis connexion directe au portail', async ({ page, browser }) => {
+      await create(page, userA, [ADMIN, SECRETAIRE], 'Désactivé');
+      const list = await openUsers(page);
+      await list.search({ login: userA.login });
+      const [row] = await list.rows();
+      expect(row, 'Utilisateur listé').toBeDefined();
+      expect.soft(row.nom).toBe(userA.lastName);
+      expect.soft(row.prenom).toBe(userA.firstName);
+      expect.soft(row.roles.split('/').sort()).toEqual([ADMIN, SECRETAIRE].sort());
+      expect.soft(row.etat).toBe('Active');
+      expect.soft(row.date).toBe(today().fr);
+      const session = await tryLogin(browser, userA.login, userA.password);
+      expect(session.outcome, `Connexion de ${userA.login}`).toBe('portail');
+      await session.context.close();
+    });
+
+    test('Login déjà utilisé refusé, à la création comme à la modification', async ({ page }) => {
+      await test.step('Création avec un login existant', async () => {
+        const list = await openUsers(page);
+        const form = new AccountCreateUpdatePage(page, 'create');
+        await list.openCreateModal();
+        await form.fillIdentity({ login: userA.login, firstName: userB.firstName, lastName: userB.lastName });
+        await form.selectRole(SECRETAIRE);
+        await form.fillPasswords(userB.password);
+        await form.clickSave();
+        await expect(form.form.getByText('Ce login est déjà utilisé')).toBeVisible({ timeout: 15000 });
+        await expect(form.save_).toBeDisabled();
+        await form.close();
+      });
+      await test.step('Modification avec le login d\'un autre utilisateur', async () => {
+        const list = await openUsers(page);
+        const form = new AccountCreateUpdatePage(page, 'update');
+        await list.searchByLogin(userA.login);
+        await list.openUpdateModal(userA.login);
+        await form.fillIdentity({ login: adminUser.username });
+        await form.clickSave();
+        await expect(form.form.getByText('Ce login est déjà utilisé')).toBeVisible({ timeout: 15000 });
+        await form.close();
+        const again = await openUsers(page);
+        await again.searchByLogin(userA.login);
+        await again.expectUserInList(userA.login);
+      });
+    });
+
+    test("Modifier l'identité et retirer un rôle", async ({ page }) => {
+      const list = await openUsers(page);
+      const form = new AccountCreateUpdatePage(page, 'update');
+      await list.searchByLogin(userA.login);
+      await list.openUpdateModal(userA.login);
+      await form.expectOpen();
+      userA.firstName = `${userA.firstName}Mod`;
+      userA.lastName = `${userA.lastName}Mod`;
+      await form.fillIdentity({ firstName: userA.firstName, lastName: userA.lastName });
+      await form.form.locator('ng-select[name="prsnlRoleIds"] .ng-value').filter({ hasText: ADMIN }).locator('.ng-value-icon').click();
+      await form.save();
+      const after = await openUsers(page);
+      await after.search({ login: userA.login });
+      const [row] = await after.rows();
+      expect.soft(row?.nom).toBe(userA.lastName);
+      expect.soft(row?.prenom).toBe(userA.firstName);
+      expect.soft(row?.roles).toBe(SECRETAIRE);
+    });
+
+    test('Changer le mot de passe : confirmation différente refusée, ancien mot de passe refusé, nouveau accepté', async ({ page, browser }) => {
+      newPasswordA = AccountDataGenerator.generate().password;
+      const list = await openUsers(page);
+      const pwd = new AccountUpdatePwdPage(page);
+      await list.searchByLogin(userA.login);
+      await list.openPasswordModal(userA.login);
+      await pwd.expectOpen();
+      await pwd.fillPasswordPair(newPasswordA, `${newPasswordA}x`);
+      await expect(pwd.form.getByText('Le mot de passe resaisi est incorrect')).toBeVisible();
+      await expect(pwd.save_).toBeDisabled();
+      await pwd.fillPasswords(newPasswordA);
+      await pwd.save();
+      await pwd.expectSuccessMessage();
+      const old = await tryLogin(browser, userA.login, userA.password);
+      expect(old.outcome, 'Ancien mot de passe refusé').toBe('erreur');
+      expect.soft(old.message).toMatch(/identifiant ou mot de passe incorrect/);
+      await old.context.close();
+      const fresh = await tryLogin(browser, userA.login, newPasswordA);
+      expect(fresh.outcome, 'Nouveau mot de passe accepté').toBe('portail');
+      await fresh.context.close();
+    });
+
+    test('Désactiver : connexion refusée ; réactiver : connexion de nouveau possible', async ({ page, browser }) => {
+      let list = await openUsers(page);
+      await list.searchByLogin(userA.login);
+      await list.toggleState(userA.login);
+      const refused = await tryLogin(browser, userA.login, newPasswordA);
+      expect(refused.outcome, 'Utilisateur désactivé : connexion refusée').toBe('erreur');
+      await refused.context.close();
+      list = await openUsers(page);
+      await list.searchByLoginAndState(userA.login, 'Désactive');
+      await list.toggleState(userA.login);
+      const allowed = await tryLogin(browser, userA.login, newPasswordA);
+      expect(allowed.outcome, 'Utilisateur réactivé : connexion possible').toBe('portail');
+      await allowed.context.close();
+    });
+
+    test('Consentement : texte de la configuration du rôle, refus puis acceptation à la connexion', async ({ page, browser }) => {
+      const marker = `Consentement secrétaire QA ${Date.now()}`;
+      let original = '';
+      const consents = new ConsentConfigPage(page);
+      try {
+        await test.step('Personnaliser le texte de la configuration Secrétaire médicale', async () => {
+          await consents.open();
+          await consents.openEdit('MEDICAL_SECRETAIRE');
+          original = await consents.editorContent(consents.editModal);
+          await consents.editorContent(consents.editModal, `<p>${marker}</p>`);
+          await consents.saveEdit();
+        });
+        await test.step('Créer une secrétaire avec demande de consentement', async () => create(page, userB, [SECRETAIRE], 'Activé'));
+        await test.step('Première connexion : le texte de la configuration est présenté ; "Je refuse" déconnecte', async () => {
+          const session = await tryLogin(browser, userB.login, userB.password);
+          expect(session.outcome).toBe('consentement');
+          expect(session.message).toContain(marker);
+          await session.page.getByRole('button', { name: 'Je refuse' }).click();
+          await expect(session.page.getByText('vous avez refusé la politique et les conditions d\'utilisation')).toBeVisible();
+          await session.context.close();
+        });
+        await test.step('Nouvelle connexion : de nouveau demandé ; "J\'accepte" ouvre le portail', async () => {
+          const session = await tryLogin(browser, userB.login, userB.password);
+          expect(session.outcome, 'Consentement redemandé après un refus').toBe('consentement');
+          await session.page.getByRole('button', { name: "J'accepte" }).click();
+          await session.page.waitForURL('**/modules', { timeout: 30000 });
+          await session.context.close();
+        });
+        await test.step('Connexion suivante : plus de demande', async () => {
+          const session = await tryLogin(browser, userB.login, userB.password);
+          expect(session.outcome).toBe('portail');
+          await session.context.close();
+        });
+        await test.step('Plusieurs rôles : texte du rôle prioritaire (Administrateur), pas celui de la secrétaire', async () => {
+          await create(page, userC, [SECRETAIRE, ADMIN], 'Activé');
+          const session = await tryLogin(browser, userC.login, userC.password);
+          expect(session.outcome).toBe('consentement');
+          expect(session.message).not.toContain(marker);
+          await session.context.close();
+        });
+      } finally {
+        await test.step("Remettre le texte d'origine de la configuration Secrétaire médicale", async () => {
+          if (!original) return;
+          await new PortalPage(page).enterModule('Administration').catch(() => {});
+          const restore = new ConsentConfigPage(page);
+          await restore.open();
+          await restore.openEdit('MEDICAL_SECRETAIRE');
+          await restore.editorContent(restore.editModal, original);
+          await restore.saveEdit();
+        });
+      }
+    });
+
+    test('Filtres : login, nom, prénom, date de création, rôle et état', async ({ page }) => {
+      const list = await openUsers(page);
+      await list.search({ login: userA.login });
+      expect.soft((await list.rows()).map(r => r.login), 'Par login').toEqual([userA.login]);
+      await list.search({ nom: userA.lastName });
+      expect.soft((await list.rows()).map(r => r.login), 'Par nom').toContain(userA.login);
+      await list.search({ prenom: userA.firstName });
+      expect.soft((await list.rows()).map(r => r.login), 'Par prénom').toContain(userA.login);
+      await list.search({ date: today().iso });
+      const byDate = await list.rows();
+      expect.soft(byDate.map(r => r.login), 'Par date de création').toEqual(expect.arrayContaining([userA.login, userB.login]));
+      expect.soft(byDate.every(r => r.date === today().fr), 'Tous créés aujourd\'hui').toBe(true);
+      await list.search({ role: SECRETAIRE });
+      expect.soft((await list.rows()).every(r => r.roles.includes(SECRETAIRE)), 'Par rôle').toBe(true);
+      for (const etat of ['Active', 'Désactive'] as const) {
+        await list.search({ etat });
+        expect.soft((await list.rows()).every(r => r.etat === etat), `Par état "${etat}"`).toBe(true);
+      }
+    });
+
+    test('Soignants : ni modification ni mot de passe depuis la liste', async ({ page }) => {
+      const list = await openUsers(page);
+      await list.search({ role: 'CAREGIVER' });
+      const rows = await list.rows();
+      expect(rows.length, 'Au moins un soignant').toBeGreaterThan(0);
+      await expect(list.rowButton(rows[0].login, 0), 'Mise à jour désactivée').toBeDisabled();
+      await expect(list.rowButton(rows[0].login, 2), 'Mot de passe désactivé').toBeDisabled();
+    });
+
+    test('Nettoyage : désactiver les utilisateurs de test', async ({ page }) => {
+      for (const user of [userA, userB, userC]) {
+        const list = await openUsers(page);
+        await list.searchByLoginAndState(user.login, 'Active');
+        if (await list.getRowByLogin(user.login).count()) await list.toggleState(user.login);
+      }
     });
   });
 

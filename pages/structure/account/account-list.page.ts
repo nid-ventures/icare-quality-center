@@ -131,6 +131,44 @@ export class AccountListPage {
   }
 
   /**
+   * Recherche multi-critères (un critère absent reste vide) ; `etat` vaut "Active" par défaut
+   * dans l'application. `date` au format AAAA-MM-JJ.
+   */
+  async search(filters: { login?: string; nom?: string; prenom?: string; date?: string; role?: string; etat?: 'Active' | 'Désactive' }) {
+    await this.resetButton.click();
+    await this.page.waitForTimeout(500);
+    if (filters.login) await this.searchLoginInput.fill(filters.login);
+    if (filters.nom) await this.searchNomInput.fill(filters.nom);
+    if (filters.prenom) await this.searchPrenomInput.fill(filters.prenom);
+    if (filters.date) await this.searchDateCreationInput.fill(filters.date);
+    if (filters.role) {
+      await this.searchRoleSelect.click();
+      await this.page.locator('.ng-dropdown-panel .ng-option').filter({ hasText: new RegExp(`^\\s*${filters.role}\\s*$`) }).first().click();
+    }
+    if (filters.etat) {
+      await this.searchEtatSelect.click();
+      await this.page.getByRole('option', { name: filters.etat, exact: true }).click();
+    }
+    await this.searchButton.click();
+    await this.page.waitForTimeout(1500);
+  }
+
+  /** Lignes du tableau : login, nom, prénom, rôles, état, date de création. */
+  async rows(): Promise<{ login: string; nom: string; prenom: string; roles: string; etat: string; date: string }[]> {
+    const result = [];
+    for (const row of await this.table.locator('tbody tr').filter({ has: this.page.locator('button') }).all()) {
+      const cells = (await row.locator('td').allInnerTexts()).map(s => s.replace(/\s+/g, ' ').trim());
+      result.push({ login: cells[0], nom: cells[1], prenom: cells[2], roles: cells[3], etat: cells[4].replace(/Contacter ADMIN ICARE/, '').trim(), date: cells[5] });
+    }
+    return result;
+  }
+
+  /** Boutons de la ligne : Mise à jour (0), Changer état (1), Mot de passe (2). */
+  rowButton(login: string, index: 0 | 1 | 2): Locator {
+    return this.getRowByLogin(login).locator('button.btn-icon-modern').nth(index);
+  }
+
+  /**
    * Login d'un utilisateur à partir de son nom complet (ex. "Oumy DIOP" : l'ordre prénom / nom
    * varie selon les écrans) : chaque mot est essayé comme nom, jusqu'à une ligne contenant tous les mots.
    */

@@ -114,7 +114,7 @@ export class LoginPage {
    * sans que la modale n'apparaisse : dans ce cas, cette méthode ne fait rien.
    */
   async selectStructure(structureName: string = 'NEST FOR ALL') {
-    const structureModalHeading = this.page.getByRole('heading', { name: '🔑 Sélectionnez votre é' });
+    const structureModalHeading = this.page.getByRole('heading', { name: /Sélectionnez votre établissement/ });
     const modalAppeared = await structureModalHeading
       .waitFor({ state: 'visible', timeout: 5000 })
       .then(() => true)

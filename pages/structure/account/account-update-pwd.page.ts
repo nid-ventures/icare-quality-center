@@ -38,17 +38,20 @@ export class AccountUpdatePwdPage {
     await this.saveButton.click();
   }
 
-  /**
-   * Bug applicatif : en cas de succès le composant passe rMessage à "bSave" alors que le template
-   * n'affiche le message de succès que pour "bUpdate" (account-update-pwd.component.ts / .html).
-   * On vérifie donc ce qui est observable : aucune erreur, puis fermeture automatique du modal.
-   * À remplacer par une attente de `successMessage` une fois le bug corrigé.
-   */
   async expectSuccessMessage() {
-    await expect(this.root.getByText('Erreur lors de la mise à jour')).toHaveCount(0);
+    // Message affiché une seconde avant la fermeture du modal (rMessage "bUpdate", corrigé dans le front)
+    await expect(this.successMessage).toBeVisible();
     await expect(this.modalTitle).toBeHidden({ timeout: 15000 });
-    await expect(this.root.getByText('Erreur lors de la mise à jour')).toHaveCount(0);
   }
+
+  /** Mot de passe et confirmation distincts. */
+  async fillPasswordPair(password: string, repassword: string) {
+    await this.passwordInput.fill(password);
+    await this.repasswordInput.fill(repassword);
+  }
+
+  get save_(): Locator { return this.saveButton; }
+  get form(): Locator { return this.root; }
 
   async close() {
     await this.closeButton.click();

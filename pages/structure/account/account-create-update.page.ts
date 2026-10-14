@@ -132,4 +132,44 @@ export class AccountCreateUpdatePage {
   async close() {
     await this.closeButton.click();
   }
+
+  // ======================== Règles du formulaire ========================
+
+  get form(): Locator { return this.root; }
+  get save_(): Locator { return this.saveButton; }
+  get consentSelect(): Locator { return this.root.locator('ng-select#hiConfigId'); }
+
+  /** Rôles proposés dans "Choisir le(s) rôle(s)". */
+  async proposedRoles(): Promise<string[]> {
+    await this.roleSelect.click();
+    const names = (await this.page.locator('.ng-dropdown-panel .ng-option').allTextContents())
+      .map(s => s.replace(/\s+/g, ' ').trim()).filter(n => n && !/No items found/i.test(n));
+    await this.page.keyboard.press('Escape');
+    return names;
+  }
+
+  /** Options de "Demande de consentement" ("Désactivé", et "Activé" si un rôle choisi a une configuration). */
+  async consentOptions(): Promise<string[]> {
+    await this.consentSelect.click();
+    const names = (await this.page.locator('.ng-dropdown-panel .ng-option').allTextContents()).map(s => s.replace(/\s+/g, ' ').trim());
+    await this.page.keyboard.press('Escape');
+    return names;
+  }
+
+  async setConsent(value: 'Activé' | 'Désactivé') {
+    await this.consentSelect.click();
+    await this.page.locator('.ng-dropdown-panel .ng-option').filter({ hasText: new RegExp(`^\\s*${value}\\s*$`) }).click();
+    await expect(this.consentSelect).toContainText(value);
+  }
+
+  /** Mot de passe et confirmation distincts (message de contrôle affiché sous les champs). */
+  async fillPasswordPair(password: string, repassword: string) {
+    await this.passwordInput.fill(password);
+    await this.repasswordInput.fill(repassword);
+  }
+
+  /** Clique sur Enregistrer sans attendre de rechargement (cas refusés). */
+  async clickSave() {
+    await this.saveButton.click();
+  }
 }
