@@ -7,6 +7,8 @@ import { MyConfigurationPage } from '../../pages/structure/my-space/configuratio
 import { AccountDataGenerator } from '../../pages/structure/generator/account-data-generator';
 import { adminUser } from '../../test-data/structure-users';
 import { GarantPage } from '../../pages/structure/my-space/garant.page';
+import { BillableActConfigPage, normalizeLabel } from '../../pages/structure/my-space/billable-act-config.page';
+import { BillingInvoicePage } from '../../pages/structure/billing/billing-invoice.page';
 import { PortalPage } from '../../pages/structure/portal/portal.page';
 import { PatientPage } from '../../pages/structure/patient/patient.page';
 import { PatientCarePage } from '../../pages/structure/patient/patient-care.page';
@@ -390,6 +392,156 @@ test.describe('Module Administration', () => {
       expect(await garants.toggle(insurer), 'Refus').toMatch(/encours d.utilisation/i);
       await garants.search({ assureur: insurer });
       expect((await garants.rows())[0]?.statut, 'Garant toujours actif').toBe('Active');
+    });
+  });
+
+  // ======================================================================
+  // Actes (catalogue facturable de la structure)
+  // ======================================================================
+  test.describe('Actes', () => {
+    // Un acte du référentiel pas encore présent dans la structure est ajouté pour une spécialité ;
+    // un patient dédié sert à vérifier les actes proposés en facturation.
+    test.describe.configure({ mode: 'serial' });
+    let patient: DossierPatient;
+    let speciality = '';
+    let otherSpeciality = '';
+    let act = '';
+    let listed = { nom: '', type: '' };
+
+    test.beforeAll(async ({ browser }) => {
+      test.setTimeout(DOSSIER_SETUP_TIMEOUT);
+      patient = await createDossierPatient(browser);
+    });
+
+    async function openActs(page: Page) {
+      const acts = new BillableActConfigPage(page);
+      await acts.open();
+      return acts;
+    }
+
+    /** Actes proposés en facturation pour la catégorie donnée (fenêtre "Ajouter un acte", sans enregistrer). */
+    async function billingActs(page: Page, category: string): Promise<string[]> {
+      await new PortalPage(page).enterModule('Facturation');
+      await page.waitForURL('**/billing/billings-create');
+      // Référentiels de session rechargés (actes de la structure)
+      const loaded = page.waitForResponse(r => r.url().includes('/modules/loadconfigs'), { timeout: 30000 });
+      await page.reload();
+      await loaded;
+      const invoice = new BillingInvoicePage(page);
+      await invoice.searchPatientByIdentifier(patient.identifier);
+      await invoice.selectFirstSearchResult();
+      return (await invoice.proposedActs(category)).map(a => a.toUpperCase());
+    }
+
+    test('Choisir une spécialité dont un acte du référentiel n\'est pas encore dans la structure', async ({ page }) => {
+      const acts = await openActs(page);
+      await acts.openNew();
+      // Spécialités du soignant connecté d'abord, puis "toutes les spécialités" : seules celles-ci
+      // rendent l'acte proposé en facturation pour lui.
+      const mine = (await acts.userSpecialities()).map(s => s.toLowerCase());
+      const rank = (s: string) => mine.includes(s.toLowerCase()) ? 0 : /^toutes les sp/i.test(s) ? 1 : 2;
+      const specialities = (await acts.specialities()).filter(Boolean).sort((a, b) => rank(a) - rank(b));
+      for (const candidate of specialities) {
+        const proposed = await acts.chooseSpeciality(candidate);
+        if (proposed.length > 0 && !speciality) { speciality = candidate; act = proposed[0]; }
+        else if (speciality && !otherSpeciality && candidate !== speciality) otherSpeciality = candidate;
+        if (speciality && otherSpeciality) break;
+      }
+      await acts.close();
+      expect(speciality, 'Une spécialité avec un acte libre').toBeTruthy();
+      expect(rank(speciality), `"${speciality}" : spécialité du soignant connecté ou toutes les spécialités`).toBeLessThan(2);
+      expect(otherSpeciality, 'Une seconde spécialité').toBeTruthy();
+    });
+
+    test('Ajouter un acte sans spécialité ni acte est refusé', async ({ page }) => {
+      const acts = await openActs(page);
+      await acts.openNew();
+      await acts.save();
+      await expect(acts.modal.getByText('La spécialité est obligatoire')).toBeVisible();
+      await expect(acts.modal.getByText('Au moins un acte est obligatoire')).toBeVisible();
+      await acts.close();
+    });
+
+    test(`Ajouter un acte à la structure`, async ({ page }) => {
+      const acts = await openActs(page);
+      await acts.openNew();
+      await acts.chooseSpeciality(speciality);
+      await acts.chooseAct(act);
+      expect(await acts.save(), "Message de l'application").toMatch(/enregistrement a\s+r[ée]ussi/i);
+      await acts.search({ specialite: speciality });
+      const row = (await acts.rows()).find(r => act.toUpperCase().includes(r.nom) || r.nom.includes(act.toUpperCase()));
+      expect(row, `Acte "${act}" listé`).toBeDefined();
+      expect.soft(normalizeLabel(row!.specialite)).toContain(normalizeLabel(speciality));
+      expect.soft(row!.statut).toBe('Actif');
+      listed = { nom: row!.nom, type: row!.type };
+    });
+
+    test("Un acte déjà dans la structure n'est plus proposé à l'ajout", async ({ page }) => {
+      const acts = await openActs(page);
+      await acts.openNew();
+      expect((await acts.chooseSpeciality(speciality)).map(a => a.toUpperCase()), 'Acte non proposé une seconde fois').not.toContain(act.toUpperCase());
+      await acts.close();
+    });
+
+    test('Filtrer les actes par nom, spécialité et état', async ({ page }) => {
+      const acts = await openActs(page);
+      await acts.search({ nom: listed.nom });
+      expect.soft((await acts.rows()).map(r => r.nom), 'Par nom').toContain(listed.nom);
+      await acts.search({ specialite: speciality });
+      expect.soft((await acts.rows()).every(r => normalizeLabel(r.specialite).includes(normalizeLabel(speciality))), 'Par spécialité').toBe(true);
+      for (const [etat, statut] of [['Actif', 'Actif'], ['Inactif', 'Inactif']] as const) {
+        await acts.search({ etat });
+        expect.soft((await acts.rows()).every(r => r.statut === statut), `Filtre "${etat}"`).toBe(true);
+      }
+    });
+
+    test("Ajouter une seconde spécialité à l'acte", async ({ page }) => {
+      const acts = await openActs(page);
+      await acts.search({ nom: listed.nom });
+      await acts.openEdit(listed.nom);
+      await acts.addSpeciality(otherSpeciality);
+      expect(await acts.save(), "Message de l'application").toMatch(/modification a\s+r[ée]ussi/i);
+      await acts.search({ nom: listed.nom });
+      const row = (await acts.rows()).find(r => r.nom === listed.nom);
+      const shown = normalizeLabel(row?.specialite ?? '');
+      if (/^TOUTES LES SP/.test(normalizeLabel(speciality))) {
+        // "Toutes les spécialités" couvre déjà les autres : l'application ramène la liste à elle seule
+        expect.soft(shown, 'Reste "toutes les spécialités"').toBe(normalizeLabel(speciality));
+      } else {
+        expect.soft(shown).toContain(normalizeLabel(speciality));
+        expect.soft(shown).toContain(normalizeLabel(otherSpeciality));
+      }
+    });
+
+    test("Modifier un acte en retirant toutes ses spécialités est refusé", async ({ page }) => {
+      const acts = await openActs(page);
+      await acts.search({ nom: listed.nom });
+      await acts.openEdit(listed.nom);
+      await acts.modal.locator('[formcontrolname="specialities"] .ng-clear-wrapper').click();
+      await acts.save();
+      await expect(acts.modal.getByText('Au moins une spécialité est obligatoire')).toBeVisible();
+      await acts.close();
+    });
+
+    test("L'acte ajouté est proposé en facturation", async ({ page }) => {
+      expect(await billingActs(page, listed.type)).toContain(listed.nom);
+    });
+
+    test("Désactiver un acte non utilisé : il n'est plus proposé en facturation, puis le réactiver", async ({ page }) => {
+      let acts = await openActs(page);
+      await acts.search({ nom: listed.nom });
+      expect(await acts.toggle(listed.nom)).toMatch(/réussi/i);
+      await acts.search({ nom: listed.nom, etat: 'Inactif' });
+      expect((await acts.rows())[0]?.statut, 'Acte désactivé').toBe('Inactif');
+      expect(await billingActs(page, listed.type), 'Plus proposé en facturation').not.toContain(listed.nom);
+
+      await new PortalPage(page).enterModule('Administration');
+      acts = await openActs(page);
+      await acts.search({ nom: listed.nom, etat: 'Inactif' });
+      expect(await acts.toggle(listed.nom)).toMatch(/réussi/i);
+      await acts.search({ nom: listed.nom, etat: 'Actif' });
+      expect((await acts.rows())[0]?.statut, 'Acte réactivé').toBe('Actif');
+      expect(await billingActs(page, listed.type), 'De nouveau proposé').toContain(listed.nom);
     });
   });
 });

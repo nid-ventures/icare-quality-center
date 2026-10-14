@@ -331,6 +331,19 @@ export class BillingInvoicePage {
         throw new Error(`Chambre "${room}" entrée le ${entry} introuvable dans l'onglet Actes Médicaux`);
     }
 
+    /** Actes proposés pour une catégorie dans "Ajouter un acte" (fenêtre refermée sans enregistrer). */
+    async proposedActs(category: string): Promise<string[]> {
+        await this.openAddActModal();
+        await this.selectNgOptionByText(this.addActCategorySelect, category);
+        await this.addActBillableActsSelect.click();
+        const options = this.page.locator('.ng-dropdown-panel:visible .ng-option:not(.ng-optgroup):not(.ng-option-disabled)');
+        await options.first().waitFor({ state: 'visible', timeout: 10000 }).catch(() => {});
+        const names = (await options.allTextContents()).map(s => s.replace(/\s+/g, ' ').trim()).filter(n => n && !/No items found/i.test(n));
+        await this.page.keyboard.press('Escape');
+        await this.closeAddActModal();
+        return names;
+    }
+
     /** Ferme la fenêtre "Ajouter un acte" sans enregistrer. */
     async closeAddActModal(): Promise<void> {
         await this.page.locator('.ama-footer').getByRole('button', { name: 'Fermer' }).click();
