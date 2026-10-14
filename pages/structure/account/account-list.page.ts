@@ -131,6 +131,27 @@ export class AccountListPage {
   }
 
   /**
+   * Login d'un utilisateur à partir de son nom complet (ex. "Oumy DIOP" : l'ordre prénom / nom
+   * varie selon les écrans) : chaque mot est essayé comme nom, jusqu'à une ligne contenant tous les mots.
+   */
+  async loginOf(fullName: string, state: 'Active' | 'Désactive' = 'Active'): Promise<string> {
+    const words = fullName.split(/\s+/).filter(Boolean);
+    const stateSelect = this.page.locator('ng-select[name="active"]');
+    await stateSelect.click();
+    await this.page.getByRole('option', { name: state, exact: true }).click();
+    let row = this.table.locator('tbody tr');
+    for (const word of words) row = row.filter({ hasText: new RegExp(word.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), 'i') });
+    for (const nom of [...words].reverse()) {
+      await this.searchNomInput.fill(nom);
+      await this.searchButton.click();
+      if (await row.first().waitFor({ state: 'visible', timeout: 5000 }).then(() => true, () => false)) {
+        return (await row.first().locator('td').first().innerText()).trim();
+      }
+    }
+    throw new Error(`Utilisateur "${fullName}" (${state}) introuvable dans la liste des utilisateurs`);
+  }
+
+  /**
    * Retourne la ligne du tableau correspondant à un login donné (recherche préalable conseillée)
    */
   getRowByLogin(login: string): Locator {

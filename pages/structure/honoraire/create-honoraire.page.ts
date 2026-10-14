@@ -168,6 +168,22 @@ export class CreateHonorairePage {
         await expect(this.creerButton).toBeDisabled();
     }
 
+    /** Médecins proposés dans "Nouveau relevé" : nom complet et spécialité(s). */
+    async listMedecins(): Promise<{ nom: string; specialite: string }[]> {
+        await this.openMedecinDropdown();
+        const options = this.page.locator('.ng-dropdown-panel .ng-option:not(.ng-option-disabled)');
+        await expect(options.first()).toBeVisible({ timeout: 15000 });
+        const result: { nom: string; specialite: string }[] = [];
+        for (const option of await options.all()) {
+            result.push({
+                nom: ((await option.locator('strong').first().textContent()) ?? '').trim(),
+                specialite: ((await option.locator('small').first().textContent().catch(() => '')) ?? '').trim(),
+            });
+        }
+        await this.page.keyboard.press('Escape');
+        return result;
+    }
+
     /** Ouvre "Nouveau relevé", choisit le médecin et la période ("AAAA-MM-JJ") puis recherche. */
     async searchActs(medecin: string, dateDebut: string, dateFin: string): Promise<void> {
         await this.gotoViaMenu();

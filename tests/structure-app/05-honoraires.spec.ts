@@ -2,6 +2,7 @@ import { type Page } from '@playwright/test';
 import { test, expect } from '../../fixtures/structure.fixture';
 import { PortalPage } from '../../pages/structure/portal/portal.page';
 import { CreateHonorairePage } from '../../pages/structure/honoraire/create-honoraire.page';
+import { AccountListPage } from '../../pages/structure/account/account-list.page';
 import { HonorairesListPage } from '../../pages/structure/honoraire/honoraires-list.page';
 import { RemunerationProfilePage } from '../../pages/structure/my-space/remuneration-profile.page';
 import { HonoraireDataGenerator } from '../../pages/structure/generator/honoraire-data-generator';
@@ -326,7 +327,7 @@ test.describe('Module Honoraires', () => {
       expect.soft(amounts.net, 'Honoraire net = honoraires × 0,9').toBeCloseTo(fee * 0.9, 0);
       expect.soft(amounts.brut, 'Honoraire brut = total des honoraires').toBeCloseTo(fee, 0);
       const detail = await listPage.detailOf(row);
-      // La fenêtre de détail n'affiche pas la référence du relevé : médecin et période à la place
+      expect.soft(detail.text, 'Référence au détail').toContain(reference);
       const frDate = today.split('-').reverse().join('/');
       expect.soft(detail.text.toLowerCase(), 'Médecin au détail').toContain(ctx.medecin.toLowerCase().split(/\s+/)[0]);
       expect.soft(detail.text, 'Période au détail').toContain(`Du ${frDate} au ${frDate}`);
@@ -394,6 +395,34 @@ test.describe('Module Honoraires', () => {
       }
     });
 
+    test("Supprimer la facture d'un acte déjà relevé est refusé : facture et relevé conservés", async ({ page }) => {
+      await bill(page, rule, 3000);
+      const ref = await createStatement(page, [3000]);
+      const list = new BillingListPatientPage(page);
+      let order = '';
+      await test.step('Tenter de supprimer la facture de 3 000', async () => {
+        await new PortalPage(page).enterModule('Facturation');
+        await new PortalPage(page).openMenu('Factures patients', '**/billing/billings-patients');
+        order = (await list.invoicesOf(patient.identifier)).find(i => i.amount === 3000)?.order ?? '';
+        expect(order, 'Facture de 3 000').toBeTruthy();
+        await list.deleteInvoice(order);
+        await expect(page.getByText(/Suppression impossible : des actes de cette facture figurent dans un relevé d'honoraires/).first(),
+          'Refus expliqué').toBeVisible({ timeout: 15000 });
+      });
+      await test.step('La facture est toujours là', async () => {
+        await new PortalPage(page).enterModule('Facturation');
+        await new PortalPage(page).openMenu('Factures patients', '**/billing/billings-patients');
+        expect((await list.invoicesOf(patient.identifier)).map(i => i.order), 'Facture conservée').toContain(order);
+      });
+      await test.step('Le relevé garde son acte', async () => {
+        const { listPage, row } = await openStatement(page, ref);
+        expect.soft((await listPage.amountsOf(row)).prestation, 'Acte toujours au relevé').toBe(3000);
+        const detail = await listPage.detailOf(row);
+        expect.soft(detail.text, 'Référence au détail').toContain(ref);
+        expect.soft(detail.lines.filter(l => l.patient.includes(patient.identifier)).map(l => l.amount), 'Acte au détail').toEqual([3000]);
+      });
+    });
+
     test("Deuxième règle de rémunération (montant fixe ou taux) : honoraire conforme", async ({ page }) => {
       test.skip(!otherRule, `Aucun autre acte de la spécialité "${HONORAIRE_SPECIALITY}" disponible pour un profil de l'autre type`);
       await bill(page, otherRule!, 7000);
@@ -402,6 +431,88 @@ test.describe('Module Honoraires', () => {
       expect(row, `Acte "${otherRule!.act}" proposé`).toBeDefined();
       expect.soft(row!.rate, 'Taux du profil').toBe(otherRule!.rate);
       expect.soft(row!.fee, otherRule!.rate === null ? "Montant fixe, quel que soit le montant de l'acte" : 'Taux × montant').toBeCloseTo(feeOf(otherRule!, 7000), 0);
+    });
+  });
+
+  // ======================================================================
+  // Médecin désactivé : ses relevés restent listés (patient dédié)
+  // ======================================================================
+  test.describe('Relevés d\'un médecin désactivé', () => {
+    // Les soignants ne peuvent pas être créés depuis l'application (rôle soignant non proposé) : un
+    // médecin de pédiatrie existant est désactivé le temps du test, puis toujours réactivé.
+    test.describe.configure({ mode: 'serial' });
+    let patient: DossierPatient;
+    let medecin = '';
+    let reference = '';
+    const today = new Date().toISOString().slice(0, 10);
+
+    test.beforeAll(async ({ browser }) => {
+      test.setTimeout(DOSSIER_SETUP_TIMEOUT);
+      patient = await createDossierPatient(browser);
+    });
+
+    /** Recharge la page puis attend le rechargement des référentiels de session (dont les soignants). */
+    async function refreshCaches(page: Page) {
+      const loaded = page.waitForResponse(r => r.url().includes('/modules/loadconfigs'), { timeout: 30000 });
+      await page.reload();
+      await loaded;
+    }
+
+    async function setDoctorActive(page: Page, active: boolean) {
+      await new PortalPage(page).enterModule('Administration');
+      const accounts = new AccountListPage(page);
+      await accounts.goto();
+      await accounts.expectListLoaded();
+      const login = await accounts.loginOf(medecin, active ? 'Désactive' : 'Active');
+      await accounts.toggleState(login);
+      await refreshCaches(page);
+    }
+
+    test('Préparer : relevé d\'un médecin de pédiatrie', async ({ page }) => {
+      const createPage = new CreateHonorairePage(page);
+      await test.step('Choisir un médecin de pédiatrie (autre que celui des autres tests si possible)', async () => {
+        await new PortalPage(page).enterModule('Honoraires');
+        await createPage.gotoViaMenu();
+        const pediatres = (await createPage.listMedecins()).filter(m => /pédiatrie/i.test(m.specialite));
+        medecin = (pediatres.find(m => m.nom !== ctx.medecin) ?? pediatres[0])?.nom ?? '';
+        expect(medecin, 'Un médecin de pédiatrie').toBeTruthy();
+      });
+      await test.step(`Facturer un acte de ${medecin} et créer son relevé`, async () => {
+        await new PortalPage(page).enterModule('Facturation');
+        await page.waitForURL('**/billing/billings-create');
+        await new BillingInvoicePage(page).createInvoiceForPractitioner(patient.identifier, medecin, { category: ctx.category, act: ctx.act }, '2000');
+        await new PortalPage(page).enterModule('Honoraires');
+        await createPage.searchActs(medecin, today, today);
+        const rows = createPage.rowsOfPatient(patient.identifier);
+        await expect(rows, 'Acte du patient proposé').toHaveCount(1);
+        await createPage.selectRow(rows.first());
+        await createPage.creerHonoraire();
+        const listPage = new HonorairesListPage(page);
+        await listPage.expectListLoaded();
+        reference = await listPage.getRowReference(await listPage.getMostRecentRowForMedecinAndStatut(medecin, 'Non Payé'));
+      });
+    });
+
+    test('Médecin désactivé : la liste des relevés reste affichée, avec son relevé', async ({ page }) => {
+      try {
+        await test.step(`Désactiver ${medecin}`, async () => setDoctorActive(page, false));
+        await test.step('La liste des relevés s\'affiche, avec le relevé du médecin désactivé', async () => {
+          await new PortalPage(page).enterModule('Honoraires');
+          const listPage = new HonorairesListPage(page);
+          await listPage.goto();
+          await listPage.filtrerParStatut('Non Payé');
+          await listPage.filtrerParPeriode(today, today);
+          await listPage.appliquerFiltres();
+          const row = listPage.rowOfReference(reference);
+          await expect(row, `Relevé ${reference} listé`).toHaveCount(1, { timeout: 15000 });
+          await expect.soft(row, 'Médecin signalé comme désactivé').toContainText('Médecin désactivé');
+          expect.soft((await listPage.amountsOf(row)).prestation, 'Montant des prestations').toBe(2000);
+          const detail = await listPage.detailOf(row);
+          expect.soft(detail.text, 'Détail consultable').toContain(reference);
+        });
+      } finally {
+        await test.step(`Réactiver ${medecin}`, async () => setDoctorActive(page, true));
+      }
     });
   });
 });
