@@ -1,4 +1,5 @@
 // pages/structure/honoraire/honoraires-list.page.ts
+import { amountOf } from './create-honoraire.page';
 import { type Page, type Locator, expect } from '@playwright/test';
 
 export type StatutLibelle = 'Non Payé' | 'Payé';
@@ -373,6 +374,36 @@ export class HonorairesListPage {
      * actuellement affichées (utile pour vérifier qu'un relevé supprimé n'apparaît
      * plus dans la liste, dans le respect des filtres déjà appliqués).
      */
+    /** Ligne du relevé de référence donnée, parmi les lignes affichées. */
+    rowOfReference(reference: string): Locator {
+        return this.rows.filter({ has: this.page.locator('.reference-code-compact', { hasText: reference }) });
+    }
+
+    /** Montants d'une ligne : prestations, honoraire brut et honoraire net (F CFA). */
+    async amountsOf(row: Locator): Promise<{ prestation: number; brut: number; net: number }> {
+        const cells = row.locator('td.cell-honoraire:not([hidden]) .amount-compact');
+        const [prestation, brut, net] = (await cells.allInnerTexts()).map(amountOf);
+        return { prestation, brut, net };
+    }
+
+    /**
+     * Détail d'un relevé (fenêtre "Consulter") : lignes d'actes (acte, patient, montant, taux,
+     * honoraire) et texte complet. Ouvre puis referme la fenêtre.
+     */
+    async detailOf(row: Locator): Promise<{ text: string; lines: { act: string; patient: string; amount: number; fee: number }[] }> {
+        await this.openDetailModal(row);
+        const modal = this.page.locator('.modal, .modal-content, [role="dialog"]').filter({ has: this.detailModalTitle }).last();
+        const text = (await modal.innerText()).replace(/\s+/g, ' ');
+        const lines: { act: string; patient: string; amount: number; fee: number }[] = [];
+        for (const tr of await modal.locator('table tbody tr').all()) {
+            const cells = (await tr.locator('td').allInnerTexts()).map(c => c.replace(/\s+/g, ' ').trim());
+            if (cells.length < 6) continue;
+            lines.push({ act: cells[0], patient: cells[1], amount: amountOf(cells[3]), fee: amountOf(cells[5]) });
+        }
+        await this.closeDetailModal();
+        return { text, lines };
+    }
+
     async referenceExisteDansListe(reference: string): Promise<boolean> {
         const count = await this.rows.count();
         for (let i = 0; i < count; i++) {

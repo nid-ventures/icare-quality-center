@@ -168,10 +168,53 @@ export class CreateHonorairePage {
         await expect(this.creerButton).toBeDisabled();
     }
 
+    /** Ouvre "Nouveau relevé", choisit le médecin et la période ("AAAA-MM-JJ") puis recherche. */
+    async searchActs(medecin: string, dateDebut: string, dateFin: string): Promise<void> {
+        await this.gotoViaMenu();
+        await this.selectMedecin(medecin);
+        await this.fillPeriode(dateDebut, dateFin);
+        await this.rechercher();
+    }
+
+    /** Lignes d'actes trouvées pour un patient (repéré par son identifiant). */
+    rowsOfPatient(patientIdentifier: string): Locator {
+        return this.resultsRows.filter({ hasText: patientIdentifier });
+    }
+
+    /** Lit une ligne : acte, montant, taux (null si "--"), honoraire et sélectionnabilité. */
+    async readRow(row: Locator): Promise<FeeActRow> {
+        const cells = (await row.locator('td').allInnerTexts()).map(c => c.replace(/\s+/g, ' ').trim());
+        return {
+            act: cells[1], amount: amountOf(cells[5]), rate: /\d/.test(cells[6]) ? amountOf(cells[6]) : null,
+            fee: amountOf(cells[7]), selectable: /selectable-row/.test((await row.getAttribute('class')) ?? ''),
+        };
+    }
+
+    async readRowsOfPatient(patientIdentifier: string): Promise<FeeActRow[]> {
+        const rows = this.rowsOfPatient(patientIdentifier);
+        const result: FeeActRow[] = [];
+        for (let i = 0; i < await rows.count(); i++) result.push(await this.readRow(rows.nth(i)));
+        return result;
+    }
+
+    /** Coche la ligne d'acte (sélection pour le relevé). */
+    async selectRow(row: Locator): Promise<void> {
+        await row.locator('input.selection-checkbox-modern').check();
+    }
+
     /** Clique sur "Créer" et attend la redirection vers la liste des relevés d'honoraires. */
     async creerHonoraire(): Promise<void> {
         await expect(this.creerButton).toBeEnabled();
         await this.creerButton.click();
         await this.page.waitForURL('**/honoraire/honoraires', { timeout: 20000 });
     }
+}
+
+/** Ligne d'acte de "Nouveau relevé" (montants en F CFA, taux en %). */
+export type FeeActRow = { act: string; amount: number; rate: number | null; fee: number; selectable: boolean };
+
+/** Montant affiché ("10 000 F CFA", "1 666,67 F CFA", "15%") converti en nombre. */
+export function amountOf(text: string): number {
+    const cleaned = text.replace(/[\s\u202f\u00a0]/g, '').replace(',', '.').replace(/[^\d.]/g, '');
+    return Number(cleaned) || 0;
 }

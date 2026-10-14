@@ -5,6 +5,9 @@ import { CreateHonorairePage } from '../../pages/structure/honoraire/create-hono
 import { HonorairesListPage } from '../../pages/structure/honoraire/honoraires-list.page';
 import { RemunerationProfilePage } from '../../pages/structure/my-space/remuneration-profile.page';
 import { HonoraireDataGenerator } from '../../pages/structure/generator/honoraire-data-generator';
+import { BillingInvoicePage } from '../../pages/structure/billing/billing-invoice.page';
+import { BillingListPatientPage } from '../../pages/structure/billing/billing-list.page';
+import { createDossierPatient, DOSSIER_SETUP_TIMEOUT, type DossierPatient } from '../../fixtures/dossier-patient';
 import {
   ensureHonorairePrerequisites, billActForMedecin, HONORAIRE_SETUP_TIMEOUT, HONORAIRE_SPECIALITY, type HonoraireContext,
 } from '../../fixtures/honoraires-setup';
@@ -216,6 +219,189 @@ test.describe('Module Honoraires', () => {
       const periode = HonoraireDataGenerator.generateLargePeriod();
       await createPage.fillPeriode(periode.dateDebut, periode.dateFin);
       await expect(page.getByRole('button', { name: /Rechercher/ })).toBeDisabled();
+    });
+  });
+
+  // ======================================================================
+  // Conformité du calcul et cas rares (patient dédié : seuls ses actes sont lus)
+  // ======================================================================
+  test.describe('Conformité du calcul des honoraires et cas rares', () => {
+    // Règles de l'application : honoraire d'un acte = taux du profil × montant de l'acte, ou montant
+    // fixe du profil s'il n'a pas de taux ; montant net du relevé = total des honoraires × 0,9 ;
+    // un acte déjà relevé, d'une facture supprimée ou hors période n'est pas proposé.
+    test.describe.configure({ mode: 'serial' });
+    type Rule = { act: string; category: string; rate: number | null; amount: number | null };
+    let patient: DossierPatient;
+    let rule: Rule;
+    let otherRule: Rule | undefined;
+    let reference = '';
+    const today = new Date().toISOString().slice(0, 10);
+    const yesterday = new Date(Date.now() - 86400000).toISOString().slice(0, 10);
+    /** Honoraire attendu d'un acte selon la règle du profil. */
+    const feeOf = (r: Rule, amount: number) => r.rate !== null ? r.rate / 100 * amount : (r.amount ?? 0);
+
+    test.beforeAll(async ({ browser }) => {
+      test.setTimeout(DOSSIER_SETUP_TIMEOUT);
+      patient = await createDossierPatient(browser);
+    });
+
+    /** Facture au patient dédié un acte du médecin, au montant donné. */
+    async function bill(page: Page, r: Rule, amount: number) {
+      await new PortalPage(page).enterModule('Facturation');
+      await page.waitForURL('**/billing/billings-create');
+      await new BillingInvoicePage(page).createInvoiceForPractitioner(patient.identifier, ctx.medecin, { category: r.category, act: r.act }, String(amount));
+    }
+
+    /** Recherche des actes du médecin sur la période ; renvoie les lignes du patient dédié. */
+    async function search(page: Page, from = today, to = today) {
+      await new PortalPage(page).enterModule('Honoraires');
+      const createPage = new CreateHonorairePage(page);
+      await createPage.searchActs(ctx.medecin, from, to);
+      return { createPage, rows: await createPage.readRowsOfPatient(patient.identifier) };
+    }
+
+    /** Crée un relevé avec les seules lignes du patient dont le montant est dans `amounts`. */
+    async function createStatement(page: Page, amounts: number[]): Promise<string> {
+      const { createPage } = await search(page);
+      const rows = createPage.rowsOfPatient(patient.identifier);
+      for (let i = 0; i < await rows.count(); i++) {
+        if (amounts.includes((await createPage.readRow(rows.nth(i))).amount)) await createPage.selectRow(rows.nth(i));
+      }
+      await createPage.creerHonoraire();
+      const listPage = new HonorairesListPage(page);
+      await listPage.expectListLoaded();
+      return listPage.getRowReference(await listPage.getMostRecentRowForMedecinAndStatut(ctx.medecin, 'Non Payé'));
+    }
+
+    /** Retrouve le relevé dans la liste (filtre médecin et statut : un relevé payé n'est pas listé sinon). */
+    async function openStatement(page: Page, ref: string, statut: 'Non Payé' | 'Payé' = 'Non Payé') {
+      const listPage = new HonorairesListPage(page);
+      await listPage.goto();
+      await listPage.filtrerParMedecin(ctx.medecin);
+      await listPage.filtrerParStatut(statut);
+      await listPage.appliquerFiltres();
+      const row = listPage.rowOfReference(ref);
+      await expect(row, `Relevé ${ref}`).toHaveCount(1, { timeout: 15000 });
+      return { listPage, row };
+    }
+
+    test('Préparer : règles de rémunération du médecin (taux et montant fixe)', async ({ portal, page }) => {
+      await portal.enterModule('Administration');
+      const profiles = new RemunerationProfilePage(page);
+      await profiles.open();
+      const active = await profiles.activeProfiles(HONORAIRE_SPECIALITY);
+      const found = active.find(p => p.act.toUpperCase() === ctx.act.toUpperCase());
+      expect(found, `Profil actif de "${ctx.act}"`).toBeDefined();
+      rule = { ...found!, category: ctx.category };
+      expect(rule.rate !== null || rule.amount !== null, 'Le profil a un taux ou un montant').toBe(true);
+      // Second profil de l'autre type (montant fixe si le premier a un taux, et inversement), créé si absent
+      const wantRate = rule.rate === null;
+      otherRule = active.find(p => p.act !== found!.act && (wantRate ? p.rate !== null : p.rate === null && p.amount !== null));
+      if (!otherRule) {
+        // Tous les actes de la spécialité peuvent déjà avoir un profil (du même type) : pas de second profil
+        const proposal = await profiles.tryFirstProposition(HONORAIRE_SPECIALITY);
+        if (!proposal) return;
+        const isoShift = (days: number) => new Date(Date.now() + days * 86400000).toISOString().slice(0, 10);
+        await profiles.create({ speciality: HONORAIRE_SPECIALITY, act: proposal.act, ...(wantRate ? { coverage: '20' } : { mount: '3000' }), startDate: isoShift(-730), endDate: isoShift(730) });
+        otherRule = { act: proposal.act, category: proposal.category, rate: wantRate ? 20 : null, amount: wantRate ? null : 3000 };
+      }
+    });
+
+    test('Un acte facturé : honoraire calculé selon le profil de rémunération', async ({ page }) => {
+      await bill(page, rule, 10000);
+      const { rows } = await search(page);
+      expect(rows, 'Un acte du patient proposé').toHaveLength(1);
+      expect.soft(rows[0].amount, "Montant de l'acte").toBe(10000);
+      expect.soft(rows[0].rate, 'Taux du profil').toBe(rule.rate);
+      expect.soft(rows[0].fee, 'Honoraire').toBeCloseTo(feeOf(rule, 10000), 0);
+      expect.soft(rows[0].selectable, 'Sélectionnable').toBe(true);
+    });
+
+    test('Créer le relevé : prestations, honoraire brut et net (× 0,9) conformes, détail conforme', async ({ page }) => {
+      const fee = feeOf(rule, 10000);
+      reference = await createStatement(page, [10000]);
+      const { listPage, row } = await openStatement(page, reference);
+      const amounts = await listPage.amountsOf(row);
+      expect.soft(amounts.prestation, 'Montant des prestations').toBe(10000);
+      expect.soft(amounts.net, 'Honoraire net = honoraires × 0,9').toBeCloseTo(fee * 0.9, 0);
+      expect.soft(amounts.brut, 'Honoraire brut = total des honoraires').toBeCloseTo(fee, 0);
+      const detail = await listPage.detailOf(row);
+      // La fenêtre de détail n'affiche pas la référence du relevé : médecin et période à la place
+      const frDate = today.split('-').reverse().join('/');
+      expect.soft(detail.text.toLowerCase(), 'Médecin au détail').toContain(ctx.medecin.toLowerCase().split(/\s+/)[0]);
+      expect.soft(detail.text, 'Période au détail').toContain(`Du ${frDate} au ${frDate}`);
+      const lines = detail.lines.filter(l => l.patient.includes(patient.identifier));
+      expect.soft(lines.map(l => [l.amount, Math.round(l.fee)]), "Acte du relevé : montant et honoraire").toEqual([[10000, Math.round(fee)]]);
+    });
+
+    test("Un acte déjà relevé n'est plus proposé", async ({ page }) => {
+      const { rows } = await search(page);
+      expect(rows, 'Plus aucun acte du patient proposé').toHaveLength(0);
+    });
+
+    test('Plusieurs actes : seuls les actes sélectionnés entrent dans le relevé', async ({ page }) => {
+      await bill(page, rule, 4000);
+      await bill(page, rule, 6000);
+      const { rows } = await search(page);
+      expect(rows.map(r => r.amount).sort(), 'Deux nouveaux actes proposés').toEqual([4000, 6000]);
+      reference = await createStatement(page, [4000]);
+      const { listPage, row } = await openStatement(page, reference);
+      expect.soft((await listPage.amountsOf(row)).prestation, 'Seul l\'acte de 4 000 est relevé').toBe(4000);
+      const after = await search(page);
+      expect(after.rows.map(r => r.amount), "L'acte non sélectionné reste proposé").toEqual([6000]);
+    });
+
+    test('Supprimer un relevé : ses actes redeviennent proposés', async ({ page }) => {
+      const { listPage, row } = await openStatement(page, reference);
+      await listPage.supprimerLigne(row);
+      const { rows } = await search(page);
+      expect(rows.map(r => r.amount).sort(), "L'acte du relevé supprimé est de nouveau proposé").toEqual([4000, 6000]);
+    });
+
+    test('Un acte facturé hors de la période recherchée n\'est pas proposé', async ({ page }) => {
+      const { rows } = await search(page, yesterday, yesterday);
+      expect(rows, 'Aucun acte du patient la veille').toHaveLength(0);
+    });
+
+    test("Facture supprimée : son acte n'est plus proposé", async ({ page }) => {
+      await test.step('Supprimer la facture de 6 000', async () => {
+        await new PortalPage(page).enterModule('Facturation');
+        await new PortalPage(page).openMenu('Factures patients', '**/billing/billings-patients');
+        const list = new BillingListPatientPage(page);
+        const invoice = (await list.invoicesOf(patient.identifier)).find(i => i.amount === 6000);
+        expect(invoice, 'Facture de 6 000').toBeDefined();
+        await list.deleteInvoice(invoice!.order);
+      });
+      const { rows } = await search(page);
+      expect(rows.map(r => r.amount), "Seul l'acte encore facturé reste proposé").toEqual([4000]);
+    });
+
+    test('Payer un relevé : statut "Payé", montants inchangés, plus modifiable ni supprimable', async ({ page }) => {
+      const fee = feeOf(rule, 4000);
+      reference = await createStatement(page, [4000]);
+      const { listPage, row } = await openStatement(page, reference);
+      const before = await listPage.amountsOf(row);
+      await listPage.openPaymentModal(row);
+      await listPage.fillPaymentDate(today);
+      await listPage.confirmerPaiement();
+      await listPage.terminerPaiement();
+      const paid = (await openStatement(page, reference, 'Payé')).row;
+      expect.soft(await listPage.getRowStatutLibelle(paid), 'Statut').toBe('Payé');
+      expect.soft(await listPage.amountsOf(paid), 'Montants inchangés').toEqual(before);
+      expect.soft(before.net, 'Honoraire net = honoraire × 0,9').toBeCloseTo(fee * 0.9, 0);
+      for (const action of ['Payer relevé', 'Modifier', 'Supprimer']) {
+        await expect.soft(paid.getByTitle(action), `"${action}" indisponible sur un relevé payé`).toHaveCount(0);
+      }
+    });
+
+    test("Deuxième règle de rémunération (montant fixe ou taux) : honoraire conforme", async ({ page }) => {
+      test.skip(!otherRule, `Aucun autre acte de la spécialité "${HONORAIRE_SPECIALITY}" disponible pour un profil de l'autre type`);
+      await bill(page, otherRule!, 7000);
+      const { rows } = await search(page);
+      const row = rows.find(r => r.act.toUpperCase().includes(otherRule!.act.toUpperCase()));
+      expect(row, `Acte "${otherRule!.act}" proposé`).toBeDefined();
+      expect.soft(row!.rate, 'Taux du profil').toBe(otherRule!.rate);
+      expect.soft(row!.fee, otherRule!.rate === null ? "Montant fixe, quel que soit le montant de l'acte" : 'Taux × montant').toBeCloseTo(feeOf(otherRule!, 7000), 0);
     });
   });
 });
