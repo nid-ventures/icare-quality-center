@@ -62,7 +62,8 @@ export class HonorairesListPage {
         this.rows = page.locator('tr.honoraire-row');
         this.loadingContainer = page.locator('.loading-container');
 
-        this.medecinFilter = page.locator('.filter-field', { hasText: 'Médecin' }).locator('select');
+        // Libellé exact : le champ Spécialité (masqué) contient l'option « Médecine générale ».
+        this.medecinFilter = page.locator('.filter-field').filter({ has: page.locator('label.filter-label', { hasText: /^\s*Médecin\s*$/ }) }).locator('select');
         this.statutFilter = page.locator('.filter-field', { hasText: 'Statut' }).locator('select');
         this.dateDebutFilter = page.locator('.filter-field', { hasText: 'Date début Période' }).locator('input[type="date"]');
         this.dateFinFilter = page.locator('.filter-field', { hasText: 'Date fin Période' }).locator('input[type="date"]');

@@ -249,6 +249,7 @@ export class PatientPage {
 
   // ======================== MÉTHODES PUBLIQUES ========================
   async checkPatientsList() {
+    await this.waitForLoader();
     await this.patientLink.click();
     await this.page.waitForURL('**/patient/patients');
 
@@ -288,6 +289,7 @@ export class PatientPage {
   }
 
   async chooseFirstPatient() {
+    await this.waitForLoader();
     await this.patientLink.click();
     await this.page.waitForURL('**/patient/patients');
     await expect(this.firstChildRowTablePatient).toBeVisible();
@@ -297,6 +299,7 @@ export class PatientPage {
   }
 
   async gotoPatientsList() {
+    await this.waitForLoader();
     await this.patientLink.click();
     await this.page.waitForURL('**/patient/patients');
     // La liste peut encore afficher l'état "Aucun patient disponible" le temps que les données
@@ -307,6 +310,7 @@ export class PatientPage {
   }
 
   async openCreationModal() {
+    await this.waitForLoader();
     await this.buttonNouveau.click();
     await this.modalCreate.waitFor({ state: 'visible' });
   }
@@ -386,8 +390,12 @@ export class PatientPage {
   }
 
   // ======================== RECHERCHE CIBLÉE & ACTIONS PAR PATIENT ========================
+  /**
+   * Attend la fin du chargement plein écran : la liste des patients (POST /patients/getAll) met
+   * d'ordinaire quelques secondes, mais dépasse parfois une minute sur la base locale très remplie.
+   */
   private async waitForLoader() {
-    await this.page.locator('app-loader .backdrop.full-screen').waitFor({ state: 'hidden', timeout: 90000 }).catch(() => {});
+    await this.page.locator('app-loader .backdrop.full-screen').waitFor({ state: 'hidden', timeout: 120000 }).catch(() => {});
   }
 
   /**
@@ -549,6 +557,7 @@ export class PatientPage {
   }
 
   async definitionChamps(page: Page) {
+    await this.waitForLoader();
     await this.patientLink.click();
     await this.page.waitForURL('**/patient/patients');
     // La liste peut encore afficher l'état "Aucun patient disponible" le temps que les données
