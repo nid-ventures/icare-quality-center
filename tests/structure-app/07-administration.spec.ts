@@ -1,4 +1,5 @@
 import { type Page } from '@playwright/test';
+import fs from 'fs';
 import { test, expect } from '../../fixtures/structure.fixture';
 import { AccountListPage } from '../../pages/structure/account/account-list.page';
 import { AccountCreateUpdatePage } from '../../pages/structure/account/account-create-update.page';
@@ -9,6 +10,7 @@ import { adminUser } from '../../test-data/structure-users';
 import { GarantPage } from '../../pages/structure/my-space/garant.page';
 import { BillableActConfigPage, normalizeLabel, accentInsensitive } from '../../pages/structure/my-space/billable-act-config.page';
 import { RemunerationProfilePage } from '../../pages/structure/my-space/remuneration-profile.page';
+import { ConsentConfigPage } from '../../pages/structure/my-space/consent-config.page';
 import { BillingInvoicePage } from '../../pages/structure/billing/billing-invoice.page';
 import { PortalPage } from '../../pages/structure/portal/portal.page';
 import { PatientPage } from '../../pages/structure/patient/patient.page';
@@ -861,5 +863,150 @@ test.describe('Module Administration', () => {
       await profiles.search({ nom: act, etat: 'Actif' });
       expect(await profiles.toggle(act)).toMatch(/désactivée avec succès/);
     });
+  });
+
+  // ======================================================================
+  // Configuration de consentement
+  // ======================================================================
+  test.describe('Consentement', () => {
+    // Une configuration par profil ; le profil impose type et mode (PATIENT → ELECTRONIC / EMAIL,
+    // personnel → MANUAL / AUCUN). Les tests modifient, retirent puis recréent les configurations
+    // Secrétaire médicale et Patient, et remettent toujours le texte d'origine.
+    test.describe.configure({ mode: 'serial' });
+    const EXPECTED = {
+      PATIENT: { type: 'ELECTRONIC', mode: 'EMAIL', defaultText: /Bonjour cher\/chère patient/ },
+      MEDICAL_SECRETAIRE: { type: 'MANUAL', mode: 'AUCUN', defaultText: /En donnant mon avis, je déclare/ },
+    } as const;
+    type Profil = keyof typeof EXPECTED;
+    const originals: Partial<Record<Profil, string>> = {};
+    /** HTML comparé sans les espaces (l'éditeur reformate les retours à la ligne). */
+    const compact = (html: string) => html.replace(/\s+/g, '');
+
+    async function openConsents(page: Page) {
+      const consents = new ConsentConfigPage(page);
+      await consents.open();
+      return consents;
+    }
+
+    /** Recrée la configuration du profil avec son texte d'origine si elle a été retirée. */
+    async function ensureConfig(page: Page, profil: Profil) {
+      const consents = await openConsents(page);
+      if ((await consents.rows()).some(r => r.profil === profil)) return;
+      await consents.chooseProfile(profil);
+      await consents.editorContent(consents.form, originals[profil]);
+      await consents.save();
+    }
+
+    test('Liste : une configuration par profil, aucun profil libre', async ({ page }) => {
+      const consents = await openConsents(page);
+      const rows = await consents.rows();
+      const profils = rows.map(r => r.profil);
+      expect(new Set(profils).size, 'Un seul enregistrement par profil').toBe(profils.length);
+      expect(profils.sort()).toEqual(['CAREGIVER', 'HI_ADMINISTRATOR', 'MEDICAL_SECRETAIRE', 'PATIENT']);
+      for (const row of rows) {
+        const expected = row.profil === 'PATIENT' ? EXPECTED.PATIENT : EXPECTED.MEDICAL_SECRETAIRE;
+        expect.soft(`${row.type} / ${row.mode}`, `Type et mode de ${row.profil}`).toBe(`${expected.type} / ${expected.mode}`);
+      }
+      expect(await consents.proposedProfiles(), 'Aucun profil à configurer').toEqual([]);
+      await expect(consents.saveButton, 'Enregistrer inactif').toBeDisabled();
+      for (const profil of Object.keys(EXPECTED) as Profil[]) {
+        await consents.openEdit(profil);
+        originals[profil] = await consents.editorContent(consents.editModal);
+        expect(originals[profil], `Texte de ${profil}`).toBeTruthy();
+        await consents.closeEdit();
+      }
+      // Copie de secours, pour restaurer à la main si le run s'arrête entre un retrait et sa recréation
+      fs.mkdirSync('test-results', { recursive: true });
+      fs.writeFileSync('test-results/consent-originals.json', JSON.stringify(originals, null, 2));
+    });
+
+    test('Modifier le texte de la configuration Secrétaire médicale', async ({ page }) => {
+      const marker = `Test automatique ${Date.now()}`;
+      try {
+        const consents = await openConsents(page);
+        await consents.openEdit('MEDICAL_SECRETAIRE');
+        await test.step('Profil, type et mode verrouillés', async () => {
+          for (const select of ['ng-select#type', 'ng-select[formcontrolname="consent_ident"]', 'ng-select#sendMode']) {
+            await expect(consents.editModal.locator(select)).toHaveClass(/ng-select-disabled/);
+          }
+        });
+        await test.step('Texte vide refusé', async () => {
+          await consents.editorContent(consents.editModal, '');
+          await expect(consents.editSaveButton).toBeDisabled();
+        });
+        await test.step('Texte modifié enregistré', async () => {
+          await consents.editorContent(consents.editModal, `${originals.MEDICAL_SECRETAIRE}<p>${marker}</p>`);
+          await consents.saveEdit();
+        });
+        await test.step('Le nouveau texte est repris à la réouverture', async () => {
+          const reopened = await openConsents(page);
+          await reopened.openEdit('MEDICAL_SECRETAIRE');
+          expect(await reopened.editorContent(reopened.editModal)).toContain(marker);
+          await reopened.closeEdit();
+          expect((await reopened.rows()).filter(r => r.profil === 'MEDICAL_SECRETAIRE'), 'Toujours une seule configuration').toHaveLength(1);
+        });
+      } finally {
+        await test.step("Remettre le texte d'origine", async () => {
+          const consents = await openConsents(page);
+          await consents.openEdit('MEDICAL_SECRETAIRE');
+          if (compact(await consents.editorContent(consents.editModal)) === compact(originals.MEDICAL_SECRETAIRE!)) {
+            await consents.closeEdit();
+          } else {
+            await consents.editorContent(consents.editModal, originals.MEDICAL_SECRETAIRE);
+            await consents.saveEdit();
+          }
+          const check = await openConsents(page);
+          await check.openEdit('MEDICAL_SECRETAIRE');
+          expect(compact(await check.editorContent(check.editModal)), "Texte d'origine").toBe(compact(originals.MEDICAL_SECRETAIRE!));
+          await check.closeEdit();
+        });
+      }
+    });
+
+    for (const profil of ['MEDICAL_SECRETAIRE', 'PATIENT'] as const) {
+      test(`Retirer puis recréer la configuration ${profil}`, async ({ page }) => {
+        const expected = EXPECTED[profil];
+        try {
+          await test.step('Retirer la configuration', async () => {
+            const consents = await openConsents(page);
+            expect(await consents.remove(profil)).toMatch(/reussi/);
+            await expect(consents.row(profil), 'Plus listée').toHaveCount(0);
+          });
+          await test.step('Enregistrer sans profil est refusé', async () => {
+            const consents = await openConsents(page);
+            await consents.saveButton.click();
+            await expect(consents.form.getByText('Au moins un rôle est obligatoire')).toBeVisible();
+          });
+          await test.step(`Le profil est de nouveau proposé ; type ${expected.type} et mode ${expected.mode} imposés`, async () => {
+            const consents = await openConsents(page);
+            expect(await consents.proposedProfiles()).toContain(profil);
+            await consents.chooseProfile(profil);
+            expect.soft(await consents.shown(consents.typeSelect), 'Type').toBe(expected.type);
+            expect.soft(await consents.shown(consents.modeSelect), 'Mode').toBe(expected.mode);
+            await expect(consents.typeSelect, 'Type non modifiable').toHaveClass(/ng-select-disabled/);
+            await expect(consents.modeSelect, 'Mode non modifiable').toHaveClass(/ng-select-disabled/);
+            expect(await consents.editorText(consents.form), 'Texte par défaut').toMatch(expected.defaultText);
+          });
+          await test.step("Recréer avec le texte d'origine", async () => {
+            const consents = await openConsents(page);
+            await consents.chooseProfile(profil);
+            await consents.editorContent(consents.form, originals[profil]);
+            await consents.save();
+          });
+          await test.step('La configuration est de nouveau listée, avec son texte', async () => {
+            const consents = await openConsents(page);
+            const rows = (await consents.rows()).filter(r => r.profil === profil);
+            expect(rows, 'Une seule configuration').toHaveLength(1);
+            expect.soft(`${rows[0].type} / ${rows[0].mode}`).toBe(`${expected.type} / ${expected.mode}`);
+            expect(await consents.proposedProfiles(), 'Plus proposé').not.toContain(profil);
+            await consents.openEdit(profil);
+            expect(compact(await consents.editorContent(consents.editModal)), "Texte d'origine").toBe(compact(originals[profil]!));
+            await consents.closeEdit();
+          });
+        } finally {
+          await test.step('Remise en état si besoin', async () => ensureConfig(page, profil));
+        }
+      });
+    }
   });
 });
