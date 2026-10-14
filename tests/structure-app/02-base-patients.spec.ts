@@ -144,6 +144,28 @@ test.describe('Module Base patients', () => {
       await createTestPatient(page, true);
       await new DetailPatientPage(page).updateData();
     });
+
+    // Le backend renvoie le téléphone principal en premier : la facturation et les actes
+    // reprennent phones[0] comme téléphone du patient.
+    test('Le téléphone principal reste en premier (liste et fiche administrative)', async ({ page }) => {
+      const digits = (value: string) => value.replace(/\D/g, '').slice(-9);
+      const patientPage = new PatientPage(page);
+      const data = await createTestPatient(page);
+      await test.step('Liste : principal puis secondaire', async () => {
+        const row = page.locator('.compact-table tbody tr').filter({ hasText: data.lastName }).first();
+        const shown = (await row.locator('td:nth-child(6)').innerText()).split('/').map(digits);
+        expect(shown, 'Téléphones affichés').toEqual([digits(data.phonePrimary), digits(data.phoneSecondary)]);
+      });
+      await test.step('Fiche administrative : principal dans le premier champ', async () => {
+        await patientPage.openPatient(data.lastName);
+        await page.waitForURL('**/patient/patient-info-administration/**');
+        await new DetailPatientPage(page).checkIfPageLoad();
+        const phones = page.locator('app-intl-tel-input input[type="tel"]');
+        await expect(phones.first()).not.toHaveValue('');
+        expect(digits(await phones.nth(0).inputValue()), 'Premier champ').toBe(digits(data.phonePrimary));
+        expect(digits(await phones.nth(1).inputValue()), 'Second champ').toBe(digits(data.phoneSecondary));
+      });
+    });
   });
 
   // ======================================================================
