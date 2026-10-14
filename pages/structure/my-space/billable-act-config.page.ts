@@ -5,8 +5,9 @@ export type BillableActRow = { nom: string; type: string; specialite: string; st
 
 /**
  * Administration > Paramètres > "Actes" : actes facturables de la structure, choisis dans le
- * référentiel par spécialité. Un acte déjà ajouté n'est plus proposé à l'ajout ; un acte utilisé
- * ne peut pas être désactivé ; le désactiver désactive aussi la rémunération paramétrée dessus.
+ * référentiel par spécialité. Un acte déjà ajouté n'est plus proposé à l'ajout ; un acte qui a
+ * encore des actes à facturer (non facturés) ne peut pas être désactivé ; le désactiver désactive
+ * aussi la rémunération paramétrée dessus.
  */
 export class BillableActConfigPage {
   private readonly config: MyConfigurationPage;
@@ -36,7 +37,7 @@ export class BillableActConfigPage {
 
   row(nom: string): Locator {
     return this.section.locator('table tbody tr').filter({
-      has: this.page.locator('td[data-label="Nom"]', { hasText: new RegExp(`^\\s*${escapeRegExp(nom)}\\s*$`, 'i') }),
+      has: this.page.locator('td[data-label="Nom"]', { hasText: accentInsensitive(nom) }),
     });
   }
 
@@ -155,7 +156,9 @@ export function normalizeLabel(value: string): string {
 /** Expression du libellé entier, chaque lettre acceptant ses variantes accentuées. */
 function accentInsensitive(label: string): RegExp {
   const variants: Record<string, string> = { A: 'aàâä', C: 'cç', E: 'eéèêë', I: 'iîï', O: 'oôö', U: 'uùûü' };
-  const body = [...normalizeLabel(label)].map(c => variants[c] ? `[${variants[c]}]` : escapeRegExp(c)).join('');
+  // Accents précomposés ("é") ou décomposés ("e" + accent combinant, présents dans le référentiel)
+  // Espaces multiples acceptés : les visites sont nommées "Visite  " + nom (deux espaces)
+  const body = [...normalizeLabel(label)].map(c => c === ' ' ? '\\s+' : (variants[c] ? `[${variants[c]}]` : escapeRegExp(c)) + '[\\u0300-\\u036f]*').join('');
   return new RegExp(`^\\s*${body}\\s*$`, 'i');
 }
 

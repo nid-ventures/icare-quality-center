@@ -421,35 +421,41 @@ test.describe('Module Administration', () => {
 
     /** Actes proposés en facturation pour la catégorie donnée (fenêtre "Ajouter un acte", sans enregistrer). */
     async function billingActs(page: Page, category: string): Promise<string[]> {
+      return (await openBilling(page).then(invoice => invoice.proposedActs(category))).map(a => a.toUpperCase());
+    }
+
+    /** Facturation du patient dédié, référentiels de session rechargés (actes de la structure). */
+    async function openBilling(page: Page): Promise<BillingInvoicePage> {
       await new PortalPage(page).enterModule('Facturation');
       await page.waitForURL('**/billing/billings-create');
-      // Référentiels de session rechargés (actes de la structure)
       const loaded = page.waitForResponse(r => r.url().includes('/modules/loadconfigs'), { timeout: 30000 });
       await page.reload();
       await loaded;
       const invoice = new BillingInvoicePage(page);
       await invoice.searchPatientByIdentifier(patient.identifier);
       await invoice.selectFirstSearchResult();
-      return (await invoice.proposedActs(category)).map(a => a.toUpperCase());
+      return invoice;
     }
 
     test('Choisir une spécialité dont un acte du référentiel n\'est pas encore dans la structure', async ({ page }) => {
       const acts = await openActs(page);
       await acts.openNew();
-      // Spécialités du soignant connecté d'abord, puis "toutes les spécialités" : seules celles-ci
-      // rendent l'acte proposé en facturation pour lui.
+      // Spécialités du soignant connecté d'abord, puis "toutes les spécialités", puis les autres :
+      // chaque passage consomme un acte du référentiel (un acte ajouté ne peut pas être supprimé).
+      // Si l'acte n'est pas d'une spécialité du soignant, il est ensuite étendu à toutes les
+      // spécialités pour être proposé en facturation.
       const mine = (await acts.userSpecialities()).map(s => s.toLowerCase());
-      const rank = (s: string) => mine.includes(s.toLowerCase()) ? 0 : /^toutes les sp/i.test(s) ? 1 : 2;
+      const isAll = (s: string) => /^toutes les sp/i.test(normalizeLabel(s));
+      const rank = (s: string) => mine.includes(s.toLowerCase()) ? 0 : isAll(s) ? 1 : 2;
       const specialities = (await acts.specialities()).filter(Boolean).sort((a, b) => rank(a) - rank(b));
       for (const candidate of specialities) {
         const proposed = await acts.chooseSpeciality(candidate);
         if (proposed.length > 0 && !speciality) { speciality = candidate; act = proposed[0]; }
-        else if (speciality && !otherSpeciality && candidate !== speciality) otherSpeciality = candidate;
+        else if (speciality && !otherSpeciality && candidate !== speciality && !isAll(candidate)) otherSpeciality = candidate;
         if (speciality && otherSpeciality) break;
       }
       await acts.close();
       expect(speciality, 'Une spécialité avec un acte libre').toBeTruthy();
-      expect(rank(speciality), `"${speciality}" : spécialité du soignant connecté ou toutes les spécialités`).toBeLessThan(2);
       expect(otherSpeciality, 'Une seconde spécialité').toBeTruthy();
     });
 
@@ -513,6 +519,20 @@ test.describe('Module Administration', () => {
       }
     });
 
+    test("Étendre l'acte à toutes les spécialités : la liste est ramenée à « toutes »", async ({ page }) => {
+      const acts = await openActs(page);
+      await acts.search({ nom: listed.nom });
+      const before = normalizeLabel((await acts.rows()).find(r => r.nom === listed.nom)?.specialite ?? '');
+      if (!/^TOUTES LES SP/.test(before)) {
+        await acts.openEdit(listed.nom);
+        await acts.addSpeciality('TOUTES LES SPECIALITES');
+        expect(await acts.save(), "Message de l'application").toMatch(/modification a\s+r[ée]ussi/i);
+        await acts.search({ nom: listed.nom });
+      }
+      const row = (await acts.rows()).find(r => r.nom === listed.nom);
+      expect(normalizeLabel(row?.specialite ?? ''), 'Toutes les spécialités seule').toBe('TOUTES LES SPECIALITES');
+    });
+
     test("Modifier un acte en retirant toutes ses spécialités est refusé", async ({ page }) => {
       const acts = await openActs(page);
       await acts.search({ nom: listed.nom });
@@ -542,6 +562,49 @@ test.describe('Module Administration', () => {
       await acts.search({ nom: listed.nom, etat: 'Actif' });
       expect((await acts.rows())[0]?.statut, 'Acte réactivé').toBe('Actif');
       expect(await billingActs(page, listed.type), 'De nouveau proposé').toContain(listed.nom);
+    });
+
+    /** Bascule l'état de l'acte depuis Administration › Actes ; renvoie le message et le statut affiché ensuite. */
+    async function toggleListed(page: Page, from: 'Actif' | 'Inactif') {
+      await new PortalPage(page).enterModule('Administration');
+      const acts = await openActs(page);
+      await acts.search({ nom: listed.nom, etat: from });
+      const message = await acts.toggle(listed.nom);
+      const statuses = async (etat: 'Actif' | 'Inactif') => {
+        await acts.search({ nom: listed.nom, etat });
+        return (await acts.rows()).some(r => r.nom === listed.nom);
+      };
+      return { message, statut: await statuses('Actif') ? 'Actif' : await statuses('Inactif') ? 'Inactif' : '' };
+    }
+
+    // Règle du backend : un acte ne peut pas être désactivé tant qu'il reste des actes à facturer
+    // (non facturés) ; un acte déjà facturé ne bloque pas. La réactivation doit toujours être possible.
+    test("Un acte en attente de facturation ne peut pas être désactivé ; une fois facturé, il peut l'être", async ({ page }) => {
+      await test.step(`Ajouter "${listed.nom}" aux actes à facturer du patient, sans facturer`, async () => {
+        const invoice = await openBilling(page);
+        await invoice.addAct({ category: listed.type, act: listed.nom });
+      });
+      await test.step("Désactivation refusée : acte en cours d'utilisation", async () => {
+        const { message, statut } = await toggleListed(page, 'Actif');
+        expect(message).toMatch(/en cours d.utilisation/i);
+        expect(statut, 'Toujours actif').toBe('Actif');
+      });
+      await test.step(`Facturer "${listed.nom}" (5000, sans prise en charge)`, async () => {
+        const invoice = await openBilling(page);
+        await invoice.setActAmount(listed.nom, 5000);
+        await invoice.proceedToBilling();
+        await invoice.generateInvoice();
+      });
+      await test.step('Acte facturé : la désactivation est acceptée', async () => {
+        const { message, statut } = await toggleListed(page, 'Actif');
+        expect(message).toMatch(/réussi/i);
+        expect(statut, 'Désactivé').toBe('Inactif');
+      });
+      await test.step('La réactivation est acceptée', async () => {
+        const { message, statut } = await toggleListed(page, 'Inactif');
+        expect(message).toMatch(/réussi/i);
+        expect(statut, 'Réactivé').toBe('Actif');
+      });
     });
   });
 });
