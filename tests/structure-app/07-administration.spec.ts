@@ -11,6 +11,8 @@ import { GarantPage } from '../../pages/structure/my-space/garant.page';
 import { BillableActConfigPage, normalizeLabel, accentInsensitive } from '../../pages/structure/my-space/billable-act-config.page';
 import { RemunerationProfilePage } from '../../pages/structure/my-space/remuneration-profile.page';
 import { ConsentConfigPage } from '../../pages/structure/my-space/consent-config.page';
+import { StructureSettingsPage } from '../../pages/structure/my-space/structure-settings.page';
+import { BillingListPatientPage } from '../../pages/structure/billing/billing-list.page';
 import { BillingInvoicePage } from '../../pages/structure/billing/billing-invoice.page';
 import { PortalPage } from '../../pages/structure/portal/portal.page';
 import { PatientPage } from '../../pages/structure/patient/patient.page';
@@ -1008,5 +1010,215 @@ test.describe('Module Administration', () => {
         }
       });
     }
+  });
+
+  // ======================================================================
+  // Détails de la structure et configuration de facture (enregistrement réel)
+  // ======================================================================
+  test.describe('Structure et facture', () => {
+    // Enregistrer déconnecte l'utilisateur : chaque test se reconnecte, et remet toujours les
+    // valeurs d'origine (finally). Le logo n'est jamais enregistré (seuls ses contrôles sont testés).
+    test.describe.configure({ mode: 'serial' });
+    const stamp = Date.now().toString().slice(-6);
+
+    async function openSettings(page: Page) {
+      return new StructureSettingsPage(page);
+    }
+
+    /** Imprime la première facture patient et renvoie son texte et son HTML. */
+    async function printFirstInvoice(page: Page) {
+      const portal = new PortalPage(page);
+      await portal.enterModule('Facturation');
+      await portal.openMenu('Factures patients', '**/billing/billings-patients');
+      const list = new BillingListPatientPage(page);
+      const order = await list.firstOrder();
+      const text = await list.printOf(order);
+      return { text, html: await list.lastPrintedHtml() };
+    }
+
+    test('Détails de la structure : lecture seule, code non modifiable, Annuler remet les valeurs', async ({ page }) => {
+      const settings = await openSettings(page);
+      await settings.openDetails();
+      const original = await settings.readDetails();
+      for (const name of ['name', 'primaryEmail', 'primaryStreet', 'postalCode'] as const) {
+        await expect(settings.detailsInput(name), `${name} en lecture seule`).toHaveAttribute('readonly', '');
+      }
+      await settings.enableDetails();
+      await expect(settings.detailsInput('name'), 'Nom modifiable').not.toHaveAttribute('readonly', '');
+      await expect(settings.detailsInput('hiCode'), 'Code structure toujours en lecture seule').toHaveAttribute('readonly', '');
+      await settings.fillDetails({ name: `${original.name} QA`, primaryStreet: 'Rue annulée' });
+      await settings.cancelDetails();
+      expect(await settings.readDetails(), 'Valeurs d\'origine').toEqual(original);
+    });
+
+    test('Détails de la structure : nom et e-mail obligatoires, e-mail valide', async ({ page }) => {
+      const settings = await openSettings(page);
+      await settings.openDetails();
+      const original = await settings.readDetails();
+      await settings.enableDetails();
+      await expect(settings.detailsSave, 'Formulaire valide').toBeEnabled();
+      await test.step('Nom vide refusé', async () => {
+        await settings.fillDetails({ name: '' });
+        await expect(settings.detailsSave).toBeDisabled();
+        await settings.fillDetails({ name: original.name });
+      });
+      for (const email of ['', 'pas-un-email']) {
+        await test.step(`E-mail "${email}" refusé`, async () => {
+          await settings.fillDetails({ primaryEmail: email });
+          await expect(settings.detailsSave).toBeDisabled();
+        });
+      }
+      await settings.cancelDetails();
+      expect(await settings.readDetails()).toEqual(original);
+    });
+
+    test('Logo : format, taille et dimensions contrôlés (sans enregistrer)', async ({ page }) => {
+      const settings = await openSettings(page);
+      await settings.openDetails();
+      await settings.enableDetails();
+      const error = (text: string) => settings.details.getByText(text);
+      await test.step('Fichier PDF refusé', async () => {
+        await settings.logoInput.setInputFiles({ name: 'logo.pdf', mimeType: 'application/pdf', buffer: Buffer.from('%PDF-1.4 test') });
+        await expect(error('Format non supporté (JPEG/PNG)')).toBeVisible();
+        await expect(settings.detailsSave).toBeDisabled();
+      });
+      await test.step('Image de plus de 1 Mo refusée', async () => {
+        // Bruit aléatoire : le PNG ne se compresse pas et dépasse 1 Mo
+        const big = Buffer.from(await page.evaluate(() => {
+          const canvas = document.createElement('canvas');
+          canvas.width = 1200; canvas.height = 1200;
+          const ctx = canvas.getContext('2d')!;
+          const img = ctx.createImageData(1200, 1200);
+          for (let i = 0; i < img.data.length; i++) img.data[i] = Math.floor(Math.random() * 256);
+          ctx.putImageData(img, 0, 0);
+          return canvas.toDataURL('image/png').split(',')[1];
+        }), 'base64');
+        expect(big.length, 'Image de test > 1 Mo').toBeGreaterThan(1024 * 1024);
+        await settings.logoInput.setInputFiles({ name: 'grand.png', mimeType: 'image/png', buffer: big });
+        await expect(error('Taille max 1MB')).toBeVisible();
+        await expect(settings.detailsSave).toBeDisabled();
+      });
+      await test.step('Image 200 × 200 refusée', async () => {
+        await settings.logoInput.setInputFiles({ name: 'carre.png', mimeType: 'image/png', buffer: await settings.png(200, 200) });
+        await expect(error('Dimensions 180x180 requises')).toBeVisible();
+        await expect(settings.detailsSave).toBeDisabled();
+      });
+      await test.step('Image 180 × 200 refusée (une seule dimension juste)', async () => {
+        await settings.logoInput.setInputFiles({ name: 'rect.png', mimeType: 'image/png', buffer: await settings.png(180, 200) });
+        await expect.soft(error('Dimensions 180x180 requises'), 'Dimensions 180x200 refusées').toBeVisible();
+      });
+      await test.step('Image 180 × 180 acceptée', async () => {
+        await settings.logoInput.setInputFiles({ name: 'ok.png', mimeType: 'image/png', buffer: await settings.png(180, 180) });
+        await expect(settings.details.locator('.error')).toHaveCount(0);
+        await expect(settings.detailsSave).toBeEnabled();
+      });
+      // Le logo choisi n'est jamais enregistré : la page est quittée sans sauvegarde
+      await settings.cancelDetails();
+    });
+
+    test('Enregistrer les détails : repris après reconnexion et imprimés sur les factures', async ({ page }) => {
+      test.setTimeout(Math.max(test.info().timeout, 600000));
+      let settings = await openSettings(page);
+      await settings.openDetails();
+      const original = await settings.readDetails();
+      const changed = { name: `${original.name} QA`, primaryStreet: `Rue QA ${stamp}`, postalCode: `QA${stamp}` };
+      try {
+        await test.step('Modifier nom, adresse et code postal, enregistrer (déconnexion puis reconnexion)', async () => {
+          await settings.enableDetails();
+          await settings.fillDetails(changed);
+          await settings.saveAndRelogin(settings.detailsSave);
+        });
+        await test.step('Les nouvelles valeurs sont affichées', async () => {
+          settings = await openSettings(page);
+          await settings.openDetails();
+          expect(await settings.readDetails()).toEqual({ ...original, ...changed });
+        });
+        await test.step('La facture imprimée porte le nouveau nom et la nouvelle adresse', async () => {
+          const { text } = await printFirstInvoice(page);
+          expect.soft(text, 'Nom de la structure').toContain(changed.name);
+          expect.soft(text, 'Adresse de la structure').toContain(changed.primaryStreet);
+        });
+      } finally {
+        await test.step("Remettre les valeurs d'origine", async () => {
+          await new PortalPage(page).enterModule('Administration').catch(() => {});
+          await page.waitForURL('**/my-space/configuration').catch(() => {});
+          settings = await openSettings(page);
+          await settings.openDetails();
+          if (JSON.stringify(await settings.readDetails()) !== JSON.stringify(original)) {
+            await settings.enableDetails();
+            await settings.fillDetails(original);
+            await settings.saveAndRelogin(settings.detailsSave);
+            settings = await openSettings(page);
+            await settings.openDetails();
+          }
+          expect(await settings.readDetails(), "Valeurs d'origine").toEqual(original);
+        });
+      }
+    });
+
+    test('Configuration de facture : lecture seule, Annuler remet les valeurs', async ({ page }) => {
+      const settings = await openSettings(page);
+      await settings.openInvoice();
+      const original = await settings.readInvoice();
+      for (const name of ['policy', 'header', 'footer'] as const) {
+        await expect(settings.invoiceInput(name), `${name} en lecture seule`).toHaveAttribute('readonly', '');
+      }
+      await settings.enableInvoice();
+      await settings.fillInvoice({ header: 'En-tête annulé', footer: 'Pied annulé' });
+      await settings.cancelInvoice();
+      expect(await settings.readInvoice(), "Valeurs d'origine").toEqual(original);
+    });
+
+    test('Enregistrer la configuration de facture : reprise après reconnexion et appliquée aux factures imprimées', async ({ page }) => {
+      test.setTimeout(Math.max(test.info().timeout, 600000));
+      let settings = await openSettings(page);
+      await settings.openInvoice();
+      // La police enregistrée n'est pas réaffichée par le formulaire : elle est lue dans la session
+      const saved = await page.evaluate(() => JSON.parse(localStorage.getItem('refdatahi') ?? '{}'));
+      const original = { ...(await settings.readInvoice()), policy: saved.policy || 'Calibri' };
+      const changed = { policy: 'Arial', color: '#1a5276', header: `En-tête QA ${stamp}`, footer: `Pied de page QA ${stamp}` };
+      try {
+        await test.step('Modifier police, couleur, en-tête et pied de page, enregistrer (déconnexion puis reconnexion)', async () => {
+          await settings.enableInvoice();
+          await settings.fillInvoice(changed);
+          await settings.saveAndRelogin(settings.invoiceSave);
+        });
+        await test.step('Les nouvelles valeurs sont affichées', async () => {
+          settings = await openSettings(page);
+          await settings.openInvoice();
+          const shown = await settings.readInvoice();
+          expect.soft(shown.header, 'En-tête').toBe(changed.header);
+          expect.soft(shown.footer, 'Pied de page').toBe(changed.footer);
+          expect.soft(shown.color, 'Couleur').toBe(changed.color);
+          expect.soft(shown.policy, 'Police réaffichée').toBe(changed.policy);
+        });
+        await test.step('La facture imprimée applique en-tête, pied de page, police et couleur', async () => {
+          const { text, html } = await printFirstInvoice(page);
+          expect.soft(text, 'En-tête imprimé').toContain(changed.header);
+          expect.soft(text, 'Pied de page imprimé').toContain(changed.footer);
+          expect.soft(html, 'Police').toMatch(/font-family:\s*Arial/);
+          expect.soft(html.toLowerCase(), 'Couleur').toMatch(/#1a5276|rgb\(26,\s*82,\s*118\)/);
+        });
+      } finally {
+        await test.step("Remettre les valeurs d'origine", async () => {
+          await new PortalPage(page).enterModule('Administration').catch(() => {});
+          await page.waitForURL('**/my-space/configuration').catch(() => {});
+          settings = await openSettings(page);
+          await settings.openInvoice();
+          const now = await page.evaluate(() => JSON.parse(localStorage.getItem('refdatahi') ?? '{}'));
+          const current = { ...(await settings.readInvoice()), policy: now.policy || 'Calibri' };
+          if (JSON.stringify(current) !== JSON.stringify(original)) {
+            await settings.enableInvoice();
+            await settings.fillInvoice(original);
+            await settings.saveAndRelogin(settings.invoiceSave);
+            settings = await openSettings(page);
+            await settings.openInvoice();
+          }
+          const restored = await settings.readInvoice();
+          expect({ header: restored.header, footer: restored.footer, color: restored.color }, "Valeurs d'origine")
+            .toEqual({ header: original.header, footer: original.footer, color: original.color });
+        });
+      }
+    });
   });
 });

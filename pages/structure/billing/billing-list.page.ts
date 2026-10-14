@@ -302,6 +302,19 @@ export class BillingListPatientPage {
         await this.identifiantPatientInput.fill(patientIdentifier);
         return readInvoices(this.page, this.rechercherButton, this.rows, 8);
     }
+
+    /** N° de la première facture de la liste, sans critère. */
+    async firstOrder(): Promise<string> {
+        await this.rechercherButton.click();
+        await this.page.locator('.loading-compact, .loader').first().waitFor({ state: 'hidden', timeout: 15000 }).catch(() => { });
+        await expect(this.rows.first(), 'Au moins une facture patient').toBeVisible({ timeout: 30000 });
+        return (await this.rows.first().locator('td:nth-child(1)').innerText()).trim();
+    }
+
+    /** HTML de la dernière impression interceptée (styles compris : police, couleur). */
+    async lastPrintedHtml(): Promise<string> {
+        return this.page.evaluate(() => (window as any).__qaPrintedHtml ?? '');
+    }
 }
 
 /** Page des factures garants (`/billing/billings-garants`). */
@@ -653,7 +666,10 @@ async function interceptPrint(page: Page): Promise<void> {
             const result = append.call(this, child) as T;
             if (child instanceof HTMLIFrameElement && child.contentWindow) {
                 const frame = child.contentWindow as any;
-                frame.print = () => { w.__qaPrinted = frame.document.body?.innerText ?? ''; };
+                frame.print = () => {
+                    w.__qaPrintedHtml = frame.document.documentElement?.outerHTML ?? '';
+                    w.__qaPrinted = frame.document.body?.innerText ?? '';
+                };
             }
             return result;
         };
