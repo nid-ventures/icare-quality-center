@@ -277,6 +277,8 @@ test.describe('Module Honoraires', () => {
     /** Retrouve le relevé dans la liste (filtre médecin et statut : un relevé payé n'est pas listé sinon). */
     async function openStatement(page: Page, ref: string, statut: 'Non Payé' | 'Payé' = 'Non Payé') {
       const listPage = new HonorairesListPage(page);
+      // Le menu "Relevés d'honoraires" n'existe que dans le module Honoraires
+      await new PortalPage(page).enterModule('Honoraires');
       await listPage.goto();
       await listPage.filtrerParMedecin(ctx.medecin);
       await listPage.filtrerParStatut(statut);
@@ -405,9 +407,16 @@ test.describe('Module Honoraires', () => {
         await new PortalPage(page).openMenu('Factures patients', '**/billing/billings-patients');
         order = (await list.invoicesOf(patient.identifier)).find(i => i.amount === 3000)?.order ?? '';
         expect(order, 'Facture de 3 000').toBeTruthy();
+        // Réponse du backend à la suppression, reportée dans le message en cas d'échec
+        const answer = page.waitForResponse(r => r.request().method() === 'DELETE', { timeout: 30000 }).catch(() => null);
+        // Message guetté dès la confirmation : la suppression attend ensuite un rechargement de page
+        // qui n'a pas lieu en cas de refus, et le message se referme entre-temps.
+        const refusal = page.getByText(/Suppression impossible : des actes de cette facture figurent dans un relevé d'honoraires/).first();
+        const shown = refusal.waitFor({ state: 'visible', timeout: 30000 }).then(() => true, () => false);
         await list.deleteInvoice(order);
-        await expect(page.getByText(/Suppression impossible : des actes de cette facture figurent dans un relevé d'honoraires/).first(),
-          'Refus expliqué').toBeVisible({ timeout: 15000 });
+        const response = await answer;
+        const detail = response ? `HTTP ${response.status()} ${await response.text().catch(() => '')}` : 'aucune requête DELETE';
+        expect(await shown, `Refus expliqué (réponse : ${detail})`).toBe(true);
       });
       await test.step('La facture est toujours là', async () => {
         await new PortalPage(page).enterModule('Facturation');

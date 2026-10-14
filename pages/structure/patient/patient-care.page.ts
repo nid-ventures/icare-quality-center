@@ -221,6 +221,17 @@ export class PatientCarePage {
         await expect(this.page.locator('#pills-prise-en-charge-fill tbody tr').filter({ hasText: cover.insurer }).first()).toBeVisible({ timeout: 15000 });
     }
 
+    /** Assureurs proposés dans "Ajouter prise en charge" (garants actifs de la structure), fenêtre refermée. */
+    async proposedInsurers(): Promise<string[]> {
+        await this.openAddCareModal();
+        await this.insurerSelect.click();
+        const options = this.page.locator('.ng-dropdown-panel .ng-option:not(.ng-option-disabled)');
+        await expect(options.first()).toBeVisible({ timeout: 10000 });
+        const names = (await options.allTextContents()).map(s => s.replace(/\s+/g, ' ').trim());
+        await this.closeModal();
+        return names;
+    }
+
     /** Supprime toutes les prises en charge du patient ouvert. */
     async removeAllCovers() {
         const rows = this.page.locator('#pills-prise-en-charge-fill tbody tr').filter({ has: this.page.getByRole('button', { name: 'Action' }) });
