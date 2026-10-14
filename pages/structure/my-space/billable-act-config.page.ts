@@ -154,7 +154,7 @@ export function normalizeLabel(value: string): string {
 }
 
 /** Expression du libellé entier, chaque lettre acceptant ses variantes accentuées. */
-function accentInsensitive(label: string): RegExp {
+export function accentInsensitive(label: string): RegExp {
   const variants: Record<string, string> = { A: 'aàâä', C: 'cç', E: 'eéèêë', I: 'iîï', O: 'oôö', U: 'uùûü' };
   // Accents précomposés ("é") ou décomposés ("e" + accent combinant, présents dans le référentiel)
   // Espaces multiples acceptés : les visites sont nommées "Visite  " + nom (deux espaces)

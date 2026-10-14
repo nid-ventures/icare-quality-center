@@ -1,5 +1,6 @@
 import { type Page, type Locator, expect } from '@playwright/test';
 import { MyConfigurationPage } from './configuration.page';
+import { accentInsensitive, normalizeLabel } from './billable-act-config.page';
 
 export interface RemunerationProfileData {
   speciality: string;   // libellé de la spécialité (ex: "pédiatrie")
@@ -159,7 +160,130 @@ export class RemunerationProfilePage {
     await expect(this.modal).toBeHidden({ timeout: 20000 });
     await expect(this.activeProfile(data.speciality, data.act).first()).toBeVisible({ timeout: 15000 });
   }
+
+  // ======================== Gestion complète (Administration > Rémunération médecin) ========================
+
+  /** Lignes du tableau (première page) : textes des colonnes, espaces normalisés. */
+  async listRows(): Promise<RemunerationRow[]> {
+    const result: RemunerationRow[] = [];
+    for (const row of await this.rows().all()) {
+      const cell = async (label: string) => ((await row.locator(`td[data-label="${label}"]`).textContent()) ?? '').replace(/\s+/g, ' ').trim();
+      result.push({
+        acte: await cell('Acte'), specialite: await cell('Spécialité'), type: await cell('Type'), taux: await cell('Taux'),
+        montant: await cell('Montant'), debut: await cell('Début'), fin: await cell('Fin'), statut: await cell('Statut'),
+      });
+    }
+    return result;
+  }
+
+  /** Ligne du tableau d'un acte (libellé complet, sans tenir compte des accents ni des espaces). */
+  row(act: string): Locator {
+    return this.rows().filter({ has: this.page.locator('td[data-label="Acte"]', { hasText: accentInsensitive(act) }) });
+  }
+
+  /** Lignes du tableau pour un acte. */
+  async rowsOf(act: string): Promise<RemunerationRow[]> {
+    const target = normalizeLabel(act);
+    return (await this.listRows()).filter(r => normalizeLabel(r.acte) === target);
+  }
+
+  /** Recherche avancée : nom d'acte, spécialité, type, état (un filtre absent est vidé). */
+  async search(filters: { nom?: string; specialite?: string; type?: string; etat?: 'Actif' | 'Inactif' } = {}) {
+    await this.section.getByRole('button', { name: /Réinitialiser/ }).click();
+    await this.waitForList();
+    // Filtres dans l'ordre : Spécialité, Type, État
+    const selects = this.section.locator('.form-grid ng-select');
+    // Le backend cherche dans le nom seul : le préfixe de type ("Consultation ", "Visite ") est retiré
+    if (filters.nom) await this.section.getByPlaceholder("Nom de l'acte...").fill(filters.nom.replace(/^(CONSULTATION|VISITE)\s+/i, ''));
+    if (filters.specialite) await this.pickExact(selects.nth(0), filters.specialite);
+    if (filters.type) await this.pickExact(selects.nth(1), filters.type);
+    if (filters.etat) await this.pickExact(selects.nth(2), filters.etat);
+    await this.section.getByRole('button', { name: /^\W*Rechercher$/ }).click();
+    await this.waitForList();
+  }
+
+  private async waitForList() {
+    await this.page.waitForTimeout(500);
+    await this.page.locator('app-loader .backdrop.full-screen').waitFor({ state: 'hidden', timeout: 30000 }).catch(() => {});
+    await expect(this.section.locator('table tbody tr').first()).toBeVisible();
+  }
+
+  /** Option au libellé exact (accents et espaces ignorés) ; la liste peut passer sous la carte suivante. */
+  private async pickExact(select: Locator, label: string) {
+    await select.locator('.ng-select-container').click();
+    const option = this.page.locator('.ng-dropdown-panel .ng-option:not(.ng-optgroup)').filter({ hasText: accentInsensitive(label) }).first();
+    await expect(option, `Option "${label}"`).toBeVisible({ timeout: 10000 });
+    await option.click({ timeout: 5000 }).catch(() => option.dispatchEvent('click'));
+    if (await this.page.locator('.ng-dropdown-panel').isVisible().catch(() => false)) await select.locator('.ng-arrow-wrapper').click();
+  }
+
+  get specialitySelect(): Locator { return this.modal.locator('ng-select[formcontrolname="specialities"]'); }
+  get actsSelect(): Locator { return this.modal.locator('ng-select[formcontrolname="billableActs"]'); }
+  /** "Enregistrer" en création, "Modifier" en modification. */
+  get saveButton(): Locator { return this.modal.locator('.modal-modern-footer button.btn-primary'); }
+
+  async openNew() {
+    // À l'ouverture, le front charge toutes les rémunérations actives pour exclure leurs actes
+    const loaded = this.page.waitForResponse(r => r.url().includes('/renumerations/profiles?active=true'), { timeout: 30000 });
+    await this.section.locator('button[title="Nouvelle rémunération"]').click();
+    await expect(this.modal).toBeVisible();
+    await loaded;
+  }
+
+  async openEdit(act: string) {
+    await this.row(act).first().locator('button.action-edit').click();
+    await expect(this.modal).toBeVisible();
+  }
+
+  async close() {
+    await this.modal.getByRole('button', { name: /Fermer|Annuler/ }).first().click();
+    await expect(this.modal).toBeHidden();
+  }
+
+  /** Choisit la spécialité de la fenêtre et renvoie les actes proposés pour elle. */
+  async chooseSpeciality(speciality: string): Promise<string[]> {
+    await this.pickExact(this.specialitySelect, speciality);
+    await this.actsSelect.locator('.ng-select-container').click();
+    const names = (await this.page.locator('.ng-dropdown-panel .ng-option:not(.ng-optgroup):not(.ng-option-disabled)').allTextContents())
+      .map(s => s.replace(/\s+/g, ' ').trim()).filter(n => n && !/No items found/i.test(n));
+    await this.actsSelect.locator('.ng-arrow-wrapper').click();
+    return names;
+  }
+
+  async chooseAct(act: string) {
+    await this.pickExact(this.actsSelect, act);
+  }
+
+  /** Ligne de saisie d'un acte choisi dans la fenêtre (taux, montant, dates). */
+  actLine(act: string): Locator {
+    return this.modal.locator('table tbody tr').filter({ has: this.page.locator('td[data-label="Acte"]', { hasText: accentInsensitive(act) }) });
+  }
+
+  rateInput(act: string): Locator { return this.actLine(act).getByPlaceholder('Ex: 15'); }
+  amountInput(act: string): Locator { return this.actLine(act).getByPlaceholder('Ex: 5 000'); }
+  startInput(act: string): Locator { return this.actLine(act).locator('input[type="date"]').nth(0); }
+  endInput(act: string): Locator { return this.actLine(act).locator('input[type="date"]').nth(1); }
+
+  /** Enregistre et renvoie le message de l'application ('' si aucun). */
+  async save(): Promise<string> {
+    await expect(this.saveButton).toBeEnabled();
+    await this.saveButton.click();
+    const toast = this.page.locator('.toast-success, .toast-error').first();
+    return (await toast.waitFor({ state: 'visible', timeout: 15000 }).then(() => toast.innerText(), () => '')).replace(/\s+/g, ' ').trim();
+  }
+
+  /** Active ou désactive la rémunération de l'acte (confirmation comprise) et renvoie le message. */
+  async toggle(act: string): Promise<string> {
+    await this.row(act).first().locator('button.action-toggle').click();
+    await expect(this.page.getByText(/Êtes-vous sûr de vouloir (désactiver|activer) cette rémunération/)).toBeVisible();
+    await this.page.getByRole('button', { name: 'Confirmer' }).click();
+    const message = this.page.getByText(/Rémunération (désactivée|activée) avec succès|n'est plus valable|mise à jour de l'état a échoué/).first();
+    await expect(message).toBeVisible({ timeout: 15000 });
+    return ((await message.textContent()) ?? '').replace(/\s+/g, ' ').trim();
+  }
 }
+
+export type RemunerationRow = { acte: string; specialite: string; type: string; taux: string; montant: string; debut: string; fin: string; statut: string };
 
 /** Expression régulière tolérant les espaces multiples des libellés de l'application. */
 function looseText(value: string): string {

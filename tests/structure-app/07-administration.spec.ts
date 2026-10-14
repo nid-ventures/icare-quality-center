@@ -7,7 +7,8 @@ import { MyConfigurationPage } from '../../pages/structure/my-space/configuratio
 import { AccountDataGenerator } from '../../pages/structure/generator/account-data-generator';
 import { adminUser } from '../../test-data/structure-users';
 import { GarantPage } from '../../pages/structure/my-space/garant.page';
-import { BillableActConfigPage, normalizeLabel } from '../../pages/structure/my-space/billable-act-config.page';
+import { BillableActConfigPage, normalizeLabel, accentInsensitive } from '../../pages/structure/my-space/billable-act-config.page';
+import { RemunerationProfilePage } from '../../pages/structure/my-space/remuneration-profile.page';
 import { BillingInvoicePage } from '../../pages/structure/billing/billing-invoice.page';
 import { PortalPage } from '../../pages/structure/portal/portal.page';
 import { PatientPage } from '../../pages/structure/patient/patient.page';
@@ -605,6 +606,260 @@ test.describe('Module Administration', () => {
         expect(message).toMatch(/réussi/i);
         expect(statut, 'Réactivé').toBe('Actif');
       });
+    });
+  });
+
+  // ======================================================================
+  // Rémunération médecin (profils de rémunération par acte)
+  // ======================================================================
+  test.describe('Rémunération médecin', () => {
+    // Règles (front + backend) : une seule rémunération par acte (code + type) ; taux (0,01 à 100 %)
+    // ou montant fixe, l'un vide l'autre ; date de début obligatoire, date de fin facultative et
+    // pas avant le début ; en modification, spécialité et acte sont verrouillés ; désactiver l'acte
+    // désactive sa rémunération, qui ne peut pas être réactivée tant que l'acte est inactif ;
+    // recréer la rémunération d'un acte dont la rémunération est désactivée la réactive.
+    // Les tests partent d'un acte ajouté à la structure pour l'occasion (sans rémunération ni facture).
+    test.describe.configure({ mode: 'serial' });
+    let speciality = '';
+    let otherSpeciality = '';
+    let act = '';
+    let profileType = '';
+
+    /** Date du jour décalée : "AAAA-MM-JJ" (champ date) et "JJ/MM/AAAA" (tableau). */
+    const day = (offset: number) => {
+      const d = new Date(Date.now() + offset * 86400000);
+      const pad = (n: number) => String(n).padStart(2, '0');
+      return { iso: `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`, fr: `${pad(d.getDate())}/${pad(d.getMonth() + 1)}/${d.getFullYear()}` };
+    };
+    const digits = (text: string) => text.replace(/[^\d]/g, '');
+
+    async function openProfiles(page: Page) {
+      const profiles = new RemunerationProfilePage(page);
+      await profiles.open();
+      return profiles;
+    }
+
+    /** Rémunération de l'acte dans la liste (tous états confondus). */
+    async function profileRows(profiles: RemunerationProfilePage) {
+      const rows = [];
+      for (const etat of ['Actif', 'Inactif'] as const) {
+        await profiles.search({ nom: act, etat });
+        rows.push(...await profiles.rowsOf(act));
+      }
+      return rows;
+    }
+
+    test("Préparer un acte de la structure sans rémunération", async ({ page }) => {
+      const acts = new BillableActConfigPage(page);
+      await acts.open();
+      await acts.openNew();
+      const isAll = (s: string) => /^TOUTES LES SP/.test(normalizeLabel(s));
+      for (const candidate of (await acts.specialities()).filter(s => s && !isAll(s))) {
+        const proposed = await acts.chooseSpeciality(candidate);
+        if (proposed.length > 0 && !speciality) { speciality = candidate; act = proposed[0]; }
+        else if (speciality && !otherSpeciality && candidate !== speciality) otherSpeciality = candidate;
+        if (speciality && otherSpeciality) break;
+      }
+      expect(speciality, 'Une spécialité avec un acte libre').toBeTruthy();
+      await acts.chooseSpeciality(speciality);
+      await acts.chooseAct(act);
+      expect(await acts.save(), "Message de l'application").toMatch(/enregistrement a\s+r[ée]ussi/i);
+      await acts.search({ nom: act });
+      const row = (await acts.rows()).find(r => normalizeLabel(r.nom) === normalizeLabel(act));
+      expect(row, `Acte "${act}" ajouté`).toBeDefined();
+
+    });
+
+    test('Nouvelle rémunération : spécialité et acte obligatoires', async ({ page }) => {
+      const profiles = await openProfiles(page);
+      await profiles.openNew();
+      await expect(profiles.saveButton, 'Enregistrer inactif sans spécialité ni acte').toBeDisabled();
+      await profiles.chooseSpeciality(speciality);
+      await expect(profiles.saveButton, 'Enregistrer inactif sans acte').toBeDisabled();
+      await profiles.close();
+    });
+
+    test('Taux ou montant obligatoire, taux limité à 100 %, taux et montant s\'excluent', async ({ page }) => {
+      const profiles = await openProfiles(page);
+      await profiles.openNew();
+      expect(await profiles.chooseSpeciality(speciality), "L'acte de la spécialité est proposé").toContainEqual(expect.stringMatching(accentInsensitive(act)));
+      await profiles.chooseAct(act);
+      await expect(profiles.startInput(act), 'Début : aujourd\'hui par défaut').toHaveValue(day(0).iso);
+      await expect(profiles.saveButton, 'Ni taux ni montant').toBeDisabled();
+      await test.step('Taux de 150 % refusé', async () => {
+        await profiles.rateInput(act).fill('150');
+        await expect(profiles.actLine(act).getByText('Le taux ne peut pas dépasser 100%')).toBeVisible();
+        await expect(profiles.saveButton).toBeDisabled();
+      });
+      await test.step('Taux de 15 % accepté', async () => {
+        await profiles.rateInput(act).fill('15');
+        await expect(profiles.saveButton).toBeEnabled();
+      });
+      await test.step('Saisir un montant vide le taux, et inversement', async () => {
+        await profiles.amountInput(act).pressSequentially('5000');
+        await expect(profiles.rateInput(act)).toHaveValue('');
+        await profiles.rateInput(act).fill('10');
+        await expect(profiles.amountInput(act)).toHaveValue('');
+      });
+      await profiles.close();
+    });
+
+    test('Dates : début obligatoire, fin pas avant le début', async ({ page }) => {
+      const profiles = await openProfiles(page);
+      await profiles.openNew();
+      await profiles.chooseSpeciality(speciality);
+      await profiles.chooseAct(act);
+      await profiles.rateInput(act).fill('15');
+      await test.step('Fin la veille du début refusée', async () => {
+        await profiles.endInput(act).fill(day(-1).iso);
+        await expect(profiles.actLine(act).getByText('La date de fin doit être après la date de début')).toBeVisible();
+        await expect(profiles.saveButton).toBeDisabled();
+      });
+      await test.step('Fin le même jour acceptée', async () => {
+        await profiles.endInput(act).fill(day(0).iso);
+        await expect(profiles.saveButton).toBeEnabled();
+      });
+      await test.step('Début vidé refusé', async () => {
+        await profiles.startInput(act).fill('');
+        await expect(profiles.actLine(act).getByText('Date obligatoire')).toBeVisible();
+        await expect(profiles.saveButton).toBeDisabled();
+      });
+      await profiles.close();
+    });
+
+    test('Créer une rémunération à taux', async ({ page }) => {
+      const profiles = await openProfiles(page);
+      await profiles.openNew();
+      await profiles.chooseSpeciality(speciality);
+      await profiles.chooseAct(act);
+      await profiles.rateInput(act).fill('15');
+      await profiles.endInput(act).fill(day(30).iso);
+      expect(await profiles.save(), "Message de l'application").toMatch(/créé avec succès/i);
+      await profiles.search({ nom: act });
+      const rows = await profiles.rowsOf(act);
+      expect(rows, 'Une rémunération pour l\'acte').toHaveLength(1);
+      expect.soft(normalizeLabel(rows[0].specialite)).toBe(normalizeLabel(speciality));
+      profileType = rows[0].type;
+      expect.soft(rows[0].taux).toBe('15%');
+      expect.soft(rows[0].montant).toBe('-');
+      expect.soft(rows[0].debut).toBe(day(0).fr);
+      expect.soft(rows[0].fin).toBe(day(30).fr);
+      expect.soft(rows[0].statut).toBe('Actif');
+    });
+
+    test("Un acte déjà rémunéré n'est plus proposé, même si la liste affichée est filtrée", async ({ page }) => {
+      const profiles = await openProfiles(page);
+      await test.step('Liste non filtrée', async () => {
+        await profiles.openNew();
+        expect(await profiles.chooseSpeciality(speciality)).not.toContainEqual(expect.stringMatching(accentInsensitive(act)));
+        await profiles.close();
+      });
+      await test.step(`Liste filtrée sur une autre spécialité (${otherSpeciality})`, async () => {
+        await profiles.search({ specialite: otherSpeciality });
+        await profiles.openNew();
+        expect(await profiles.chooseSpeciality(speciality)).not.toContainEqual(expect.stringMatching(accentInsensitive(act)));
+        await profiles.close();
+      });
+    });
+
+    test('Filtrer par acte, spécialité, type et état', async ({ page }) => {
+      const profiles = await openProfiles(page);
+      await profiles.search({ nom: act });
+      expect.soft(await profiles.rowsOf(act), 'Par acte').toHaveLength(1);
+      await profiles.search({ specialite: speciality });
+      const bySpeciality = await profiles.listRows();
+      expect.soft(bySpeciality.every(r => normalizeLabel(r.specialite) === normalizeLabel(speciality)), 'Par spécialité').toBe(true);
+      await profiles.search({ type: profileType });
+      const byType = await profiles.listRows();
+      expect.soft(byType.every(r => normalizeLabel(r.type) === normalizeLabel(profileType)), 'Par type').toBe(true);
+      for (const etat of ['Actif', 'Inactif'] as const) {
+        await profiles.search({ etat });
+        expect.soft((await profiles.listRows()).every(r => r.statut === etat), `Par état "${etat}"`).toBe(true);
+      }
+    });
+
+    test('Modifier : spécialité et acte verrouillés, passage du taux au montant fixe', async ({ page }) => {
+      const profiles = await openProfiles(page);
+      await profiles.search({ nom: act });
+      await profiles.openEdit(act);
+      await expect(profiles.specialitySelect, 'Spécialité verrouillée').toHaveClass(/ng-select-disabled/);
+      await expect(profiles.actsSelect, 'Acte verrouillé').toHaveClass(/ng-select-disabled/);
+      await expect(profiles.rateInput(act), 'Taux repris').toHaveValue('15');
+      await expect(profiles.endInput(act), 'Fin reprise').toHaveValue(day(30).iso);
+      await profiles.amountInput(act).pressSequentially('7500');
+      await expect(profiles.rateInput(act), 'Taux vidé').toHaveValue('');
+      expect(await profiles.save(), "Message de l'application").toMatch(/modifié avec succès/i);
+      await profiles.search({ nom: act });
+      const rows = await profiles.rowsOf(act);
+      expect(rows, 'Toujours une seule rémunération').toHaveLength(1);
+      expect.soft(rows[0].taux).toBe('-');
+      expect.soft(digits(rows[0].montant)).toBe('7500');
+      expect.soft(rows[0].fin).toBe(day(30).fr);
+    });
+
+    test('Désactiver puis réactiver la rémunération', async ({ page }) => {
+      const profiles = await openProfiles(page);
+      await profiles.search({ nom: act, etat: 'Actif' });
+      expect(await profiles.toggle(act)).toMatch(/désactivée avec succès/);
+      expect((await profileRows(profiles)).map(r => r.statut), 'Désactivée').toEqual(['Inactif']);
+      await profiles.search({ nom: act, etat: 'Inactif' });
+      expect(await profiles.toggle(act)).toMatch(/activée avec succès/);
+      expect((await profileRows(profiles)).map(r => r.statut), 'Réactivée').toEqual(['Actif']);
+    });
+
+    test("Désactiver l'acte désactive sa rémunération, qui ne peut pas être réactivée tant que l'acte est inactif", async ({ page }) => {
+      const acts = new BillableActConfigPage(page);
+      const toggleAct = async (from: 'Actif' | 'Inactif') => {
+        await acts.open();
+        await acts.search({ nom: act, etat: from });
+        expect(await acts.toggle(act)).toMatch(/réussi/i);
+      };
+      await test.step("Désactiver l'acte", async () => toggleAct('Actif'));
+      await test.step('Sa rémunération est désactivée', async () => {
+        const profiles = await openProfiles(page);
+        expect((await profileRows(profiles)).map(r => r.statut)).toEqual(['Inactif']);
+      });
+      await test.step("Réactivation de la rémunération refusée : l'acte n'est plus valable", async () => {
+        const profiles = await openProfiles(page);
+        await profiles.search({ nom: act, etat: 'Inactif' });
+        expect(await profiles.toggle(act)).toMatch(/n'est plus valable/);
+        expect((await profileRows(profiles)).map(r => r.statut)).toEqual(['Inactif']);
+      });
+      await test.step("Réactiver l'acte : la rémunération reste désactivée", async () => {
+        await toggleAct('Inactif');
+        const profiles = await openProfiles(page);
+        expect((await profileRows(profiles)).map(r => r.statut)).toEqual(['Inactif']);
+      });
+      await test.step('La rémunération peut alors être réactivée', async () => {
+        const profiles = await openProfiles(page);
+        await profiles.search({ nom: act, etat: 'Inactif' });
+        expect(await profiles.toggle(act)).toMatch(/activée avec succès/);
+        expect((await profileRows(profiles)).map(r => r.statut)).toEqual(['Actif']);
+      });
+    });
+
+    test("Recréer la rémunération d'un acte dont la rémunération est désactivée la réactive avec les nouvelles valeurs", async ({ page }) => {
+      const profiles = await openProfiles(page);
+      await profiles.search({ nom: act, etat: 'Actif' });
+      expect(await profiles.toggle(act)).toMatch(/désactivée avec succès/);
+      await profiles.search();
+      await profiles.openNew();
+      expect(await profiles.chooseSpeciality(speciality), 'Acte de nouveau proposé').toContainEqual(expect.stringMatching(accentInsensitive(act)));
+      await profiles.chooseAct(act);
+      await profiles.amountInput(act).pressSequentially('3000');
+      expect(await profiles.save(), "Message de l'application").toMatch(/créé avec succès/i);
+      const rows = await profileRows(profiles);
+      expect(rows, 'Une seule rémunération, réactivée').toHaveLength(1);
+      expect.soft(rows[0].statut).toBe('Actif');
+      expect.soft(digits(rows[0].montant)).toBe('3000');
+      expect.soft(rows[0].taux).toBe('-');
+      expect.soft(rows[0].fin, 'Sans date de fin').toBe('Non définie');
+    });
+
+    test('Nettoyage : désactiver la rémunération de test', async ({ page }) => {
+      const profiles = await openProfiles(page);
+      await profiles.search({ nom: act, etat: 'Actif' });
+      expect(await profiles.toggle(act)).toMatch(/désactivée avec succès/);
     });
   });
 });
