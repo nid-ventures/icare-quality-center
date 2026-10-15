@@ -472,7 +472,7 @@ test.describe('Module Honoraires', () => {
       const accounts = new AccountListPage(page);
       await accounts.goto();
       await accounts.expectListLoaded();
-      const login = await accounts.loginOf(medecin, active ? 'Désactive' : 'Active');
+      const login = await accounts.loginOf(medecin, active ? 'Inactif' : 'Actif');
       await accounts.toggleState(login);
       await refreshCaches(page);
     }

@@ -116,10 +116,10 @@ export class AccountListPage {
   }
 
   /**
-   * Recherche par login avec le filtre "État" (Active / Désactive). Le filtre vaut "Active" par
-   * défaut : un utilisateur désactivé n'apparaît qu'avec "Désactive".
+   * Recherche par login avec le filtre "État" (Actif / Inactif). Le filtre vaut "Actif" par
+   * défaut : un utilisateur désactivé n'apparaît qu'avec "Inactif".
    */
-  async searchByLoginAndState(login: string, state: 'Active' | 'Désactive') {
+  async searchByLoginAndState(login: string, state: 'Actif' | 'Inactif') {
     const stateSelect = this.page.locator('ng-select[name="active"]');
     await stateSelect.click();
     await this.page.getByRole('option', { name: state, exact: true }).click();
@@ -131,10 +131,10 @@ export class AccountListPage {
   }
 
   /**
-   * Recherche multi-critères (un critère absent reste vide) ; `etat` vaut "Active" par défaut
+   * Recherche multi-critères (un critère absent reste vide) ; `etat` vaut "Actif" par défaut
    * dans l'application. `date` au format AAAA-MM-JJ.
    */
-  async search(filters: { login?: string; nom?: string; prenom?: string; date?: string; role?: string; etat?: 'Active' | 'Désactive' }) {
+  async search(filters: { login?: string; nom?: string; prenom?: string; date?: string; role?: string; etat?: 'Actif' | 'Inactif' }) {
     await this.resetButton.click();
     await this.page.waitForTimeout(500);
     if (filters.login) await this.searchLoginInput.fill(filters.login);
@@ -172,7 +172,7 @@ export class AccountListPage {
    * Login d'un utilisateur à partir de son nom complet (ex. "Oumy DIOP" : l'ordre prénom / nom
    * varie selon les écrans) : chaque mot est essayé comme nom, jusqu'à une ligne contenant tous les mots.
    */
-  async loginOf(fullName: string, state: 'Active' | 'Désactive' = 'Active'): Promise<string> {
+  async loginOf(fullName: string, state: 'Actif' | 'Inactif' = 'Actif'): Promise<string> {
     const words = fullName.split(/\s+/).filter(Boolean);
     const stateSelect = this.page.locator('ng-select[name="active"]');
     await stateSelect.click();
@@ -233,7 +233,7 @@ export class AccountListPage {
   }
 
   /**
-   * Récupère le texte de l'état actuel affiché ("Active" / "Désactive") pour un login donné
+   * Récupère le texte de l'état actuel affiché ("Actif" / "Inactif") pour un login donné
    */
   async getEtatText(login: string): Promise<string> {
     const row = this.getRowByLogin(login);
@@ -242,7 +242,7 @@ export class AccountListPage {
   }
 
   /**
-   * Change l'état (Active/Désactive) d'un utilisateur via l'icône cadenas de sa ligne,
+   * Change l'état (Actif/Inactif) d'un utilisateur via l'icône cadenas de sa ligne,
    * puis confirme la popup d'avertissement. La sauvegarde entraîne un rechargement complet
    * de la page (window.location.reload() côté application).
    */

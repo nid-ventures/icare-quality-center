@@ -113,15 +113,15 @@ test.describe('Module Administration', () => {
         await listPage.toggleState(user.login);
       });
 
-      await test.step('Le retrouver avec le filtre État = "Désactive"', async () => {
-        await listPage.searchByLoginAndState(user.login, 'Désactive');
+      await test.step('Le retrouver avec le filtre État = "Inactif"', async () => {
+        await listPage.searchByLoginAndState(user.login, 'Inactif');
         await listPage.expectUserInList(user.login);
         expect(await listPage.getEtatText(user.login)).not.toBe(etatInitial);
       });
 
       await test.step("Le réactiver et le retrouver avec le filtre État = \"Active\"", async () => {
         await listPage.toggleState(user.login);
-        await listPage.searchByLoginAndState(user.login, 'Active');
+        await listPage.searchByLoginAndState(user.login, 'Actif');
         await listPage.expectUserInList(user.login);
         expect(await listPage.getEtatText(user.login)).toBe(etatInitial);
       });
@@ -245,7 +245,7 @@ test.describe('Module Administration', () => {
       expect.soft(row.nom).toBe(userA.lastName);
       expect.soft(row.prenom).toBe(userA.firstName);
       expect.soft(row.roles.split('/').sort()).toEqual([ADMIN, SECRETAIRE].sort());
-      expect.soft(row.etat).toBe('Active');
+      expect.soft(row.etat).toBe('Actif');
       expect.soft(row.date).toBe(today().fr);
       const session = await tryLogin(browser, userA.login, userA.password);
       expect(session.outcome, `Connexion de ${userA.login}`).toBe('portail');
@@ -329,7 +329,7 @@ test.describe('Module Administration', () => {
       expect(refused.outcome, 'Utilisateur désactivé : connexion refusée').toBe('erreur');
       await refused.context.close();
       list = await openUsers(page);
-      await list.searchByLoginAndState(userA.login, 'Désactive');
+      await list.searchByLoginAndState(userA.login, 'Inactif');
       await list.toggleState(userA.login);
       const allowed = await tryLogin(browser, userA.login, newPasswordA);
       expect(allowed.outcome, 'Utilisateur réactivé : connexion possible').toBe('portail');
@@ -403,7 +403,7 @@ test.describe('Module Administration', () => {
       expect.soft(byDate.every(r => r.date === today().fr), 'Tous créés aujourd\'hui').toBe(true);
       await list.search({ role: SECRETAIRE });
       expect.soft((await list.rows()).every(r => r.roles.includes(SECRETAIRE)), 'Par rôle').toBe(true);
-      for (const etat of ['Active', 'Désactive'] as const) {
+      for (const etat of ['Actif', 'Inactif'] as const) {
         await list.search({ etat });
         expect.soft((await list.rows()).every(r => r.etat === etat), `Par état "${etat}"`).toBe(true);
       }
@@ -421,7 +421,7 @@ test.describe('Module Administration', () => {
     test('Nettoyage : désactiver les utilisateurs de test', async ({ page }) => {
       for (const user of [userA, userB, userC]) {
         const list = await openUsers(page);
-        await list.searchByLoginAndState(user.login, 'Active');
+        await list.searchByLoginAndState(user.login, 'Actif');
         if (await list.getRowByLogin(user.login).count()) await list.toggleState(user.login);
       }
     });
@@ -623,7 +623,7 @@ test.describe('Module Administration', () => {
       expect.soft(row.contact).toBe(CONTACT.contact);
       expect.soft(digits(row.telephone)).toContain(CONTACT.phone);
       expect.soft(row.email).toBe(CONTACT.email);
-      expect.soft(row.statut).toBe('Active');
+      expect.soft(row.statut).toBe('Actif');
     });
 
     test('Filtrer les garants par type et par état', async ({ page }) => {
@@ -633,7 +633,7 @@ test.describe('Module Administration', () => {
       const byType = await garants.rows();
       expect(byType.length).toBeGreaterThan(0);
       expect.soft(byType.every(r => r.type === type), `Uniquement des garants ${type}`).toBe(true);
-      for (const [etat, statut] of [['Actif', 'Active'], ['Inactif', 'Désactive']] as const) {
+      for (const [etat, statut] of [['Actif', 'Actif'], ['Inactif', 'Inactif']] as const) {
         await garants.search({ etat });
         expect.soft((await garants.rows()).every(r => r.statut === statut), `Filtre "${etat}"`).toBe(true);
       }
@@ -671,7 +671,7 @@ test.describe('Module Administration', () => {
       expect(await garants.toggle(insurer)).toMatch(/r[ée]ussi/i);
       // Un garant désactivé n'est listé qu'avec l'état "Inactif"
       await garants.search({ assureur: insurer, etat: 'Inactif' });
-      expect((await garants.rows())[0]?.statut, 'Garant désactivé').toBe('Désactive');
+      expect((await garants.rows())[0]?.statut, 'Garant désactivé').toBe('Inactif');
       expect(await patientInsurers(page), 'Plus proposé dans la prise en charge').not.toContain(insurer.toUpperCase());
 
       await new PortalPage(page).enterModule('Administration');
@@ -679,7 +679,7 @@ test.describe('Module Administration', () => {
       await garants.search({ assureur: insurer, etat: 'Inactif' });
       expect(await garants.toggle(insurer)).toMatch(/r[ée]ussi/i);
       await garants.search({ assureur: insurer, etat: 'Actif' });
-      expect((await garants.rows())[0]?.statut, 'Garant réactivé').toBe('Active');
+      expect((await garants.rows())[0]?.statut, 'Garant réactivé').toBe('Actif');
       expect(await patientInsurers(page), 'De nouveau proposé').toContain(insurer.toUpperCase());
     });
 
@@ -699,7 +699,7 @@ test.describe('Module Administration', () => {
       await garants.search({ assureur: insurer });
       expect(await garants.toggle(insurer), 'Refus').toMatch(/encours d.utilisation/i);
       await garants.search({ assureur: insurer });
-      expect((await garants.rows())[0]?.statut, 'Garant toujours actif').toBe('Active');
+      expect((await garants.rows())[0]?.statut, 'Garant toujours actif').toBe('Actif');
     });
   });
 
