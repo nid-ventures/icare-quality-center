@@ -57,6 +57,9 @@ async function openPatientFile(page: Page, patient: DossierPatient) {
   // Les tuiles de la carte "Parcours de soins" se chargent après le dossier : sans cette attente,
   // un lien vérifié trop tôt est absent (et une absence vérifiée trop tôt passe à tort).
   await page.locator('.pathway-actions .qa-btn').first().waitFor({ state: 'visible', timeout: 30000 }).catch(() => {});
+  // Au-delà de 10 types, la carte n'affiche que les premiers : tout afficher pour vérifier chaque tuile
+  const showAll = page.getByRole('button', { name: /Voir tous les parcours/ });
+  if (await showAll.isVisible()) await showAll.click();
 }
 
 /** Bouton (lien actif ou bouton grisé) d'un type de parcours dans la carte "Parcours de soins". */
