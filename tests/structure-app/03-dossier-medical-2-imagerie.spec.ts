@@ -171,8 +171,9 @@ test.describe('Module Dossier médical — Imagerie', () => {
       });
 
       test(`Supprimer l'acte "${type.label}"`, async ({ page }) => {
-        const before = await page.locator(`.imaging-item.imaging-item--${type.key}`).count();
         const item = await openHistoryItem(page, type.key);
+        // Compté une fois l'historique affiché (sinon 0 si la liste n'est pas encore chargée)
+        const before = await page.locator(`.imaging-item.imaging-item--${type.key}`).count();
         await item.getByRole('button', { name: /^\W*Supprimer$/ }).first().click();
         await confirm(page);
         await expect(page.locator(`.imaging-item.imaging-item--${type.key}`)).toHaveCount(before - 1, { timeout: 20000 });
@@ -276,8 +277,8 @@ test.describe('Module Dossier médical — Imagerie', () => {
 
     test('Supprimer les échographies', async ({ page }) => {
       for (let i = 0; i < 2; i++) {
-        const before = await page.locator('.imaging-item.imaging-item--echographie').count();
         const item = await openHistoryItem(page, 'echographie');
+        const before = await page.locator('.imaging-item.imaging-item--echographie').count();
         await item.getByRole('button', { name: /^\W*Supprimer$/ }).first().click();
         await confirm(page);
         await expect(page.locator('.imaging-item.imaging-item--echographie')).toHaveCount(before - 1, { timeout: 20000 });

@@ -68,6 +68,17 @@ export class ConsentConfigPage {
     return ((await select.locator('.ng-value').first().textContent().catch(() => '')) ?? '').replace(/×/g, '').replace(/\s+/g, ' ').trim();
   }
 
+  private readEditor(host: Locator): Promise<string> {
+    return host.evaluate(el => {
+      const editors = (window as any).CKEDITOR?.instances ?? {};
+      for (const name of Object.keys(editors)) {
+        const editor = editors[name];
+        if (el.contains(editor.container?.$)) return editor.getData() as string;
+      }
+      throw new Error('Éditeur introuvable');
+    });
+  }
+
   /** Texte brut de l'éditeur situé dans `scope` (sans balises ni entités HTML). */
   async editorText(scope: Locator): Promise<string> {
     const host = scope.locator('ckeditor').first();
@@ -86,6 +97,15 @@ export class ConsentConfigPage {
   async editorContent(scope: Locator, html?: string): Promise<string> {
     const host = scope.locator('ckeditor').first();
     await expect(host.locator('.cke').first(), 'Éditeur chargé').toBeVisible({ timeout: 30000 });
+    if (html === undefined) {
+      // Lecture : l'éditeur peut être affiché avant de recevoir le texte de la configuration
+      let text = '';
+      await expect(async () => {
+        text = await this.readEditor(host);
+        expect(text, 'Texte chargé dans l\'éditeur').not.toBe('');
+      }).toPass({ timeout: 15000 }).catch(() => {});
+      return text;
+    }
     return host.evaluate((el, value) => {
       const editors = (window as any).CKEDITOR?.instances ?? {};
       for (const name of Object.keys(editors)) {

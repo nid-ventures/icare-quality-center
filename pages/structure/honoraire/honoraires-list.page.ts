@@ -145,8 +145,13 @@ export class HonorairesListPage {
     }
 
     async appliquerFiltres(): Promise<void> {
+        // Attendre la réponse de la recherche : l'indicateur de chargement peut ne pas être encore
+        // affiché au moment du contrôle, et l'ancienne liste serait lue
+        const searched = this.page.waitForResponse(r => r.url().includes('/search/paged'), { timeout: 30000 }).catch(() => null);
         await this.appliquerFiltresButton.click();
+        await searched;
         await this.attendreChargement();
+        await this.page.waitForTimeout(300);
     }
 
     async reinitialiserFiltres(): Promise<void> {
@@ -365,8 +370,12 @@ export class HonorairesListPage {
         await expect(bouton, 'Le bouton "Supprimer" est réservé aux relevés au statut "Non Payé"').toBeVisible();
         await bouton.click();
         await expect(this.deleteConfirmText).toBeVisible();
+        // Attendre le rechargement de la liste : sinon la ligne supprimée est encore lue
+        const reloaded = this.page.waitForResponse(r => r.url().includes('/search/paged'), { timeout: 30000 }).catch(() => null);
         await this.deleteConfirmerButton.click();
+        await reloaded;
         await this.attendreChargement();
+        await this.page.waitForTimeout(300);
     }
 
     /**

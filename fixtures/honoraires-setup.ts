@@ -69,7 +69,14 @@ export async function ensureHonorairePrerequisites(browser: Browser): Promise<Ho
     const createPage = new CreateHonorairePage(page);
     await createPage.gotoViaMenu();
     expect(await createPage.hasMedecinDisponible(), 'Un médecin doit être proposé après création du profil').toBeTruthy();
-    const medecin = await createPage.selectFirstMedecinDisponible();
+    // Médecin de la spécialité du profil, pas le premier de la liste : la liste reprend aussi les
+    // médecins dont la rémunération est désactivée (anomalie : profils lus sans filtre "actif")
+    const medecins = await createPage.listMedecins();
+    await page.keyboard.press('Escape');
+    const pediatre = medecins.find(m => new RegExp(HONORAIRE_SPECIALITY, 'i').test(m.specialite));
+    expect(pediatre, `Un médecin de spécialité "${HONORAIRE_SPECIALITY}" proposé`).toBeDefined();
+    await createPage.selectMedecin(pediatre!.nom);
+    const medecin = pediatre!.nom;
     return { medecin, patientIdentifier, act, category };
   } finally {
     await context.close();

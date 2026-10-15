@@ -54,6 +54,9 @@ async function openTemplates(page: Page) {
 async function openPatientFile(page: Page, patient: DossierPatient) {
   await new PortalPage(page).enterModule('Dossier médical');
   await openDossier(page, patient);
+  // Les tuiles de la carte "Parcours de soins" se chargent après le dossier : sans cette attente,
+  // un lien vérifié trop tôt est absent (et une absence vérifiée trop tôt passe à tort).
+  await page.locator('.pathway-actions .qa-btn').first().waitFor({ state: 'visible', timeout: 30000 }).catch(() => {});
 }
 
 /** Bouton (lien actif ou bouton grisé) d'un type de parcours dans la carte "Parcours de soins". */
@@ -110,7 +113,7 @@ test.describe('Module Dossier médical — Parcours de soins paramétrés', () =
 
     await test.step('Le parcours est proposé dans le dossier de la patiente', async () => {
       await openPatientFile(page, patient);
-      await expect(carePathway.startLink(ALL_ACTS.name)).toHaveCount(1);
+      await expect(carePathway.startLink(ALL_ACTS.name)).toHaveCount(1, { timeout: 30000 });
     });
 
     await test.step("Vérifier l'aperçu : 4 étapes et tous les actes", async () => {
@@ -159,7 +162,7 @@ test.describe('Module Dossier médical — Parcours de soins paramétrés', () =
     await expect(carePathway.startLink(ALL_ACTS.name)).toHaveCount(0);
     await expect(carePathway.startLink(COMBINED.name)).toHaveCount(0);
     // En cours : toujours affiché, mais grisé
-    await expect(pathwayButton(page, ALL_ACTS.name)).toBeDisabled();
+    await expect(pathwayButton(page, ALL_ACTS.name)).toBeDisabled({ timeout: 30000 });
   });
 
   // ---------------- Patient homme : parcours selon le sexe cible du modèle ----------------
@@ -174,7 +177,7 @@ test.describe('Module Dossier médical — Parcours de soins paramétrés', () =
     const carePathway = new CarePathwayPage(page);
     await openTemplates(page);
     await openPatientFile(page, man);
-    await expect(carePathway.startLink(MEN_ONLY.name)).toHaveCount(1);
+    await expect(carePathway.startLink(MEN_ONLY.name)).toHaveCount(1, { timeout: 30000 });
     await carePathway.openStartForm(MEN_ONLY.name);
     await expect(page.locator('ul.iq-timeline > li')).toHaveCount(1);
   });
@@ -192,7 +195,7 @@ test.describe('Module Dossier médical — Parcours de soins paramétrés', () =
     const carePathway = new CarePathwayPage(page);
     await openTemplates(page);
     await openPatientFile(page, man);
-    await expect(carePathway.startLink(ALL_ACTS.name)).toHaveCount(1);
+    await expect(carePathway.startLink(ALL_ACTS.name)).toHaveCount(1, { timeout: 30000 });
   });
 
   test('Modifier un parcours non utilisé : ajouter une étape et changer la description', async ({ page }) => {

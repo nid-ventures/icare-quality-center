@@ -42,8 +42,11 @@ export async function createDossierPatient(browser: Browser, sex: keyof typeof S
   }
 }
 
-/** Délai du beforeAll de création de patiente (allongé en mode ralenti SLOWMO). */
-export const DOSSIER_SETUP_TIMEOUT = Number(process.env.SLOWMO) > 0 ? 120000 * 6 : 120000;
+/**
+ * Délai du beforeAll de création de patiente (allongé en mode ralenti SLOWMO). 5 min : la liste des
+ * patients (/patients/getAll), consultée après la création, peut dépasser une minute en local.
+ */
+export const DOSSIER_SETUP_TIMEOUT = Number(process.env.SLOWMO) > 0 ? 300000 * 6 : 300000;
 
 /** Ouvre le dashboard médical de la patiente depuis la recherche du module Dossier médical. */
 export async function openDossier(page: Page, patient: DossierPatient) {

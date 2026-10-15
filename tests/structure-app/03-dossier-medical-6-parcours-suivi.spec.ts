@@ -69,6 +69,9 @@ async function openPatientFile(page: Page, patient: DossierPatient) {
   await new PortalPage(page).enterModule('Dossier médical');
   await openDossier(page, patient);
   await expect(page.getByRole('heading', { name: /Parcours de soins/ })).toBeVisible();
+  // Les tuiles de la carte se chargent après le titre : sans cette attente, un lien vérifié trop
+  // tôt est absent (et une absence vérifiée trop tôt passe à tort).
+  await page.locator('.pathway-actions .qa-btn').first().waitFor({ state: 'visible', timeout: 30000 }).catch(() => {});
 }
 
 /** Tuile (lien actif ou bouton grisé) d'un type de parcours sur le dashboard. */
@@ -379,7 +382,7 @@ test.describe('Module Dossier médical — Suivi des parcours de soins (homme, f
     for (const template of [FEMMES, TOUS]) {
       // Patients réutilisés : parcours déjà en cours, donc tuile grisée au lieu d'un lien de démarrage
       if (REUSED_PATIENTS) await expect(pathwayTile(page, template.name), `${template.name} affiché`).toHaveCount(1);
-      else await expect(carePathway.startLink(template.name)).toHaveCount(1);
+      else await expect(carePathway.startLink(template.name)).toHaveCount(1, { timeout: 30000 });
     }
     await expect(pathwayTile(page, HOMMES.name), 'Parcours hommes ni proposé ni grisé').toHaveCount(0);
   });
@@ -389,7 +392,7 @@ test.describe('Module Dossier médical — Suivi des parcours de soins (homme, f
     await openPatientFile(page, man);
     for (const template of [HOMMES, TOUS]) {
       if (REUSED_PATIENTS) await expect(pathwayTile(page, template.name), `${template.name} affiché`).toHaveCount(1);
-      else await expect(carePathway.startLink(template.name)).toHaveCount(1);
+      else await expect(carePathway.startLink(template.name)).toHaveCount(1, { timeout: 30000 });
     }
     await expect(pathwayTile(page, FEMMES.name), 'Parcours femmes ni proposé ni grisé').toHaveCount(0);
   });

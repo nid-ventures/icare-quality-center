@@ -604,7 +604,22 @@ export type InvoiceSummary = { order: string; amount: number };
 
 /** Lance la recherche, affiche la plus grande page puis lit N° (colonne 1) et montant (colonne amountColumn). */
 async function readInvoices(page: Page, searchButton: Locator, rows: Locator, amountColumn: number): Promise<InvoiceSummary[]> {
+    // La liste lance aussi sa propre recherche à l'ouverture (juste après une facturation) : une
+    // lecture vide est retentée deux fois ; une liste réellement vide ne coûte que ces relances.
+    for (let attempt = 1; ; attempt++) {
+        const result = await readInvoicesOnce(page, searchButton, rows, amountColumn);
+        if (result.length > 0 || attempt >= 3) return result;
+        await page.waitForTimeout(2000);
+    }
+}
+
+async function readInvoicesOnce(page: Page, searchButton: Locator, rows: Locator, amountColumn: number): Promise<InvoiceSummary[]> {
+    // Attendre la réponse de la recherche : l'indicateur de chargement peut ne pas être encore
+    // affiché au moment du contrôle, et la liste précédente (ou vide) serait lue
+    const searched = page.waitForResponse(r => /\/invoices\/(patients|garants)/.test(r.url()) && r.request().method() !== 'OPTIONS', { timeout: 30000 }).catch(() => null);
     await searchButton.click();
+    await searched;
+    await page.waitForTimeout(300);
     await page.locator('.loading-compact, .loader').first().waitFor({ state: 'hidden', timeout: 15000 }).catch(() => { });
     const size = page.locator('ng-select.compact-select').first();
     if (await size.isVisible().catch(() => false)) {

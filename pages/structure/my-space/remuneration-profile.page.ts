@@ -198,7 +198,10 @@ export class RemunerationProfilePage {
     if (filters.specialite) await this.pickExact(selects.nth(0), filters.specialite);
     if (filters.type) await this.pickExact(selects.nth(1), filters.type);
     if (filters.etat) await this.pickExact(selects.nth(2), filters.etat);
+    // Attendre la réponse de la recherche : le tableau lu pendant son rechargement perd des lignes
+    const searched = this.page.waitForResponse(r => r.url().includes('/renumerations/profiles/search'), { timeout: 30000 }).catch(() => null);
     await this.section.getByRole('button', { name: /^\W*Rechercher$/ }).click();
+    await searched;
     await this.waitForList();
   }
 
@@ -268,7 +271,9 @@ export class RemunerationProfilePage {
   async save(): Promise<string> {
     await expect(this.saveButton).toBeEnabled();
     await this.saveButton.click();
-    const toast = this.page.locator('.toast-success, .toast-error').first();
+    // Message de l'enregistrement, pas celui d'une action précédente encore affiché
+    // ("Rémunération désactivée avec succès" après un changement d'état)
+    const toast = this.page.locator('.toast-success, .toast-error').filter({ hasText: /Profil de rémunération|rreur|échou/i }).last();
     return (await toast.waitFor({ state: 'visible', timeout: 15000 }).then(() => toast.innerText(), () => '')).replace(/\s+/g, ' ').trim();
   }
 

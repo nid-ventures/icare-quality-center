@@ -92,10 +92,15 @@ test.describe("Module Dossier médical — Bilans d'analyses", () => {
   /** Bascule le formulaire de résultat en édition ("Activer le formulaire"). */
   async function activateResult(page: Page, pane: Locator) {
     const toggle = pane.locator('.btn-action-activate');
+    const probe = pane.locator('textarea[formcontrolname="diagnostic"]');
     await expect(async () => {
-      if (/Verrouiller/.test(await toggle.innerText())) return;
-      await toggle.click();
-      await expect(pane.locator('textarea[formcontrolname="diagnostic"]')).toBeEnabled({ timeout: 3000 });
+      if (!/Verrouiller/.test(await toggle.innerText())) await toggle.click();
+      // Bouton "Verrouiller" mais champs reverrouillés par le chargement : verrouiller puis réactiver
+      else if (!(await probe.isEnabled())) { await toggle.click(); await toggle.click(); }
+      await expect(probe).toBeEnabled({ timeout: 3000 });
+      // Le chargement tardif du résultat peut reverrouiller le formulaire : il doit rester modifiable
+      await page.waitForTimeout(1000);
+      await expect(probe).toBeEnabled({ timeout: 500 });
     }).toPass({ timeout: 30000 });
   }
 

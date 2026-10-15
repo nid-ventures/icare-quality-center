@@ -106,10 +106,17 @@ export class MyConfigurationPage {
   async openSection(title: string) {
     const card = this.configCard(title);
     const body = card.locator('.config-card-body');
-    if (!((await body.getAttribute('class')) ?? '').includes('expanded')) {
-      await card.locator('.config-card-header').click();
-    }
-    await expect(body).toHaveClass(/expanded/);
+    // Les sections ouvertes sont mémorisées (localStorage) et restaurées au chargement : vérifiée
+    // trop tôt, une section encore en cours de restauration serait refermée par le clic. On s'assure
+    // qu'elle reste ouverte, sinon on la rouvre.
+    await expect(async () => {
+      if (!((await body.getAttribute('class')) ?? '').includes('expanded')) {
+        await card.locator('.config-card-header').click();
+      }
+      await expect(body).toHaveClass(/expanded/, { timeout: 2000 });
+      await this.page.waitForTimeout(700);
+      await expect(body).toHaveClass(/expanded/, { timeout: 300 });
+    }).toPass({ timeout: 20000 });
   }
 
   // ===== Modules de la structure (activation stockée dans le navigateur, par structure) =====

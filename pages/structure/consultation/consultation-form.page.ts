@@ -165,6 +165,10 @@ export class ConsultationFormPage {
       if (/Verrouiller/.test(await toggle.innerText())) await toggle.click();
       await toggle.click();
       await expect(probe).toBeEnabled({ timeout: 3000 });
+      // Les données de la consultation peuvent arriver après le clic : leur chargement reverrouille
+      // le formulaire (patchValue puis disable). On vérifie qu'il reste modifiable, sinon on recommence.
+      await this.page.waitForTimeout(1000);
+      await expect(probe).toBeEnabled({ timeout: 500 });
     }).toPass({ timeout: 30000 });
   }
 

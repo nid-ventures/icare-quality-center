@@ -76,13 +76,22 @@ export class HealthChecksListPage {
 
   /** Retourne la liste des N° de bulletin actuellement affichés (1ère colonne). */
   async getBilanOrderNumbers(): Promise<string[]> {
-    const count = await this.tableRows.count();
-    const numbers: string[] = [];
-    for (let i = 0; i < count; i++) {
-      const text = (await this.tableRows.nth(i).locator('td').first().textContent())?.trim() || '';
-      numbers.push(text);
-    }
-    return numbers;
+    const read = async () => {
+      const count = await this.tableRows.count();
+      const numbers: string[] = [];
+      for (let i = 0; i < count; i++) {
+        numbers.push((await this.tableRows.nth(i).locator('td').first().textContent())?.trim() || '');
+      }
+      return numbers;
+    };
+    // La liste se remplit après l'affichage du tableau (une ligne vide d'abord) : on attend que
+    // chaque ligne ait son N° ; une liste réellement vide est renvoyée telle quelle.
+    let numbers: string[] = [];
+    await expect(async () => {
+      numbers = await read();
+      expect(numbers.length > 0 && numbers.every(Boolean)).toBe(true);
+    }).toPass({ timeout: 15000 }).catch(() => {});
+    return numbers.filter(Boolean);
   }
 
   /** Ouvre le détail du bilan identifié par son N° de bulletin (colonne "N°"). */
@@ -167,8 +176,16 @@ export class HealthCheckDetailPage {
     await expect(this.modal).toBeHidden({ timeout: 15000 });
   }
 
+  /** Nombre de lignes une fois le tableau stable : les analyses se chargent après le détail (sinon 0). */
   async getAnalyseRowCount(): Promise<number> {
-    return this.analysesTableRows.count();
+    let count = -1;
+    await expect(async () => {
+      const first = await this.analysesTableRows.count();
+      await this.page.waitForTimeout(1000);
+      expect(await this.analysesTableRows.count()).toBe(first);
+      count = first;
+    }).toPass({ timeout: 15000 });
+    return count;
   }
 
   /**

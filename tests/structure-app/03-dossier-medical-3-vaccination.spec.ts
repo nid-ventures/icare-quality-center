@@ -119,7 +119,14 @@ test.describe('Module Dossier médical — Vaccination', () => {
     const vaccination = new VaccinationPage(page);
     const item = await openVaccination(page);
     const doses = item.locator('.card[id^="accordionItemV_"]');
-    const before = await doses.count();
+    // Les doses se chargent après l'ouverture : compter une fois le nombre stable (sinon 0)
+    let before = -1;
+    await expect(async () => {
+      const first = await doses.count();
+      await page.waitForTimeout(1000);
+      expect(await doses.count()).toBe(first);
+      before = first;
+    }).toPass({ timeout: 15000 });
     await vaccination.nouvelleDoseButton.click();
     await expect(vaccination.doseForm).toBeVisible();
     dose1 = await new ConsultationFormPage(page, vaccination.doseForm).fill(doseFields(1));
@@ -161,7 +168,14 @@ test.describe('Module Dossier médical — Vaccination', () => {
   test('Supprimer une dose', async ({ page }) => {
     const item = await openVaccination(page);
     const doses = item.locator('.card[id^="accordionItemV_"]');
-    const before = await doses.count();
+    // Les doses se chargent après l'ouverture : compter une fois le nombre stable (sinon 0)
+    let before = -1;
+    await expect(async () => {
+      const first = await doses.count();
+      await page.waitForTimeout(1000);
+      expect(await doses.count()).toBe(first);
+      before = first;
+    }).toPass({ timeout: 15000 });
     const dose = await openDose(item, dose2.date as string);
     await dose.getByRole('button', { name: /Supprimer/ }).click();
     await confirm(page);

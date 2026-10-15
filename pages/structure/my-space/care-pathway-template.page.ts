@@ -39,6 +39,9 @@ export class CarePathwayTemplatePage {
   async open() {
     await this.config.openSection('Parcours de soins');
     await expect(this.section.getByRole('button', { name: /Nouveau type de parcours/ })).toBeVisible();
+    // La page rafraîchit le cache des modèles (localStorage) par une recherche asynchrone : la
+    // laisser aboutir, sinon le dossier patient ouvert ensuite ne voit pas les modèles récents
+    await this.page.waitForLoadState('networkidle', { timeout: 15000 }).catch(() => {});
   }
 
   row(name: string): Locator {

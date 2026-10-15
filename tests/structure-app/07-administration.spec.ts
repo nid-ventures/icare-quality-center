@@ -7,7 +7,7 @@ import { AccountUpdatePwdPage } from '../../pages/structure/account/account-upda
 import { MyConfigurationPage } from '../../pages/structure/my-space/configuration.page';
 import { AccountDataGenerator, type AccountData } from '../../pages/structure/generator/account-data-generator';
 import { LoginPage } from '../../pages/structure/patient/login.page';
-import { adminUser } from '../../test-data/structure-users';
+import { adminUser, ADMIN_STORAGE_STATE } from '../../test-data/structure-users';
 import { GarantPage } from '../../pages/structure/my-space/garant.page';
 import { BillableActConfigPage, normalizeLabel, accentInsensitive } from '../../pages/structure/my-space/billable-act-config.page';
 import { RemunerationProfilePage } from '../../pages/structure/my-space/remuneration-profile.page';
@@ -22,6 +22,9 @@ import { createDossierPatient, DOSSIER_SETUP_TIMEOUT, type DossierPatient } from
 
 // Libellé réel du rôle non-soignant dans le sélecteur de rôles
 const NON_CAREGIVER_ROLE = 'HI-ADMINISTRATOR';
+// Blocs enchaînés : connexions, facturation, rechargements… dépassent les 30 s par défaut sans
+// ralenti ; en mode visuel (SLOWMO) le délai est multiplié par 6 comme dans la configuration.
+const LONG_TEST = (Number(process.env.SLOWMO) > 0 ? 6 : 1) * 300000;
 
 /** Crée un utilisateur dédié au test et le retrouve dans la liste ; renvoie ses données. */
 async function createUser(page: Page) {
@@ -133,7 +136,7 @@ test.describe('Module Administration', () => {
     // modification ni mot de passe. Le consentement demandé à la création dépend des rôles : c'est
     // le texte de la configuration du rôle prioritaire (plus petit identifiant : Administrateur 63
     // avant Secrétaire 66) qui est présenté à la première connexion.
-    test.describe.configure({ mode: 'serial' });
+    test.describe.configure({ mode: 'serial', timeout: LONG_TEST });
     const ADMIN = 'HI-ADMINISTRATOR';
     const SECRETAIRE = 'MEDICAL-SECRETAIRE';
     const userA = AccountDataGenerator.generate();
@@ -525,7 +528,7 @@ test.describe('Module Administration', () => {
   test.describe('Garants', () => {
     // Un assureur pas encore garant de la structure est ajouté ; un patient dédié sert à vérifier
     // les assureurs proposés dans sa prise en charge (garants actifs).
-    test.describe.configure({ mode: 'serial' });
+    test.describe.configure({ mode: 'serial', timeout: LONG_TEST });
     let patient: DossierPatient;
     let insurer = '';
     let spareInsurer = '';
@@ -706,7 +709,7 @@ test.describe('Module Administration', () => {
   test.describe('Actes', () => {
     // Un acte du référentiel pas encore présent dans la structure est ajouté pour une spécialité ;
     // un patient dédié sert à vérifier les actes proposés en facturation.
-    test.describe.configure({ mode: 'serial' });
+    test.describe.configure({ mode: 'serial', timeout: LONG_TEST });
     let patient: DossierPatient;
     let speciality = '';
     let otherSpeciality = '';
@@ -923,7 +926,7 @@ test.describe('Module Administration', () => {
     // désactive sa rémunération, qui ne peut pas être réactivée tant que l'acte est inactif ;
     // recréer la rémunération d'un acte dont la rémunération est désactivée la réactive.
     // Les tests partent d'un acte ajouté à la structure pour l'occasion (sans rémunération ni facture).
-    test.describe.configure({ mode: 'serial' });
+    test.describe.configure({ mode: 'serial', timeout: LONG_TEST });
     let speciality = '';
     let otherSpeciality = '';
     let act = '';
@@ -942,6 +945,27 @@ test.describe('Module Administration', () => {
       await profiles.open();
       return profiles;
     }
+
+    // Filet de sécurité : si un test échoue avant le nettoyage, la rémunération de test resterait
+    // active et ferait apparaître des médecins d'une autre spécialité dans les relevés d'honoraires.
+    test.afterAll(async ({ browser }) => {
+      if (!act) return;
+      const context = await browser.newContext({ baseURL: process.env.BASE_URL, storageState: ADMIN_STORAGE_STATE, viewport: null, ignoreHTTPSErrors: true });
+      const page = await context.newPage();
+      try {
+        const portal = new PortalPage(page);
+        await portal.goto();
+        await portal.enterModule('Administration');
+        await page.waitForURL('**/my-space/configuration');
+        const profiles = await openProfiles(page);
+        await profiles.search({ nom: act, etat: 'Actif' });
+        if ((await profiles.rowsOf(act)).length) await profiles.toggle(act);
+      } catch (error) {
+        console.warn(`Rémunération de test "${act}" non désactivée : ${error}`);
+      } finally {
+        await context.close();
+      }
+    });
 
     /** Rémunération de l'acte dans la liste (tous états confondus). */
     async function profileRows(profiles: RemunerationProfilePage) {
@@ -1174,7 +1198,7 @@ test.describe('Module Administration', () => {
     // Une configuration par profil ; le profil impose type et mode (PATIENT → ELECTRONIC / EMAIL,
     // personnel → MANUAL / AUCUN). Les tests modifient, retirent puis recréent les configurations
     // Secrétaire médicale et Patient, et remettent toujours le texte d'origine.
-    test.describe.configure({ mode: 'serial' });
+    test.describe.configure({ mode: 'serial', timeout: LONG_TEST });
     const EXPECTED = {
       PATIENT: { type: 'ELECTRONIC', mode: 'EMAIL', defaultText: /Bonjour cher\/chère patient/ },
       MEDICAL_SECRETAIRE: { type: 'MANUAL', mode: 'AUCUN', defaultText: /En donnant mon avis, je déclare/ },
@@ -1318,7 +1342,7 @@ test.describe('Module Administration', () => {
   test.describe('Structure et facture', () => {
     // Enregistrer déconnecte l'utilisateur : chaque test se reconnecte, et remet toujours les
     // valeurs d'origine (finally). Le logo n'est jamais enregistré (seuls ses contrôles sont testés).
-    test.describe.configure({ mode: 'serial' });
+    test.describe.configure({ mode: 'serial', timeout: LONG_TEST });
     const stamp = Date.now().toString().slice(-6);
 
     async function openSettings(page: Page) {

@@ -8,7 +8,9 @@ import { PatientDataGenerator, type PatientData } from '../../pages/structure/ge
 import { ContactPersonGenerator } from '../../pages/structure/generator/contact-person-generator';
 import { CareDataGenerator } from '../../pages/structure/generator/care-data-generator';
 
-test.setTimeout(90000);
+// 5 min : la création d'un patient attend la liste des patients (/patients/getAll), qui peut
+// dépasser une minute en local ; multiplié par 6 en mode visuel (SLOWMO) comme dans la configuration
+test.setTimeout((Number(process.env.SLOWMO) > 0 ? 6 : 1) * 300000);
 
 /**
  * Crée un patient dédié au test (pour ne jamais modifier/supprimer des données existantes),
