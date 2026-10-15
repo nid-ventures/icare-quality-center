@@ -64,8 +64,8 @@ export class HonorairesListPage {
         this.loadingContainer = page.locator('.loading-container');
 
         // Libellé exact : le champ Spécialité (masqué) contient l'option « Médecine générale ».
-        this.medecinFilter = page.locator('.filter-field').filter({ has: page.locator('label.filter-label', { hasText: /^\s*Médecin\s*$/ }) }).locator('select');
-        this.statutFilter = page.locator('.filter-field', { hasText: 'Statut' }).locator('select');
+        this.medecinFilter = page.locator('.filter-field').filter({ has: page.locator('label.filter-label', { hasText: /^\s*Médecin\s*$/ }) }).locator('ng-select');
+        this.statutFilter = page.locator('.filter-field', { hasText: 'Statut' }).locator('ng-select');
         this.dateDebutFilter = page.locator('.filter-field', { hasText: 'Date début Période' }).locator('input[type="date"]');
         this.dateFinFilter = page.locator('.filter-field', { hasText: 'Date fin Période' }).locator('input[type="date"]');
         // Scopé aux boutons d'action des filtres pour éviter le bouton icône ".btn-close-panel"
@@ -117,26 +117,35 @@ export class HonorairesListPage {
 
     // ---------- Filtres ----------
 
-    /** Sélectionne un médecin dans le filtre natif <select> à partir de son nom complet (recherche par contenu de l'option). */
+    /** Vide un filtre ng-select (croix) : revient à « Tous ». */
+    private async viderFiltre(filtre: Locator): Promise<void> {
+        const clear = filtre.locator('.ng-clear-wrapper');
+        if (await clear.isVisible()) await clear.click();
+    }
+
+    /** Sélectionne un médecin dans le filtre (ng-select) à partir de son nom complet : saisi puis choisi. */
     async filtrerParMedecin(nomMedecin: string): Promise<void> {
-        const option = this.medecinFilter.locator('option', { hasText: nomMedecin.toUpperCase() });
-        const value = await option.first().getAttribute('value');
-        if (!value) {
+        await this.medecinFilter.click();
+        await this.medecinFilter.locator('input').fill(nomMedecin.toUpperCase());
+        const option = this.medecinFilter.locator('.ng-option', { hasText: nomMedecin.toUpperCase() });
+        if (!(await option.first().waitFor({ state: 'visible', timeout: 5000 }).then(() => true, () => false))) {
             throw new Error(`Médecin "${nomMedecin}" introuvable dans le filtre de la liste des honoraires`);
         }
-        await this.medecinFilter.selectOption(value);
+        await option.first().click();
     }
 
     async reinitialiserFiltreMedecin(): Promise<void> {
-        await this.medecinFilter.selectOption('0');
+        await this.viderFiltre(this.medecinFilter);
     }
 
     async filtrerParStatut(libelle: StatutLibelle): Promise<void> {
-        await this.statutFilter.selectOption({ label: libelle.toUpperCase() });
+        await this.statutFilter.click();
+        // Libellé exact : « Payé » est contenu dans « Non Payé »
+        await this.statutFilter.locator('.ng-option', { hasText: new RegExp(`^\\s*${libelle}\\s*$`) }).click();
     }
 
     async filtrerParTousLesStatuts(): Promise<void> {
-        await this.statutFilter.selectOption({ index: 0 });
+        await this.viderFiltre(this.statutFilter);
     }
 
     async filtrerParPeriode(dateDebut: string, dateFin: string): Promise<void> {
