@@ -57,9 +57,7 @@ export class BillableActConfigPage {
     await this.section.getByRole('button', { name: /Réinitialiser/ }).click();
     // Filtres de la recherche avancée, dans l'ordre : Type, Spécialité, État
     const selects = this.section.locator('.section-search ng-select');
-    // La liste affiche le nom complet ("Consultation " / "Visite " + nom) mais le backend cherche
-    // dans le nom seul : le préfixe de type est retiré, sinon rien n'est trouvé.
-    if (filters.nom) await this.section.getByPlaceholder("Nom de l'acte...").fill(filters.nom.replace(/^(CONSULTATION|VISITE)\s+/i, ''));
+    if (filters.nom) await this.section.getByPlaceholder("Nom de l'acte...").fill(filters.nom); // nom affiché tel quel (le front retire le préfixe de type)
     if (filters.type) await this.pick(selects.nth(0), filters.type);
     if (filters.specialite) await this.pick(selects.nth(1), filters.specialite);
     if (filters.etat) await this.pick(selects.nth(2), filters.etat);

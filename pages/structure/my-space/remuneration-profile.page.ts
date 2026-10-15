@@ -193,8 +193,7 @@ export class RemunerationProfilePage {
     await this.waitForList();
     // Filtres dans l'ordre : Spécialité, Type, État
     const selects = this.section.locator('.form-grid ng-select');
-    // Le backend cherche dans le nom seul : le préfixe de type ("Consultation ", "Visite ") est retiré
-    if (filters.nom) await this.section.getByPlaceholder("Nom de l'acte...").fill(filters.nom.replace(/^(CONSULTATION|VISITE)\s+/i, ''));
+    if (filters.nom) await this.section.getByPlaceholder("Nom de l'acte...").fill(filters.nom); // nom affiché tel quel (le front retire le préfixe de type)
     if (filters.specialite) await this.pickExact(selects.nth(0), filters.specialite);
     if (filters.type) await this.pickExact(selects.nth(1), filters.type);
     if (filters.etat) await this.pickExact(selects.nth(2), filters.etat);
