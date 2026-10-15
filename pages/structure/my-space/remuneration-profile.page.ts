@@ -91,8 +91,8 @@ export class RemunerationProfilePage {
    * rien enregistrer.
    */
   async firstProposition(speciality: string): Promise<{ category: string; act: string }> {
-    await this.section.locator('button[title="Nouvelle rémunération"]').click();
-    await expect(this.modal).toBeVisible();
+    // Attend le chargement des rémunérations actives (actes déjà rémunérés retirés de la liste)
+    await this.openNew();
     await this.selectOption(this.modal.locator('ng-select[formcontrolname="specialities"]'), speciality);
     const acts = this.modal.locator('ng-select[formcontrolname="billableActs"]');
     await acts.locator('.ng-select-container').click();
@@ -141,8 +141,8 @@ export class RemunerationProfilePage {
   }
 
   async create(data: RemunerationProfileData) {
-    await this.section.locator('button[title="Nouvelle rémunération"]').click();
-    await expect(this.modal).toBeVisible();
+    // Attend le chargement des rémunérations actives (actes déjà rémunérés retirés de la liste)
+    await this.openNew();
     await this.selectOption(this.modal.locator('ng-select[formcontrolname="specialities"]'), data.speciality);
     await this.selectOption(this.modal.locator('ng-select[formcontrolname="billableActs"]'), data.act, false);
 
