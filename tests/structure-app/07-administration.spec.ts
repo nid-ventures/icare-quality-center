@@ -1440,17 +1440,17 @@ test.describe('Module Administration', () => {
       await settings.cancelDetails();
     });
 
-    test('Enregistrer les détails : repris après reconnexion et imprimés sur les factures', async ({ page }) => {
+    test('Enregistrer les détails : sans déconnexion, affichés et imprimés sur les factures', async ({ page }) => {
       test.setTimeout(Math.max(test.info().timeout, 600000));
       let settings = await openSettings(page);
       await settings.openDetails();
       const original = await settings.readDetails();
       const changed = { name: `${original.name} QA`, primaryStreet: `Rue QA ${stamp}`, postalCode: `QA${stamp}` };
       try {
-        await test.step('Modifier nom, adresse et code postal, enregistrer (déconnexion puis reconnexion)', async () => {
+        await test.step('Modifier nom, adresse et code postal, enregistrer (sans déconnexion)', async () => {
           await settings.enableDetails();
           await settings.fillDetails(changed);
-          await settings.saveAndRelogin(settings.detailsSave);
+          await settings.save(settings.detailsSave);
         });
         await test.step('Les nouvelles valeurs sont affichées', async () => {
           settings = await openSettings(page);
@@ -1471,7 +1471,7 @@ test.describe('Module Administration', () => {
           if (JSON.stringify(await settings.readDetails()) !== JSON.stringify(original)) {
             await settings.enableDetails();
             await settings.fillDetails(original);
-            await settings.saveAndRelogin(settings.detailsSave);
+            await settings.save(settings.detailsSave);
             settings = await openSettings(page);
             await settings.openDetails();
           }
@@ -1493,7 +1493,7 @@ test.describe('Module Administration', () => {
       expect(await settings.readInvoice(), "Valeurs d'origine").toEqual(original);
     });
 
-    test('Enregistrer la configuration de facture : reprise après reconnexion et appliquée aux factures imprimées', async ({ page }) => {
+    test('Enregistrer la configuration de facture : sans déconnexion, appliquée aux factures imprimées', async ({ page }) => {
       test.setTimeout(Math.max(test.info().timeout, 600000));
       let settings = await openSettings(page);
       await settings.openInvoice();
@@ -1502,10 +1502,10 @@ test.describe('Module Administration', () => {
       const original = { ...(await settings.readInvoice()), policy: saved.policy || 'Calibri' };
       const changed = { policy: 'Arial', color: '#1a5276', header: `En-tête QA ${stamp}`, footer: `Pied de page QA ${stamp}` };
       try {
-        await test.step('Modifier police, couleur, en-tête et pied de page, enregistrer (déconnexion puis reconnexion)', async () => {
+        await test.step('Modifier police, couleur, en-tête et pied de page, enregistrer (sans déconnexion)', async () => {
           await settings.enableInvoice();
           await settings.fillInvoice(changed);
-          await settings.saveAndRelogin(settings.invoiceSave);
+          await settings.save(settings.invoiceSave);
         });
         await test.step('Les nouvelles valeurs sont affichées', async () => {
           settings = await openSettings(page);
@@ -1534,7 +1534,7 @@ test.describe('Module Administration', () => {
           if (JSON.stringify(current) !== JSON.stringify(original)) {
             await settings.enableInvoice();
             await settings.fillInvoice(original);
-            await settings.saveAndRelogin(settings.invoiceSave);
+            await settings.save(settings.invoiceSave);
             settings = await openSettings(page);
             await settings.openInvoice();
           }

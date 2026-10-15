@@ -1,8 +1,5 @@
 import { type Page, type Locator, expect } from '@playwright/test';
 import { MyConfigurationPage } from './configuration.page';
-import { LoginPage } from '../patient/login.page';
-import { PortalPage } from '../portal/portal.page';
-import { adminUser } from '../../../test-data/structure-users';
 
 export type StructureDetails = { name: string; primaryEmail: string; primaryStreet: string; postalCode: string };
 export type InvoiceSettings = { policy: string; color: string; header: string; footer: string };
@@ -10,9 +7,8 @@ export type InvoiceSettings = { policy: string; color: string; header: string; f
 /**
  * Administration > Paramètres : "Détails de la structure" (app-hi-details) et "Configuration de
  * facture" (app-invoice). Les formulaires sont en lecture seule jusqu'à "Activer la modification" ;
- * enregistrer demande une confirmation, met à jour la base puis DÉCONNECTE l'utilisateur
- * (authService.logout : stockage du navigateur vidé, retour à /auth/login). La session partagée
- * des autres tests n'est pas touchée ; ici on se reconnecte après chaque enregistrement.
+ * enregistrer demande une confirmation, met à jour la base et le cache du navigateur : l'utilisateur
+ * reste connecté et le formulaire repasse en lecture seule.
  */
 export class StructureSettingsPage {
   private readonly config: MyConfigurationPage;
@@ -81,23 +77,17 @@ export class StructureSettingsPage {
   }
 
   /**
-   * Enregistre (bouton du formulaire), confirme l'avertissement de déconnexion, attend le retour à
-   * l'écran de connexion puis se reconnecte et revient dans Administration.
+   * Enregistre (bouton du formulaire) et confirme : message de succès, l'utilisateur reste connecté
+   * dans Administration (plus de déconnexion forcée).
    */
-  async saveAndRelogin(save: Locator) {
+  async save(save: Locator) {
     await save.click();
     const warning = this.page.locator('.warning-modal-card');
-    // Le texte passe par titleCaseWord : casse non garantie
-    await expect(warning.locator('.warning-modal-body')).toHaveText(/vous serez déconnecté/i);
+    await expect(warning.locator('.warning-modal-body')).toHaveText(/Voulez-vous modifier les détails \?/i);
+    await expect(warning.locator('.warning-modal-body'), "Plus d'annonce de déconnexion").not.toHaveText(/déconnect/i);
     await warning.getByRole('button', { name: /Confirmer/ }).click();
-    await this.page.waitForURL('**/auth/login', { timeout: 30000 });
-    const login = new LoginPage(this.page);
-    await login.login(adminUser.username, adminUser.password);
-    await login.selectStructure(adminUser.hi);
-    const portal = new PortalPage(this.page);
-    await portal.expectLoaded();
-    await portal.enterModule('Administration');
-    await this.page.waitForURL('**/my-space/configuration');
+    await expect(this.page.getByText(/Les détails ont été bien modifiés? avec succès/i).first()).toBeVisible({ timeout: 30000 });
+    await expect(this.page, 'Toujours connecté').toHaveURL(/\/my-space\/configuration/);
   }
 
   /** Image PNG générée dans le navigateur (largeur × hauteur), en octets. */
