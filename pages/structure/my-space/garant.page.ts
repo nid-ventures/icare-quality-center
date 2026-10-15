@@ -119,7 +119,7 @@ export class GarantPage {
     await row.locator('button.action-toggle').click();
     await expect(this.page.getByText(/voulez-vous changer l.état de cet(te)? assurance/i)).toBeVisible();
     await this.page.getByRole('button', { name: 'Confirmer' }).click();
-    const message = this.page.getByText(/mise à jour de l.état de cet assurance a\s+r[ée]ussi|encours d.utilisation|a échoué/i).first();
+    const message = this.page.getByText(/mise à jour de l.état de cet(te)? assurance a\s+r[ée]ussi|encours d.utilisation|a échoué/i).first();
     await expect(message).toBeVisible({ timeout: 15000 });
     return ((await message.textContent()) ?? '').replace(/\s+/g, ' ').trim();
   }
