@@ -224,6 +224,11 @@ test.describe('Module Reporting', () => {
       expect(after.count, `${tab} "${type}" du jour : une de plus`).toBe(before + 1);
       expect(after.headers.some(h => h.date === todayFr && words(h.caregiver) === words(caregiver)),
         `Résultat du ${todayFr} par ${caregiver}`).toBe(true);
+      // Le patient de chaque résultat est affiché dans l'en-tête (chargé à la demande pour certains actes)
+      const name = `${patient.firstName} ${patient.lastName}`;
+      await expect.poll(async () => (await after.reporting.headers())
+        .some(h => h.date === todayFr && words(h.caregiver) === words(caregiver) && name.toUpperCase().split(/\s+/).every(w => h.patient.toUpperCase().includes(w))),
+        { message: `Patient ${name} affiché dans l'en-tête`, timeout: 15000 }).toBe(true);
       const byConsultant = await searchToday(portal, page, tab, type, after.headers.find(h => words(h.caregiver) === words(caregiver))!.caregiver);
       expect(byConsultant.count, 'Filtre consultant').toBeGreaterThan(0);
       expect(byConsultant.headers.every(h => words(h.caregiver) === words(caregiver)), 'Seulement ce consultant').toBe(true);

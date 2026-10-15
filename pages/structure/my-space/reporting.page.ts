@@ -358,11 +358,11 @@ export type ReportingActRow = {
 };
 
 export type PrestationsTab = 'Consultations' | 'Imagerie' | 'Bilans' | 'Vaccinations';
-export type PrestationHeader = { type: string; date: string; caregiver: string };
+export type PrestationHeader = { type: string; patient: string; date: string; caregiver: string };
 
 /**
  * Reporting > Prestations, onglet par onglet : filtres (consultant, période, type, taille), recherche,
- * en-têtes des résultats (type, date, consultant : le patient n'y figure pas) et fenêtre d'export.
+ * en-têtes des résultats (type, patient, date, consultant) et fenêtre d'export.
  * Chaque onglet a ses propres champs : tout est cherché dans l'onglet actif.
  */
 export class PrestationsReportingPage {
@@ -441,8 +441,15 @@ export class PrestationsReportingPage {
   async headers(): Promise<PrestationHeader[]> {
     const result: PrestationHeader[] = [];
     for (const item of await this.pane.locator('.reporting-item-header').all()) {
-      const meta = (await item.locator('.reporting-item-meta > span').allInnerTexts()).map(s => s.replace(/\s+/g, ' ').trim());
-      result.push({ type: ((await item.locator('.reporting-item-type').innerText()) ?? '').replace(/\s+/g, ' ').trim(), date: meta[0] ?? '', caregiver: meta[1] ?? '' });
+      // Chaque information est repérée par son icône (le patient n'apparaît qu'une fois chargé)
+      const meta = async (icon: string) => {
+        const span = item.locator(`.reporting-item-meta > span:has(i.${icon})`);
+        return (await span.count()) ? (await span.first().innerText()).replace(/\s+/g, ' ').trim() : '';
+      };
+      result.push({
+        type: ((await item.locator('.reporting-item-type').innerText()) ?? '').replace(/\s+/g, ' ').trim(),
+        patient: await meta('ri-user-heart-line'), date: await meta('ri-calendar-line'), caregiver: await meta('ri-stethoscope-line')
+      });
     }
     return result;
   }
