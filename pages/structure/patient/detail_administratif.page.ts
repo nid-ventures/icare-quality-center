@@ -96,7 +96,8 @@ export class DetailPatientPage {
     this.modifySaveButton = page.getByRole('button', { name: 'Enregistrer' });
     this.actionButtonDeleteFirst = personContactTabPanel.getByRole('button', { name: 'Action' }).first();
     this.deleteLink = page.getByRole('link', { name: 'Supprimer' });
-    this.confirmDeleteButton = page.getByRole('button', { name: 'Supprimer' });
+    // Fenêtre d'avertissement commune (AVERTISSEMENT / Fermer / Confirmer)
+    this.confirmDeleteButton = page.getByRole('button', { name: 'Confirmer' });
 
   }
   async gotoDetailsPatient() {
@@ -239,7 +240,8 @@ export class DetailPatientPage {
     await this.actionButtonDeleteFirst.click();
     // Cliquer sur Supprimer
     await this.deleteLink.click();
-    // Confirmer la suppression dans la modale
+    // Confirmer la suppression dans la fenêtre d'avertissement commune
+    await expect(this.page.getByText(/Voulez-vous supprimer cette personne à contacter/i)).toBeVisible();
     await this.confirmDeleteButton.click();
 
   }

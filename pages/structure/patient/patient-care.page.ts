@@ -285,7 +285,9 @@ export class PatientCarePage {
         const actionButton = firstRow.locator('button:has-text("Action")')
         await actionButton.click();
         await this.page.getByRole('link', { name: 'Supprimer' }).click();
-        await this.page.getByRole('button', { name: 'Supprimer' }).click();
+        // Fenêtre d'avertissement commune (AVERTISSEMENT / Fermer / Confirmer)
+        await expect(this.page.getByText(/Voulez-vous supprimer cette prise en charge/i)).toBeVisible();
+        await this.page.getByRole('button', { name: 'Confirmer' }).click();
         await expect(this.page.getByText('La suppression a réussi avec succès')).toBeVisible();
     }
     /**
