@@ -495,7 +495,10 @@ export class BillingInvoicePage {
         await option.click();
         await this.submitAddActForm();
 
-        expect(await this.fillFirstAvailableActAmount(amount)).toBeTruthy();
+        // Acte précis : montant saisi sur SA ligne (le patient peut avoir d'autres actes en attente,
+        // la première ligne venue serait facturée à sa place)
+        if (act) await this.setActAmount(act.act, Number(amount));
+        else expect(await this.fillFirstAvailableActAmount(amount)).toBeTruthy();
         await this.proceedToBilling();
         await this.tryApplyFirstAvailableInsurance();
         await this.generateInvoice();

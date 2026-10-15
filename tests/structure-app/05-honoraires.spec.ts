@@ -507,6 +507,12 @@ test.describe('Module Honoraires', () => {
         await test.step(`Désactiver ${medecin}`, async () => setDoctorActive(page, false));
         await test.step('La liste des relevés s\'affiche, avec le relevé du médecin désactivé', async () => {
           await new PortalPage(page).enterModule('Honoraires');
+          // Soignants en cache (actifs seulement) rafraîchis par loadconfigs après un chargement de
+          // page : sans cette attente, le médecin désactivé figure encore dans le cache
+          const loaded = page.waitForResponse(r => r.url().includes('/modules/loadconfigs'), { timeout: 30000 });
+          await page.reload();
+          await loaded;
+          await page.waitForTimeout(500);
           const listPage = new HonorairesListPage(page);
           await listPage.goto();
           await listPage.filtrerParStatut('Non Payé');
