@@ -253,17 +253,15 @@ export class BillingListPatientPage {
     }
 
     /**
-     * Supprime une ligne de facture. En cas de succès, le composant Angular fait un
-     * `window.location.reload()` complet : on attend donc le rechargement de la page puis la
-     * réapparition de l'en-tête de la liste avant de continuer.
+     * Supprime une ligne de facture. En cas de succès, la liste est relue (sans recharger la page) ;
+     * en cas de refus, aucune relecture : l'attente est alors abandonnée.
      */
     async deleteRow(row: Locator = this.firstRow): Promise<void> {
         await row.getByTitle('Supprimer').click();
         await expect(this.page.getByText(/voulez-vous supprimer cette facture/i)).toBeVisible();
-        await Promise.all([
-            this.page.waitForEvent('load', { timeout: 20000 }).catch(() => { }),
-            this.confirmerButton.click(),
-        ]);
+        const refreshed = this.page.waitForResponse(r => /\/invoices\/(patients|garants)$/.test(r.url().split('?')[0]) && r.request().method() === 'POST', { timeout: 20000 }).catch(() => null);
+        await this.confirmerButton.click();
+        await refreshed;
         await expect(this.listHeading).toBeVisible({ timeout: 15000 });
     }
 
@@ -549,17 +547,15 @@ export class BillingListGarantPage {
     }
 
     /**
-     * Supprime une ligne de facture. En cas de succès, le composant Angular fait un
-     * `window.location.reload()` complet : on attend donc le rechargement de la page puis la
-     * réapparition de l'en-tête de la liste avant de continuer.
+     * Supprime une ligne de facture. En cas de succès, la liste est relue (sans recharger la page) ;
+     * en cas de refus, aucune relecture : l'attente est alors abandonnée.
      */
     async deleteRow(row: Locator = this.firstRow): Promise<void> {
         await row.getByTitle('Supprimer').click();
         await expect(this.page.getByText(/voulez-vous supprimer cette facture/i)).toBeVisible();
-        await Promise.all([
-            this.page.waitForEvent('load', { timeout: 20000 }).catch(() => { }),
-            this.confirmerButton.click(),
-        ]);
+        const refreshed = this.page.waitForResponse(r => /\/invoices\/(patients|garants)$/.test(r.url().split('?')[0]) && r.request().method() === 'POST', { timeout: 20000 }).catch(() => null);
+        await this.confirmerButton.click();
+        await refreshed;
         await expect(this.listHeading).toBeVisible({ timeout: 15000 });
     }
 

@@ -110,19 +110,16 @@ export class AccountCreateUpdatePage {
 
   /**
    * Enregistre le formulaire.
-   * - En création, un succès entraîne un rechargement complet de la page (côté app).
-   * - En modification, le modal se ferme simplement (pas de rechargement complet).
+   * - En création, un succès ferme le modal et rafraîchit la liste (sans recharger la page).
+   * - En modification, le modal se ferme simplement.
    */
   async save() {
     if (this.mode === 'create') {
-      // Le clic déclenche un window.location.reload() sur la même URL : il faut enregistrer
-      // l'attente AVANT le clic, sinon waitForLoadState/waitForURL peuvent se résoudre
-      // instantanément sur l'état de chargement déjà atteint par la page courante (aucune
-      // navigation détectée), et le test continue alors qu'un rechargement est en cours.
-      await Promise.all([
-        this.page.waitForURL('**/account/accounts', { waitUntil: 'load' }),
-        this.saveButton.click(),
-      ]);
+      // Attente enregistrée avant le clic : la liste est relue juste après la création
+      const refreshed = this.page.waitForResponse(r => r.url().includes('/prsnls/search') && r.request().method() === 'POST', { timeout: 30000 });
+      await this.saveButton.click();
+      await refreshed;
+      await this.root.waitFor({ state: 'hidden', timeout: 10000 });
     } else {
       await this.saveButton.click();
       await this.root.waitFor({ state: 'hidden', timeout: 10000 });

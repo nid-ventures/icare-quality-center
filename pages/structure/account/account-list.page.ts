@@ -243,8 +243,7 @@ export class AccountListPage {
 
   /**
    * Change l'état (Actif/Inactif) d'un utilisateur via l'icône cadenas de sa ligne,
-   * puis confirme la popup d'avertissement. La sauvegarde entraîne un rechargement complet
-   * de la page (window.location.reload() côté application).
+   * puis confirme la popup d'avertissement. La liste est ensuite relue (sans recharger la page).
    */
   async toggleState(login: string) {
     const row = this.getRowByLogin(login);
@@ -253,10 +252,9 @@ export class AccountListPage {
 
     await expect(this.confirmModalBody).toBeVisible();
     await expect(this.confirmButton).toBeVisible();
+    const refreshed = this.page.waitForResponse(r => r.url().includes('/prsnls/search') && r.request().method() === 'POST', { timeout: 30000 });
     await this.confirmButton.click();
-
-    // L'application recharge entièrement la page après le changement d'état.
-    await this.page.waitForLoadState('load');
+    await refreshed;
     await this.usersNavLink.waitFor({ state: 'visible' });
   }
 

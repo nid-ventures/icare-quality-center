@@ -119,16 +119,21 @@ export class ConsentConfigPage {
     }, html);
   }
 
-  /** Enregistre la nouvelle configuration (confirmation comprise) ; la page se recharge. */
+  /** Liste des configurations relue par l'écran (sans rechargement de page). */
+  private listRefreshed() {
+    return this.page.waitForResponse(r => /\/consents\?active=true/.test(r.url()) && r.request().method() === 'GET', { timeout: 30000 });
+  }
+
+  /** Enregistre la nouvelle configuration (confirmation comprise) ; la liste est relue. */
   async save() {
     await this.saveButton.click();
     await expect(this.page.getByText(/voulez-vous enregistrer cette configuration/i)).toBeVisible();
     const created = this.page.waitForResponse(r => /\/consents$/.test(r.url().split('?')[0]) && r.request().method() === 'POST', { timeout: 30000 });
+    const refreshed = this.listRefreshed();
     await this.page.getByRole('button', { name: 'Confirmer' }).click();
     const response = await created;
-    // La page se recharge aussitôt : le corps de la réponse n'est plus lisible, le résultat est vérifié en rouvrant
     expect(response.ok(), `Configuration enregistrée (HTTP ${response.status()})`).toBe(true);
-    await this.page.waitForLoadState('load');
+    await refreshed;
   }
 
   /** Retire la configuration du profil (confirmation comprise) et renvoie le message. */
@@ -148,13 +153,15 @@ export class ConsentConfigPage {
 
   get editSaveButton(): Locator { return this.editModal.locator('.modal-modern-footer button.btn-primary'); }
 
-  /** Enregistre la modification du texte ; la page se recharge. */
+  /** Enregistre la modification du texte ; la fenêtre se ferme et la liste est relue. */
   async saveEdit() {
     const updated = this.page.waitForResponse(r => /\/consents$/.test(r.url().split('?')[0]) && r.request().method() === 'PUT', { timeout: 30000 });
+    const refreshed = this.listRefreshed();
     await this.editSaveButton.click();
     const response = await updated;
     expect(response.ok(), `Texte modifié (HTTP ${response.status()})`).toBe(true);
-    await this.page.waitForLoadState('load');
+    await refreshed;
+    await expect(this.editModal).toBeHidden();
   }
 
   async closeEdit() {
