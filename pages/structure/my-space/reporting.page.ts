@@ -356,3 +356,139 @@ export type ReportingActRow = {
   row: Locator; lastname: string; firstname: string; identifier: string; caregiver: string;
   invoicePatient: string; invoiceGarant: string; amount: number; act: string; status: string; deletable: boolean;
 };
+
+export type PrestationsTab = 'Consultations' | 'Imagerie' | 'Bilans' | 'Vaccinations';
+export type PrestationHeader = { type: string; date: string; caregiver: string };
+
+/**
+ * Reporting > Prestations, onglet par onglet : filtres (consultant, période, type, taille), recherche,
+ * en-têtes des résultats (type, date, consultant : le patient n'y figure pas) et fenêtre d'export.
+ * Chaque onglet a ses propres champs : tout est cherché dans l'onglet actif.
+ */
+export class PrestationsReportingPage {
+  constructor(private readonly page: Page) {}
+
+  get pane(): Locator { return this.page.locator('.tab-pane.active'); }
+  get message(): Locator { return this.pane.locator('.validation-message'); }
+
+  async openTab(tab: PrestationsTab) {
+    await this.page.locator('.tabs-nav .tab-btn').filter({ hasText: tab }).click();
+    await expect(this.pane.locator('.tab-filters-header h5')).toBeVisible();
+    await this.waitLoaded();
+  }
+
+  private async waitLoaded() {
+    await this.page.waitForTimeout(500);
+    await this.pane.locator('.btn-search:disabled').waitFor({ state: 'detached', timeout: 60000 }).catch(() => {});
+  }
+
+  /** Liste déroulante d'un filtre de l'onglet actif, repérée par son libellé. */
+  filter(label: RegExp): Locator {
+    return this.pane.locator('.filter-group').filter({ has: this.page.locator('.filter-label', { hasText: label }) }).locator('ng-select');
+  }
+
+  /** Options proposées par un filtre. */
+  async options(label: RegExp): Promise<string[]> {
+    const select = this.filter(label);
+    await select.locator('.ng-select-container').click();
+    const names = (await this.page.locator('.ng-dropdown-panel .ng-option').allTextContents()).map(s => s.replace(/\s+/g, ' ').trim()).filter(Boolean);
+    await this.page.keyboard.press('Escape');
+    return names;
+  }
+
+  /** Choisit une option (libellé exact, accents et casse ignorés). */
+  async choose(label: RegExp, option: string) {
+    const select = this.filter(label);
+    await select.locator('.ng-select-container').click();
+    const wanted = normalize(option);
+    const options = this.page.locator('.ng-dropdown-panel .ng-option');
+    const texts = (await options.allTextContents()).map(normalize);
+    const index = texts.findIndex(t => t === wanted);
+    if (index < 0) throw new Error(`Option "${option}" absente : ${JSON.stringify(texts)}`);
+    await options.nth(index).click();
+  }
+
+  async clear(label: RegExp) {
+    const clear = this.filter(label).locator('.ng-clear-wrapper');
+    if (await clear.isVisible().catch(() => false)) await clear.click();
+  }
+
+  async setDates(start: string, end: string) {
+    const dates = this.pane.locator('input[type="date"]');
+    await dates.nth(0).fill(start);
+    await dates.nth(1).fill(end);
+  }
+
+  /** Lance la recherche de l'onglet et renvoie le message affiché. */
+  async search(): Promise<string> {
+    await this.pane.locator('.btn-search').click();
+    await this.waitLoaded();
+    await expect(this.message).toBeVisible({ timeout: 60000 });
+    return ((await this.message.textContent()) ?? '').replace(/\s+/g, ' ').trim();
+  }
+
+  async reset() {
+    await this.pane.locator('.btn-reset').click();
+    await this.waitLoaded();
+  }
+
+  /** Nombre de résultats annoncé par le message ("N consultation(s) trouvée(s)"), 0 sinon. */
+  static countOf(message: string): number {
+    return Number(message.match(/^(\d+)\s/)?.[1] ?? 0);
+  }
+
+  /** En-têtes des résultats affichés. */
+  async headers(): Promise<PrestationHeader[]> {
+    const result: PrestationHeader[] = [];
+    for (const item of await this.pane.locator('.reporting-item-header').all()) {
+      const meta = (await item.locator('.reporting-item-meta > span').allInnerTexts()).map(s => s.replace(/\s+/g, ' ').trim());
+      result.push({ type: ((await item.locator('.reporting-item-type').innerText()) ?? '').replace(/\s+/g, ' ').trim(), date: meta[0] ?? '', caregiver: meta[1] ?? '' });
+    }
+    return result;
+  }
+
+  // ======================== Export ========================
+
+  get exportModal(): Locator { return this.page.locator('.export-modal'); }
+  get exportMessage(): Locator { return this.exportModal.locator('.validation-message'); }
+  exportDate(index: 0 | 1): Locator { return this.exportModal.locator('input[type="date"]').nth(index); }
+
+  async openExport() {
+    await this.page.getByRole('button', { name: /Exporter/ }).click();
+    await expect(this.exportModal).toBeVisible();
+  }
+
+  async exportCategory(label: 'Consultations' | 'Imagerie' | 'Bilans' | 'Vaccinations') {
+    await this.exportModal.locator('.export-card').filter({ hasText: label }).click();
+  }
+
+  async exportFormat(label: RegExp) {
+    await this.exportModal.locator('.export-format-btn').filter({ hasText: label }).click();
+  }
+
+  async exportDates(start: string, end: string) {
+    await this.exportDate(0).fill(start);
+    await this.exportDate(1).fill(end);
+  }
+
+  /** Clique sur Télécharger sans attendre de fichier ; renvoie le message affiché. */
+  async exportExpectingMessage(): Promise<string> {
+    await this.exportModal.getByRole('button', { name: /Télécharger/ }).click();
+    await expect(this.exportMessage).toBeVisible({ timeout: 60000 });
+    return ((await this.exportMessage.textContent()) ?? '').replace(/\s+/g, ' ').trim();
+  }
+
+  /** Clique sur Télécharger et renvoie le fichier produit (nom et contenu), capté par le test. */
+  async exportFile(): Promise<{ name: string; content: Buffer }> {
+    const download = this.page.waitForEvent('download', { timeout: 120000 });
+    await this.exportModal.getByRole('button', { name: /Télécharger/ }).click();
+    const file = await download;
+    const path = await file.path();
+    const fs = await import('fs');
+    return { name: file.suggestedFilename(), content: fs.readFileSync(path) };
+  }
+}
+
+function normalize(value: string): string {
+  return value.normalize('NFD').replace(/[\u0300-\u036f]/g, '').replace(/\s+/g, ' ').trim().toUpperCase();
+}

@@ -150,7 +150,7 @@ export class BillableActConfigPage {
 
 /** Sans accents ni casse, pour comparer les libellés de spécialité écrits différemment selon l'écran. */
 export function normalizeLabel(value: string): string {
-  return value.normalize('NFD').replace(/[̀-ͯ]/g, '').replace(/\s+/g, ' ').trim().toUpperCase();
+  return value.normalize('NFD').replace(/[\u0300-\u036f]/g, '').replace(/\s+/g, ' ').trim().toUpperCase();
 }
 
 /** Expression du libellé entier, chaque lettre acceptant ses variantes accentuées. */
