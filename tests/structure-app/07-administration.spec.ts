@@ -1295,7 +1295,7 @@ test.describe('Module Administration', () => {
         try {
           await test.step('Retirer la configuration', async () => {
             const consents = await openConsents(page);
-            expect(await consents.remove(profil)).toMatch(/reussi/);
+            expect(await consents.remove(profil)).toMatch(/r[ée]ussi/);
             await expect(consents.row(profil), 'Plus listée').toHaveCount(0);
           });
           await test.step('Enregistrer sans profil est refusé', async () => {

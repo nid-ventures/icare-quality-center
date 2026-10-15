@@ -526,7 +526,7 @@ test.describe('Module Dossier médical — Suivi des parcours de soins (homme, f
       if (!(REUSED_PATIENTS && await close.count() === 0)) {
         await close.click();
         await confirm(page);
-        await expect(page.getByText(/clôture de cet étape a\s+reussi/i).first()).toBeVisible({ timeout: 20000 });
+        await expect(page.getByText(/clôture de cet(te)? étape a\s+r[ée]ussi/i).first()).toBeVisible({ timeout: 20000 });
       }
       await expect(stepButton(page, step)).toHaveClass(/pw-step-success/, { timeout: 20000 });
       await expect(activeStep(page).getByRole('button', { name: /Clôturer cette étape/ })).toHaveCount(0);
@@ -570,7 +570,7 @@ test.describe('Module Dossier médical — Suivi des parcours de soins (homme, f
     if (!(REUSED_PATIENTS && await close.count() === 0)) {
       await close.click();
       await confirm(page);
-      await expect(page.getByText(/clôture de cet étape a\s+reussi/i).first()).toBeVisible({ timeout: 20000 });
+      await expect(page.getByText(/clôture de cet(te)? étape a\s+r[ée]ussi/i).first()).toBeVisible({ timeout: 20000 });
     }
     await expect(stepButton(page, 1)).toHaveClass(/pw-step-warning/, { timeout: 20000 });
     await expect(activeStep(page).getByRole('button', { name: /Clôturer cette étape/ })).toHaveCount(0);
@@ -647,7 +647,7 @@ test.describe('Module Dossier médical — Suivi des parcours de soins (homme, f
       { name: 'precisions', kind: 'textarea', value: 'Archivage du parcours de suivi QA' },
     ]);
     await modal.getByRole('button', { name: /^\W*Enregistrer\s*$/ }).click();
-    await expect(page.getByText(/archivage a reussie/i).first()).toBeVisible({ timeout: 20000 });
+    await expect(page.getByText(/archivage a r[ée]ussie?/i).first()).toBeVisible({ timeout: 20000 });
     await page.waitForURL('**/patient/patient-care-pathway-list/**');
   });
 

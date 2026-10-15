@@ -21,7 +21,7 @@ export class AccountUpdatePwdPage {
     // Bouton sans icône ici mais désactivé tant que le formulaire est invalide.
     this.saveButton = this.root.getByRole('button', { name: /Enregistrer/ });
     this.closeButton = this.root.getByRole('button', { name: 'Fermer' });
-    this.successMessage = this.root.getByText('La mise à jour du mot de passe a bien reussi');
+    this.successMessage = this.root.getByText('La mise à jour du mot de passe a bien réussi');
   }
 
   async expectOpen() {

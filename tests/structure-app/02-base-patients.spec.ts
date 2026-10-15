@@ -195,7 +195,7 @@ test.describe('Module Base patients', () => {
 
     test('Supprimer une personne à contacter', async ({ page }) => {
       await new DetailPatientPage(page).deleteFirstContactPerson();
-      // Toast de l'application : "La suppression a reussi avec succès" (sans accent sur "reussi").
+      // Toast de l'application : "La suppression a réussi avec succès".
       await expect(page.getByText(/suppression a r[ée]ussi/i)).toBeVisible();
     });
   });

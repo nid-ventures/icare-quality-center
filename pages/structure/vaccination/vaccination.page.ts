@@ -96,9 +96,9 @@ export class VaccinationPage {
     this.confirmButton = page.getByRole('button', { name: 'Confirmer' });
 
     this.vaccinationDeletedToast = page.getByText('La suppression de la vaccination a réussi');
-    // Message exact du service : "L'ajout de cette dose a  reussi " (double espace, sans accent,
-    // espace final) -- on matche donc en tolérant les espaces et la casse.
-    this.doseAddedToast = page.getByText(/ajout de cette dose.*reussi/i);
+    // Message du service : "L'ajout de cette dose a réussi" -- on tolère les espaces, la casse et
+    // l'ancienne graphie sans accent.
+    this.doseAddedToast = page.getByText(/ajout de cette dose.*r[ée]ussi/i);
   }
 
   /**

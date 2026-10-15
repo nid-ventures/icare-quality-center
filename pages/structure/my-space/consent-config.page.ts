@@ -136,7 +136,7 @@ export class ConsentConfigPage {
     await this.row(profil).first().locator('button.action-delete').click();
     await expect(this.page.getByText(/voulez-vous retirer cette configuration/i)).toBeVisible();
     await this.page.getByRole('button', { name: 'Confirmer' }).click();
-    const message = this.page.getByText(/Le retrait\s+a (reussi|échoué)/).first();
+    const message = this.page.getByText(/Le retrait\s+a (r[ée]ussi|échoué)/).first();
     await expect(message).toBeVisible({ timeout: 15000 });
     return ((await message.textContent()) ?? '').replace(/\s+/g, ' ').trim();
   }

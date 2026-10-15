@@ -117,7 +117,7 @@ export class GarantPage {
   async toggle(nom: string): Promise<string> {
     const row = this.row(nom).first();
     await row.locator('button.action-toggle').click();
-    await expect(this.page.getByText(/voulez-vous changer l.état de cet assurance/i)).toBeVisible();
+    await expect(this.page.getByText(/voulez-vous changer l.état de cet(te)? assurance/i)).toBeVisible();
     await this.page.getByRole('button', { name: 'Confirmer' }).click();
     const message = this.page.getByText(/mise à jour de l.état de cet assurance a\s+r[ée]ussi|encours d.utilisation|a échoué/i).first();
     await expect(message).toBeVisible({ timeout: 15000 });
