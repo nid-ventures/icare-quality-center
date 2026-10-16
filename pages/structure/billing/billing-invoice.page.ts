@@ -90,10 +90,12 @@ export class BillingInvoicePage {
     async searchPatientByIdentifier(identifier: string): Promise<void> {
         await expect(this.rechercheTabButton).toBeVisible();
         await this.identifiantInput.fill(identifier);
-        await this.rechercherButton.click();
         // L'appel /patients/getAll peut être lent sur le backend local (jusqu'à plusieurs
-        // secondes à froid) : on attend la disparition de l'indicateur de chargement plutôt
-        // qu'un délai fixe trop court.
+        // secondes à froid) : on attend sa réponse, enregistrée avant le clic. Attendre seulement
+        // la disparition de l'indicateur de chargement passait avant même son apparition.
+        const searched = this.page.waitForResponse(r => r.url().includes('/patients/getAll') && r.request().method() === 'POST', { timeout: 30000 }).catch(() => null);
+        await this.rechercherButton.click();
+        await searched;
         await this.page.locator('.loading-compact').waitFor({ state: 'hidden', timeout: 15000 }).catch(() => { });
     }
 

@@ -328,8 +328,11 @@ export class PatientCarePage {
      * Ferme le modal de visualisation
      */
     async closeViewModal() {
-        await this.viewCloseButton.click();
-        await expect(this.viewModalHeading).not.toBeVisible();
+        // Un clic arrivé pendant l'animation d'ouverture est ignoré : on reclique tant que la fenêtre reste ouverte
+        await expect(async () => {
+            if (await this.viewModalHeading.isVisible()) await this.viewCloseButton.click();
+            await expect(this.viewModalHeading).not.toBeVisible({ timeout: 2000 });
+        }).toPass({ timeout: 15000 });
     }
 }
 

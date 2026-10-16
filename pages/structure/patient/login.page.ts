@@ -115,10 +115,12 @@ export class LoginPage {
    */
   async selectStructure(structureName: string = 'NEST FOR ALL') {
     const structureModalHeading = this.page.getByRole('heading', { name: /Sélectionnez votre établissement/ });
-    const modalAppeared = await structureModalHeading
-      .waitFor({ state: 'visible', timeout: 5000 })
-      .then(() => true)
-      .catch(() => false);
+    // Fenêtre de choix ou arrivée directe au portail (une seule structure) : la première des deux.
+    // Un délai fixe court faisait conclure à tort « pas de choix » quand la connexion était lente.
+    const modalAppeared = await Promise.race([
+      structureModalHeading.waitFor({ state: 'visible', timeout: 30000 }).then(() => true, () => false),
+      this.page.waitForURL('**/modules', { timeout: 30000 }).then(() => false, () => false),
+    ]);
     if (!modalAppeared) {
       return;
     }

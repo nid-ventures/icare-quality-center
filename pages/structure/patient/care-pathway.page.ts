@@ -66,7 +66,8 @@ export class CarePathwayPage {
   }
 
   async expectDetailLoaded() {
-    await expect(this.detailHeading).toBeVisible();
+    // Le détail charge le parcours, ses étapes et ses actes : plus de 5 s quand le backend est chargé
+    await expect(this.detailHeading).toBeVisible({ timeout: 30000 });
     await expect(this.page.getByRole('button', { name: 'Étape 1', exact: true })).toBeVisible();
     await expect(this.page.getByRole('heading', { name: /Actes médicaux prévus/ })).toBeVisible();
   }

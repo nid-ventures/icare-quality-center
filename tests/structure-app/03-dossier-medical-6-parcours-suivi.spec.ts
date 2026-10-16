@@ -11,6 +11,10 @@ import { isoDate } from '../../test-data/consultation-fields';
 
 test.setTimeout(300000);
 
+// Mode visuel (SLOWMO) : chaque action et chaque lecture de champ attend SLOWMO ms ; les délais
+// fixes des actes réalisés un par un sont multipliés d'autant (sinon dépassés, sans erreur réelle)
+const VISUAL = Number(process.env.SLOWMO) > 0 ? 4 : 1;
+
 // Suivi complet d'un parcours de soins, sur 3 parcours paramétrés par les tests, un par sexe cible.
 // Chaque parcours a 2 étapes contenant chacune les 4 types d'actes (consultation, échographie,
 // vaccination, bilan). Ils sont démarrés sur une patiente et un patient dédiés.
@@ -156,7 +160,7 @@ type Realize = (body: Locator, title: string, reopen: () => Promise<Locator>) =>
  */
 async function expectKept(root: Locator, expected: FieldSnapshot, what: string, ignore: string[] = []) {
   let diffs: string[] = [];
-  await expect.poll(async () => (diffs = await keptFieldsDiff(root, expected, ignore)).length, { timeout: 20000 })
+  await expect.poll(async () => (diffs = await keptFieldsDiff(root, expected, ignore)).length, { timeout: 20000 * VISUAL * 3 })
     .toBe(0).catch(() => {});
   expect.soft(diffs, `${what} : données réaffichées à la réouverture`).toEqual([]);
 }
@@ -499,22 +503,22 @@ test.describe('Module Dossier médical — Suivi des parcours de soins (homme, f
   // réalisent tous, un par un, étape après étape (délai allongé en conséquence).
   for (const step of FEMMES.steps.map((_, i) => i + 1)) {
     test(`Étape ${step} : réaliser toutes les consultations (tous les champs + prescriptions)`, async ({ page }) => {
-      test.setTimeout(3600000);
+      test.setTimeout(3600000 * VISUAL);
       await realizeAllActs(page, woman, FEMMES.name, step, /Consultation/i, realizeConsultation(page));
     });
 
     test(`Étape ${step} : réaliser toutes les échographies (tous les champs)`, async ({ page }) => {
-      test.setTimeout(3600000);
+      test.setTimeout(3600000 * VISUAL);
       await realizeAllActs(page, woman, FEMMES.name, step, /chographie/i, realizeEchographie(page));
     });
 
     test(`Étape ${step} : réaliser toutes les vaccinations (première dose, tous les champs)`, async ({ page }) => {
-      test.setTimeout(3600000);
+      test.setTimeout(3600000 * VISUAL);
       await realizeAllActs(page, woman, FEMMES.name, step, /Vaccination/i, realizeVaccination(page));
     });
 
     test(`Étape ${step} : réaliser tous les bilans (création et résultat, tous les champs)`, async ({ page }) => {
-      test.setTimeout(3600000);
+      test.setTimeout(3600000 * VISUAL);
       await realizeAllActs(page, woman, FEMMES.name, step, /Bilan/i, realizeBilan(page));
     });
   }
@@ -557,7 +561,7 @@ test.describe('Module Dossier médical — Suivi des parcours de soins (homme, f
   });
 
   test("Clôturer une étape commencée mais incomplète : étape incomplète", async ({ page }) => {
-    test.setTimeout(1800000);
+    test.setTimeout(1800000 * VISUAL);
     // Étape 1 du parcours tous les sexes de la patiente : une seule consultation réalisée, puis clôture
     await openPathway(page, woman, TOUS.name);
     await expect(activeStep(page)).toContainText('Étape 1');
@@ -685,7 +689,7 @@ test.describe('Module Dossier médical — Suivi des parcours de soins (homme, f
   // ---------------- Parcours du patient homme ----------------
   for (const step of HOMMES.steps.map((_, i) => i + 1)) {
     test(`Patient homme : réaliser toutes les consultations de l'étape ${step} du parcours hommes (avec prescriptions)`, async ({ page }) => {
-      test.setTimeout(3600000);
+      test.setTimeout(3600000 * VISUAL);
       await realizeAllActs(page, man, HOMMES.name, step, /Consultation/i, realizeConsultation(page));
     });
   }

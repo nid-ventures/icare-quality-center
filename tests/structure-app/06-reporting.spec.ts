@@ -493,6 +493,8 @@ test.describe('Module Reporting', () => {
     });
 
     test(`Facturer ${BILLED.act} : statut "Facturé" avec les N° de facture patient et garant`, async ({ portal, page }) => {
+      // Facturation puis lecture des listes de factures patient et garant : plus de 30 s
+      test.setTimeout(Number(process.env.SLOWMO) > 0 ? 900000 : 180000);
       await test.step('Facturer avec la prise en charge', async () => {
         const invoicePage = await openBilling(portal, page);
         await invoicePage.setActAmount(BILLED.act, 10000);
