@@ -12,7 +12,10 @@
     "report:branding": "node -e \"const fs=require('fs');const src='allure-branding/styles.css';const dst='node_modules/allure-commandline/dist/plugins/custom-logo-plugin/static/styles.css';fs.copyFileSync(src,dst);const cfg='node_modules/allure-commandline/dist/config/allure.yml';const c=fs.readFileSync(cfg,'utf8');if(!c.includes('custom-logo-plugin'))fs.appendFileSync(cfg,'  - custom-logo-plugin\\n');\"",
     "report:generate": "npm run report:branding && npx allure generate allure-results -o allure-report --clean --name \"ICARE QUALITY\"",
     "report:open": "npx allure open allure-report",
-    "report": "npm run report:generate && npm run report:open"
+    "report": "npm run report:generate && npm run report:open",
+    "perf:web": "cross-env TEST_ENV=local npx playwright test tests/structure-app/09-performance.spec.ts --project=structure-app --workers=1",
+    "perf:lighthouse": "cross-env TEST_ENV=local node perf/lighthouse.mjs",
+    "perf:charge": "k6 run perf/k6/charge.js"
   },
   "keywords": [],
   "author": "",
@@ -26,6 +29,7 @@
     "allure-playwright": "^3.6.0",
     "cross-env": "^7.0.3",
     "dotenv": "^17.3.1",
+    "lighthouse": "^13.5.0",
     "mysql2": "^3.20.0",
     "rimraf": "^6.1.3",
     "typescript": "^5.9.3"

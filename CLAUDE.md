@@ -40,7 +40,18 @@ npm run report:open
 
 # Show Playwright HTML report
 npx playwright show-report
+
+# Performance (see "Performance tests" below)
+npm run perf:web          # 09-performance.spec.ts: screen timings + Web Vitals with thresholds
+npm run perf:lighthouse   # Lighthouse audit of the main screens -> lighthouse-reports/
+npm run perf:charge       # k6 load test of the API (k6 installed separately: winget install GrafanaLabs.k6)
 ```
+
+## Performance tests
+
+- **`tests/structure-app/09-performance.spec.ts`** (part of the structure suite): times the main screens from click to usable screen (login, portal, patients list, dossier search/open, patient invoices, fee statements, acts list, settings) against thresholds (`SEUILS`), plus Web Vitals (FCP, LCP, CLS) on first load. Soft checks, results in the test annotations / Allure. `PERF_FACTOR` scales every threshold; skipped in visual mode (SLOWMO). Thresholds target the local dev server (`ng serve`, unminified).
+- **`perf/lighthouse.mjs`**: Lighthouse (desktop, no simulated throttling) on 7 screens; reuses the saved session `playwright/.auth/structure-admin.json` (run the tests or the `setup` project first). HTML report per screen + `resume.json` in `lighthouse-reports/` (git-ignored). `LH_MIN_SCORE=60` makes it fail under that performance score.
+- **`perf/k6/charge.js`**: read-only API load test (config, patients list, invoices, acts, fee statements) with a Keycloak token like the front. `-e TARGET=local|dev|test -e VUS=10 -e DURATION=1m`; thresholds on errors and p95 per call. Never target production or a shared server without the team's agreement.
 
 ## Architecture
 

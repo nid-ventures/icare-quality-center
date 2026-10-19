@@ -17,3 +17,6 @@ node_modules/
 /playwright/.cache/
 /playwright/.auth
 .claude/
+
+# Rapports Lighthouse (npm run perf:lighthouse)
+lighthouse-reports/
