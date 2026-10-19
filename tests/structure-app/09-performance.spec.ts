@@ -20,17 +20,21 @@ import { adminUser } from '../../test-data/structure-users';
 
 const FACTOR = Number(process.env.PERF_FACTOR) || 1;
 
-/** Seuils des écrans, en millisecondes. */
+/**
+ * Seuils des écrans, en millisecondes : environ 3 fois les temps mesurés le 19/10/2026 (en
+ * commentaire, après l'ajout des index de la liste des patients), pour détecter une régression
+ * sans échouer sur une machine un peu chargée.
+ */
 const SEUILS = {
-  connexion: 10000,
-  portail: 5000,
-  basePatients: 8000,
-  rechercheDossier: 6000,
-  ouvertureDossier: 8000,
-  facturesPatients: 8000,
-  honoraires: 8000,
-  listeActes: 10000,
-  administration: 8000,
+  connexion: 5000, //         1,6 s
+  portail: 4000, //           1,3 s
+  basePatients: 2500, //      0,7 s
+  rechercheDossier: 6000, //  2,3 s (appel /patients/search, à optimiser)
+  ouvertureDossier: 2000, //  0,1 s
+  facturesPatients: 2000, //  0,5 s
+  honoraires: 2000, //        0,3 s
+  listeActes: 4000, //        1,3 s
+  administration: 2000, //    0,5 s
 };
 
 /**
