@@ -55,6 +55,15 @@ async function mesurer(nom: string, seuil: number, action: () => Promise<unknown
   return ms;
 }
 
+/**
+ * Portail affiché ET application initialisée (référentiels chargés) : sans cela, le clic sur un
+ * module mesuré juste après l'ouverture du portail compte aussi la fin de l'initialisation.
+ */
+async function portailPret(page: Page) {
+  await page.waitForLoadState('networkidle', { timeout: 15000 }).catch(() => {});
+  await page.waitForTimeout(2500);
+}
+
 /** Réponse de l'API dont l'adresse contient `part`, attendue (enregistrée avant l'action). */
 function reponse(page: Page, part: string, method = 'POST'): Promise<Response> {
   return page.waitForResponse(r => r.url().includes(part) && r.request().method() === method, { timeout: 60000 });
@@ -129,17 +138,19 @@ test.describe('Performance', () => {
     });
 
     test('Base patients : ouverture de la liste', async ({ portal, page }) => {
+      await portailPret(page);
       await mesurer('Liste des patients', SEUILS.basePatients, async () => {
         const liste = reponse(page, '/patients/getAll');
         await portal.enterModule('Base patients');
         await liste;
-        await expect(page.locator('.compact-table tbody tr').first()).toBeVisible({ timeout: 60000 });
+        // Lignes de patients réelles : « Aucun patient disponible » s'affiche pendant le chargement
+        await expect(page.locator('.compact-table tbody tr').filter({ hasNotText: /Aucun patient/ }).first()).toBeVisible({ timeout: 60000 });
       });
     });
 
     test('Dossier médical : recherche par identifiant puis ouverture du dossier', async ({ portal, page }) => {
-      // Identifiant d'un patient existant, lu dans la réponse de l'API (la liste s'affiche vide
-      // tant qu'aucune recherche n'est lancée)
+      // Identifiant d'un patient existant, lu dans la réponse de l'API (le tableau affiche
+      // « Aucun patient disponible » tant que la réponse n'est pas arrivée)
       const liste = reponse(page, '/patients/getAll');
       await portal.enterModule('Base patients');
       const identifier: string = (await (await liste).json())?.result?.data?.[0]?.identifier ?? '';
@@ -166,6 +177,7 @@ test.describe('Performance', () => {
     });
 
     test('Honoraires : liste des relevés', async ({ portal, page }) => {
+      await portailPret(page);
       await mesurer('Liste des relevés d\'honoraires', SEUILS.honoraires, async () => {
         const liste = reponse(page, '/search/paged');
         await portal.enterModule('Honoraires');
@@ -183,6 +195,7 @@ test.describe('Performance', () => {
     });
 
     test('Administration : espace paramétrage', async ({ portal, page }) => {
+      await portailPret(page);
       await mesurer('Espace paramétrage', SEUILS.administration, async () => {
         await portal.enterModule('Administration');
         await expect(page.getByRole('heading', { name: 'Espace paramétrage' })).toBeVisible({ timeout: 60000 });
