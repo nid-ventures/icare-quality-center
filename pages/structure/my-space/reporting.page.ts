@@ -279,7 +279,10 @@ export class BillableBillingReportingPage {
   }
 
   async search() {
+    // La liste grossit à chaque run : on attend la réponse de la recherche, enregistrée avant le clic
+    const searched = this.page.waitForResponse(r => r.url().includes('/billableacts/search') && r.request().method() === 'POST', { timeout: 60000 }).catch(() => null);
     await this.rechercherButton.click();
+    await searched;
     await this.page.waitForTimeout(300);
   }
 

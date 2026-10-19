@@ -58,6 +58,8 @@ export class GarantPage {
   /** Filtres de la liste (assureur, type, état) puis recherche ; un filtre absent est vidé. */
   async search(filters: { assureur?: string; type?: 'IPM' | 'ASSURANCE'; etat?: 'Actif' | 'Inactif' } = {}) {
     await this.section.getByRole('button', { name: /Réinitialiser/ }).click();
+    // « Réinitialiser » recharge la liste : « Rechercher » reste grisé pendant ce temps (lent si la machine est chargée)
+    await expect(this.section.getByRole('button', { name: /^\W*Rechercher$/ })).toBeEnabled({ timeout: 60000 });
     // Filtres dans l'ordre : Assurance / IPM, Type, État
     const selects = this.section.locator('.section-filtres ng-select');
     if (filters.assureur) await this.pick(selects.nth(0), filters.assureur);
