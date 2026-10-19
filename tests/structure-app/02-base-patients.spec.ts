@@ -91,7 +91,8 @@ test.describe('Module Base patients', () => {
       });
 
       await test.step('Le dossier du patient créé est ouvert', async () => {
-        await expect(page.getByRole('heading', { level: 1, name: `${data.firstName} ${data.lastName}` })).toBeVisible();
+        // L'envoi de l'e-mail de consentement précède l'ouverture du dossier : plus de 5 s possible
+        await expect(page.getByRole('heading', { level: 1, name: `${data.firstName} ${data.lastName}` })).toBeVisible({ timeout: 30000 });
       });
     });
 

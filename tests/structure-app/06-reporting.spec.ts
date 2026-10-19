@@ -216,6 +216,8 @@ test.describe('Module Reporting', () => {
     /** Déroulé commun : compter, créer l'acte, recompter (+1), retrouver le consultant, filtrer par consultant. */
     async function checkTab(portal: PortalPage, page: Page, tab: PrestationsTab, keyword: RegExp | undefined,
       create: (type: string) => Promise<string>) {
+      // Trois recherches et la création de l'acte : plus que les 30 s par défaut
+      test.setTimeout(Number(process.env.SLOWMO) > 0 ? 900000 : 180000);
       const type = await pickType(portal, page, tab, keyword);
       const before = (await searchToday(portal, page, tab, type)).count;
       const caregiver = await test.step(`Créer l'acte "${type}" pour le patient`, async () => create(type));
