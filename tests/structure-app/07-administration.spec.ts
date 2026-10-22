@@ -736,9 +736,12 @@ test.describe('Module Administration', () => {
     async function openBilling(page: Page): Promise<BillingInvoicePage> {
       await new PortalPage(page).enterModule('Facturation');
       await page.waitForURL('**/billing/billings-create');
-      const loaded = page.waitForResponse(r => r.url().includes('/modules/loadconfigs'), { timeout: 30000 });
+      // Rechargement des référentiels de session (actes) ; attente tolérante : si la réponse a été
+      // manquée, l'acte absent sera signalé par la vérification qui suit, plus parlante
+      const loaded = page.waitForResponse(r => r.url().includes('/modules/loadconfigs'), { timeout: 30000 }).catch(() => null);
       await page.reload();
       await loaded;
+      await page.waitForURL('**/billing/billings-create');
       const invoice = new BillingInvoicePage(page);
       await invoice.searchPatientByIdentifier(patient.identifier);
       await invoice.selectFirstSearchResult();
@@ -1222,6 +1225,19 @@ test.describe('Module Administration', () => {
       await consents.editorContent(consents.form, originals[profil]);
       await consents.save();
     }
+
+    test('Préparer : une configuration pour chaque profil (créée si absente)', async ({ page }) => {
+      // Les données de référence peuvent changer : le test crée lui-même les configurations
+      // manquantes (type et mode imposés par le profil, texte par défaut de l'application)
+      for (const profil of ['CAREGIVER', 'HI_ADMINISTRATOR', 'MEDICAL_SECRETAIRE', 'PATIENT']) {
+        const consents = await openConsents(page);
+        if ((await consents.rows()).some(r => r.profil === profil)) continue;
+        await test.step(`Créer la configuration ${profil}`, async () => {
+          await consents.chooseProfile(profil);
+          await consents.save();
+        });
+      }
+    });
 
     test('Liste : une configuration par profil, aucun profil libre', async ({ page }) => {
       const consents = await openConsents(page);

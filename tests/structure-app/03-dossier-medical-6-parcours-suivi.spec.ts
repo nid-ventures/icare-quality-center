@@ -76,9 +76,15 @@ async function openPatientFile(page: Page, patient: DossierPatient) {
   // Les tuiles de la carte se chargent après le titre : sans cette attente, un lien vérifié trop
   // tôt est absent (et une absence vérifiée trop tôt passe à tort).
   await page.locator('.pathway-actions .qa-btn').first().waitFor({ state: 'visible', timeout: 30000 }).catch(() => {});
-  // Au-delà de 10 types, la carte n'affiche que les premiers : tout afficher pour vérifier chaque tuile
+  // Au-delà de 10 types, la carte n'affiche que les premiers : tout afficher pour vérifier chaque tuile.
+  // Les parcours du patient arrivent après les premières tuiles : on attend la fin des chargements
+  // avant de chercher « Voir tous », puis on vérifie que la liste est bien dépliée.
+  await page.waitForLoadState('networkidle', { timeout: 15000 }).catch(() => {});
   const showAll = page.getByRole('button', { name: /Voir tous les parcours/ });
-  if (await showAll.isVisible()) await showAll.click();
+  if (await showAll.isVisible()) {
+    await showAll.click();
+    await expect(page.getByRole('button', { name: /^\s*Réduire\s*$/ }), 'Liste des parcours dépliée').toBeVisible();
+  }
 }
 
 /** Tuile (lien actif ou bouton grisé) d'un type de parcours sur le dashboard. */
