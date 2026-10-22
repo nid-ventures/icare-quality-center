@@ -59,6 +59,9 @@ test.describe('Module Base patients', () => {
 
     test('Rechercher un patient par chaque critère puis réinitialiser', async ({ page }) => {
       const patientPage = new PatientPage(page);
+      // Patient créé par le test : premier de la liste (la plus récente création), avec des
+      // données connues dans toutes les structures (les patients existants peuvent être incomplets)
+      await createTestPatient(page);
 
       await test.step('Rechercher le premier patient par chacun de ses champs', async () => {
         await patientPage.definitionChamps(page);
@@ -211,12 +214,13 @@ test.describe('Module Base patients', () => {
     test.beforeEach(async ({ page }) => {
       const carePage = new PatientCarePage(page);
       const careData = CareDataGenerator.generate();
-      insurerName = careData.insurerName;
       await createTestPatient(page, true);
-      await test.step(`Ajouter une prise en charge ${insurerName}`, async () => {
+      await test.step('Ajouter une prise en charge', async () => {
         await carePage.goToCareTab();
         await carePage.openAddCareModal();
+        // Assureur réellement choisi (repli sur un assureur de la structure si celui généré n'existe pas)
         await carePage.fillCareForm(careData);
+        insurerName = careData.insurerName;
         await carePage.saveCare();
       });
     });

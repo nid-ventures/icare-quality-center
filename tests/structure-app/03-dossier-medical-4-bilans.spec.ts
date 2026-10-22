@@ -5,6 +5,7 @@ import { DossierSearchPage } from '../../pages/structure/patient/dossier-search.
 import { HealthChecksListPage, HealthCheckDetailPage } from '../../pages/structure/analyse/health-check.page';
 import { ConsultationFormPage, type FieldSpec, type FilledValues } from '../../pages/structure/consultation/consultation-form.page';
 import { isoDate } from '../../test-data/consultation-fields';
+import { ensureBilanAnalyses } from '../../fixtures/bilans-setup';
 
 test.setTimeout(300000);
 
@@ -59,6 +60,9 @@ test.describe("Module Dossier médical — Bilans d'analyses", () => {
 
   test.beforeAll(async ({ browser }) => {
     test.setTimeout(DOSSIER_SETUP_TIMEOUT);
+    // Structure sans analyse parmi ses actes : quelques analyses ajoutées pour que les bilans
+    // présélectionnent leurs analyses et actes à facturer
+    await ensureBilanAnalyses(browser);
     patient = await createDossierPatient(browser);
   });
 

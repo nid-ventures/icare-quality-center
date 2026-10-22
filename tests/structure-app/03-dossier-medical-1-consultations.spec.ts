@@ -9,6 +9,7 @@ import { PrescriptionManagerPage } from '../../pages/structure/consultation/pres
 import { DentalChartPage, ADULT_TEETH, CHILD_TEETH } from '../../pages/structure/consultation/dental-chart.page';
 import { ConsultationStandardDataGenerator } from '../../pages/structure/generator/consultation-standard-data-generator';
 import { prenatalFields, planificationFields, pediatricFields, dentalFields, isoDate } from '../../test-data/consultation-fields';
+import { clearPrefilledConsultant } from '../../pages/structure/shared/consultant';
 
 test.setTimeout(240000);
 
@@ -518,6 +519,8 @@ test.describe('Module Dossier médical — Consultations', () => {
     for (const def of Object.values(TYPES)) {
       test(`${def.label} : enregistrer sans consultant est refusé`, async ({ page }) => {
         const root = await startConsultation(page, patient, def);
+        // Consultant prérempli si l'utilisateur connecté est soignant (selon la structure)
+        await clearPrefilledConsultant(root);
         await root.getByRole('button', { name: /Enregistrer la consultation/ }).click();
         await expect(root.getByText('Le consultant est obligatoire').first()).toBeVisible();
         await expect(page.getByRole('button', { name: /^\W*Confirmer$/ })).toHaveCount(0);

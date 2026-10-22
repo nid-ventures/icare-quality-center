@@ -58,7 +58,7 @@ export class ConsultationPediatriquePage extends ConsultationPage {
         // Textes
         await this.reportInput.fill(data.report);
         await this.summaryInput.fill(data.summary);
-        await this.prescriptionInput.fill(data.prescription);
+        // « Ordonnance de la consultation » : plus proposée à la création (ordonnances via les prescriptions)
 
         // Actes
         if (data.acts && data.acts.length > 0) {
@@ -80,7 +80,8 @@ export class ConsultationPediatriquePage extends ConsultationPage {
     async fillUpdatedPediatriqueForm(data: Partial<ConsultationPediatriqueData>) {
         if (data.report) await this.reportInput.fill(data.report);
         if (data.summary) await this.summaryInput.fill(data.summary);
-        if (data.prescription) await this.prescriptionInput.fill(data.prescription);
+        // Affichée en modification seulement si la consultation contient déjà une ordonnance
+        if (data.prescription && await this.prescriptionInput.isVisible()) await this.prescriptionInput.fill(data.prescription);
         if (data.acts && data.acts.length > 0) {
             await expect(this.actsSelect).toBeEnabled({ timeout: 5000 });
             for (const act of data.acts) {

@@ -5,6 +5,7 @@ import { DossierSearchPage } from '../../pages/structure/patient/dossier-search.
 import { VaccinationPage } from '../../pages/structure/vaccination/vaccination.page';
 import { ConsultationFormPage, type FieldSpec, type FilledValues } from '../../pages/structure/consultation/consultation-form.page';
 import { isoDate } from '../../test-data/consultation-fields';
+import { clearPrefilledConsultant } from '../../pages/structure/shared/consultant';
 
 test.setTimeout(240000);
 
@@ -191,6 +192,8 @@ test.describe('Module Dossier médical — Vaccination', () => {
   test("Une vaccination sans type, consultant ni dose n'est pas enregistrée", async ({ page }) => {
     const vaccination = new VaccinationPage(page);
     await vaccination.openNewVaccinationModal();
+    // Consultant prérempli si l'utilisateur connecté est soignant (selon la structure)
+    await clearPrefilledConsultant(vaccination.modal);
     await vaccination.validerButton.click();
     for (const message of ['Le type est obligatoire', 'Le consultant est obligatoire', 'La dose est obligatoire']) {
       await expect(vaccination.modal.getByText(message), message).toBeVisible();

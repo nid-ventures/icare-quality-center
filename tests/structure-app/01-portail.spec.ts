@@ -1,9 +1,10 @@
 import { test, expect } from '../../fixtures/structure.fixture';
 import { ADMIN_MODULES, type ModuleName } from '../../pages/structure/portal/portal.page';
 import { adminUser } from '../../test-data/structure-users';
-import { tenant, hasModule, withoutModuleReason, type OptionalModule } from '../../test-data/tenants';
+import { tenant, hasModule, absentModules, withoutModuleReason, type OptionalModule } from '../../test-data/tenants';
 
-// Modules de la structure testée : certaines structures n'ont ni Facturation ni Honoraires
+// Modules de la structure testée (relevés sur son portail à la connexion) : certaines structures
+// n'ont ni Facturation, ni Honoraires, ni Rendez-vous
 const isOptional = (name: ModuleName): name is OptionalModule => name === 'Facturation' || name === 'Honoraires' || name === 'Rendez-vous';
 const EXPECTED_MODULES = ADMIN_MODULES.filter(m => !isOptional(m) || hasModule(m));
 
@@ -29,7 +30,7 @@ test.describe('Module Portail iCare', () => {
       await portal.expectModulesVisible(EXPECTED_MODULES);
     });
 
-    for (const absent of tenant.withoutModules) {
+    for (const absent of absentModules()) {
       await test.step(`Vérifier que le module ${absent} n'est pas proposé (${tenant.name})`, async () => {
         await expect(page.getByRole('button', { name: new RegExp(`Entrer dans ${absent}`) })).toHaveCount(0);
       });

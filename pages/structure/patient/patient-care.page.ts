@@ -126,9 +126,10 @@ export class PatientCarePage {
      * @param data - Les données de la prise en charge
      */
     async fillCareForm(data: CareData) {
-        // Sélection de l'assureur
+        // Sélection de l'assureur ; s'il n'existe pas dans la structure testée (garants propres à
+        // chaque structure), le premier assureur proposé est pris et data.insurerName mis à jour
         await this.insurerSelect.click();
-        await this.page.getByRole('option', { name: data.insurerName }).click();
+        data.insurerName = await this.pickOption(data.insurerName);
 
         // Dates
         await this.startingDateInput.fill(data.startingDate);
@@ -295,23 +296,41 @@ export class PatientCarePage {
  * @param newInsurerName - Nouvel assureur (ex: 'Ascoma Assurance (ASSURANCE)')
  * @param newEndingDate - Nouvelle date de fin (format YYYY-MM-DD)
  */
-    async modifyFirstCare(newInsurerName: string, newEndingDate: string) {
+    /**
+     * Choisit l'option `wanted` de la liste déroulante ouverte si elle existe, sinon la première
+     * option disponible (hors `except`) ; renvoie le libellé choisi.
+     */
+    private async pickOption(wanted?: string, except?: string): Promise<string> {
+        const options = this.page.getByRole('option');
+        await expect(options.first(), 'Au moins un assureur proposé').toBeVisible({ timeout: 15000 });
+        const labels = (await options.allInnerTexts()).map(s => s.replace(/\s+/g, ' ').trim()).filter(Boolean);
+        const chosen = (wanted && labels.find(l => l === wanted)) || labels.find(l => l !== except) || labels[0];
+        await options.filter({ hasText: chosen }).first().click();
+        return chosen;
+    }
+
+    /**
+     * Modifie la première prise en charge : assureur `newInsurerName` s'il existe dans la structure,
+     * sinon un autre assureur disponible ; renvoie l'assureur choisi.
+     */
+    async modifyFirstCare(newInsurerName: string | undefined, newEndingDate: string): Promise<string> {
         // Cliquer sur le bouton Action de cette ligne
         await this.actionButtonFirst.click();
         // Cliquer sur Modifier
         await this.page.getByRole('link', { name: 'Modifier' }).click();
         // Vérifier que le modal de modification est visible
         await expect(this.modifyModalHeading).toBeVisible();
-        // Modifier l'assureur
+        // Modifier l'assureur (un autre que l'actuel si celui demandé n'existe pas dans la structure)
+        const current = ((await this.modifyInsurerSelect.locator('.ng-value-label').first().textContent().catch(() => '')) ?? '').replace(/\s+/g, ' ').trim();
         await this.modifyInsurerSelect.click();
-        await this.page.getByRole('option', { name: newInsurerName }).click();
+        const chosen = await this.pickOption(newInsurerName, current);
         // Modifier la date de fin
         await this.modifyEndingDateInput.fill(newEndingDate);
         // Cliquer sur Modifier (bouton de confirmation)
         await this.modifyButton.click();
         // Attendre la fermeture du modal (l'enregistrement peut prendre plus de temps sous charge).
         await expect(this.modifyModalHeading).not.toBeVisible({ timeout: 15000 });
-
+        return chosen;
     }
     /**
  * Ouvre les détails de la première prise en charge (Voir les détails)

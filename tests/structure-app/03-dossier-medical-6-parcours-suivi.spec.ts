@@ -197,7 +197,9 @@ async function realizeAllActs(page: Page, patient: DossierPatient, pathway: stri
         verify = await realize(await expandAct(current, i), title, reopen);
       } catch (error) {
         await page.reload();
-        await expect(page.locator('.pw-hero')).toBeVisible({ timeout: 20000 });
+        // Reprise impossible : on remonte l'erreur d'origine (plus parlante que celle du rechargement)
+        const reloaded = await page.locator('.pw-hero').waitFor({ state: 'visible', timeout: 30000 }).then(() => true, () => false);
+        if (!reloaded) throw error;
         await goToStep(page, step);
         const retry = (await openDomain(page, domain)).locator('.acc-item').nth(i);
         if (await retry.locator('.acc-item-badge').count() > 0) throw error;

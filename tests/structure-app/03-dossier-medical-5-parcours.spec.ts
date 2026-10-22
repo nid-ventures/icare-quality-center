@@ -6,6 +6,7 @@ import { CarePathwayPage } from '../../pages/structure/patient/care-pathway.page
 import { CarePathwayTemplatePage, ACT_DOMAINS, type CarePathwayTemplate, type SelectedActs } from '../../pages/structure/my-space/care-pathway-template.page';
 import { ConsultationFormPage } from '../../pages/structure/consultation/consultation-form.page';
 import { ADMIN_STORAGE_STATE } from '../../test-data/structure-users';
+import { clearPrefilledConsultant } from '../../pages/structure/shared/consultant';
 
 test.setTimeout(300000);
 
@@ -426,6 +427,8 @@ test.describe('Module Dossier médical — Parcours vaccinal et archives', () =>
     const carePathway = new CarePathwayPage(page);
     await carePathway.openStartForm(VACCINAL.name);
     await page.locator('#startDate').fill('');
+    // Praticien prérempli si l'utilisateur connecté est soignant (selon la structure)
+    await clearPrefilledConsultant(page.locator('body'));
     await carePathway.startButton.click();
     // Date de début : message "<libellé de la date> est obligatoire" (libellé paramétrable)
     await expect(page.locator('.invalid-feedback').filter({ hasText: /est obligatoire/ }).first()).toBeVisible();

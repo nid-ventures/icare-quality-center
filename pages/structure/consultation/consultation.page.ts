@@ -172,7 +172,7 @@ export class ConsultationPage {
     // Textes
     await this.reportInput.fill(data.report);
     await this.summaryInput.fill(data.summary);
-    await this.prescriptionInput.fill(data.prescription);
+    // « Ordonnance de la consultation » : plus proposée à la création (ordonnances via les prescriptions)
 
     // Actes médicaux (sélection multiple)
     for (const act of data.acts) {
@@ -186,6 +186,16 @@ export class ConsultationPage {
         await actsPanel.locator('.ng-option').first().click();
       }
     }
+  }
+
+  /** Noms des `count` premiers actes à facturer proposés par la structure (liste refermée ensuite). */
+  async availableActs(count: number): Promise<string[]> {
+    await this.actsSelect.click();
+    const actsPanel = this.page.locator('.ng-dropdown-panel:visible');
+    await actsPanel.locator('.ng-option:not(.ng-optgroup)').first().waitFor({ state: 'visible', timeout: 15000 });
+    const names = (await actsPanel.locator('.ng-option:not(.ng-optgroup)').allInnerTexts()).map(t => t.trim()).filter(Boolean);
+    await this.page.keyboard.press('Escape');
+    return [...new Set(names)].slice(0, count);
   }
 
   /**
@@ -242,7 +252,8 @@ export class ConsultationPage {
   async fillUpdatedForm(data: Partial<ConsultationData>) {
     if (data.report) await this.reportInput.fill(data.report);
     if (data.summary) await this.summaryInput.fill(data.summary);
-    if (data.prescription) await this.prescriptionInput.fill(data.prescription);
+    // Affichée en modification seulement si la consultation contient déjà une ordonnance
+    if (data.prescription && await this.prescriptionInput.isVisible()) await this.prescriptionInput.fill(data.prescription);
     if (data.acts && data.acts.length > 0) {
       // Pour les actes, il faut peut-être d'abord supprimer ceux existants
       // Ici on suppose qu'on peut en ajouter d'autres (à adapter selon l'UI)

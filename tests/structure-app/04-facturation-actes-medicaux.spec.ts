@@ -11,7 +11,8 @@ import { ConsultationFormPage, type FieldSpec } from '../../pages/structure/cons
 import { ImagerieDashboardPage } from '../../pages/structure/imagerie/imagerie-dashboard.page';
 import { HealthChecksListPage, HealthCheckDetailPage } from '../../pages/structure/analyse/health-check.page';
 import { isoDate, prenatalFields, planificationFields, pediatricFields, dentalFields } from '../../test-data/consultation-fields';
-import { hasModule, withoutModuleReason } from '../../test-data/tenants';
+import { tenant, hasModule, withoutModuleReason } from '../../test-data/tenants';
+import { ensureBilanAnalyses } from '../../fixtures/bilans-setup';
 
 // Module absent de certaines structures (cf. test-data/tenants.ts) : fichier ignoré pour elles
 test.skip(!hasModule('Facturation'), withoutModuleReason('Facturation'));
@@ -33,9 +34,9 @@ const BLOCKED = /suppression\s+a\s+échoué\s*:\s*au moins une facture existe|su
 test.describe('Module Facturation — Actes à facturer depuis le dossier médical', () => {
   test.describe('Consultation standard', () => {
     test.describe.configure({ mode: 'serial' });
-    // Deux actes à facturer : seul le premier est facturé
-    const BILLED = 'GLYCÉMIE';
-    const NOT_BILLED = 'PRÉLÈVEMENT';
+    // Deux actes à facturer proposés par la structure testée (relevés à la création) : seul le premier est facturé
+    let BILLED = '';
+    let NOT_BILLED = '';
     const TYPE = 'CONSULTATION ANESTHÉSIQUE';
     let patient: DossierPatient;
     let invoiceOrder = '';
@@ -75,12 +76,16 @@ test.describe('Module Facturation — Actes à facturer depuis le dossier médic
     const actChip = (page: Page, act: string) =>
       page.locator('ng-select[formcontrolname="billableActs"] .ng-value').filter({ hasText: new RegExp(act, 'i') });
 
-    test(`Créer une consultation standard avec deux actes à facturer (${BILLED}, ${NOT_BILLED})`, async ({ portal, page }) => {
+    test('Créer une consultation standard avec deux actes à facturer', async ({ portal, page }) => {
       const consultationPage = await openConsultations(portal, page);
-      const data = { ...ConsultationStandardDataGenerator.generate(), acts: [BILLED, NOT_BILLED] };
+      const data = ConsultationStandardDataGenerator.generate();
       await consultationPage.openNewConsultationModal();
       await consultationPage.fillConsultationBasics(data);
       await consultationPage.createConsultation();
+      const acts = await consultationPage.availableActs(2);
+      expect(acts, `Deux actes à facturer proposés par ${tenant.name}`).toHaveLength(2);
+      [BILLED, NOT_BILLED] = acts;
+      data.acts = acts;
       await consultationPage.fillMedicalConsultationForm(data);
       for (const act of data.acts) await expect(actChip(page, act), `Acte à facturer "${act}" choisi`).toHaveCount(1);
       await consultationPage.saveConsultation();
@@ -94,7 +99,7 @@ test.describe('Module Facturation — Actes à facturer depuis le dossier médic
       }
     });
 
-    test(`Facturer ${BILLED} seulement`, async ({ portal, page }) => {
+    test('Facturer le premier acte seulement', async ({ portal, page }) => {
       const invoicePage = await openBilling(portal, page);
       await invoicePage.setActAmount(BILLED, 3000);
       await invoicePage.proceedToBilling();
@@ -400,6 +405,9 @@ test.describe('Module Facturation — Actes à facturer depuis le dossier médic
 
     test.beforeAll(async ({ browser }) => {
       test.setTimeout(DOSSIER_SETUP_TIMEOUT);
+      // Structure sans analyse parmi ses actes : analyses ajoutées pour que le type de bilan
+      // présélectionne des actes à facturer
+      await ensureBilanAnalyses(browser);
       patient = await createDossierPatient(browser);
     });
 

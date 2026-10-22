@@ -1,7 +1,7 @@
 import { type Page, type APIResponse } from '@playwright/test';
 import { test, expect } from '../../fixtures/structure.fixture';
 import { type PortalPage } from '../../pages/structure/portal/portal.page';
-import { tenant, otherTenants, type Tenant } from '../../test-data/tenants';
+import { tenant, otherTenants, type StructureRef } from '../../test-data/tenants';
 
 /**
  * Isolation entre structures (plateforme multitenant) : une donnée de la structure testée (TENANT)
@@ -24,7 +24,7 @@ async function api(page: Page, portal: PortalPage): Promise<Api> {
   return { base, token };
 }
 
-function headers(a: Api, target: Tenant | string) {
+function headers(a: Api, target: StructureRef | string) {
   return { Authorization: `Bearer ${a.token}`, 'X-HI-CODE': typeof target === 'string' ? target : target.hiCode, 'Content-Type': 'application/json' };
 }
 
@@ -33,7 +33,7 @@ async function body(res: APIResponse): Promise<any> {
 }
 
 /** Recherche de patients par identifiant dans la structure `target`. */
-async function patientsByIdentifier(page: Page, a: Api, target: Tenant, identifier: string): Promise<any[]> {
+async function patientsByIdentifier(page: Page, a: Api, target: StructureRef, identifier: string): Promise<any[]> {
   const res = await page.request.post(`${a.base}/patients/getAll`, {
     headers: headers(a, target),
     data: { active: true, page: 1, size: 20, firstName: '', lastName: '', email: '', doB: 0, patientIdentifier: identifier, nidIdentifier: '', middleName: '', sex: null, phone: '', city: null, tz: 0, gender: 0, inactive: false },
@@ -43,7 +43,7 @@ async function patientsByIdentifier(page: Page, a: Api, target: Tenant, identifi
 }
 
 /** Factures patients par numéro dans la structure `target`. */
-async function invoicesByOrder(page: Page, a: Api, target: Tenant, invoiceOrder: string | null): Promise<any[]> {
+async function invoicesByOrder(page: Page, a: Api, target: StructureRef, invoiceOrder: string | null): Promise<any[]> {
   const res = await page.request.post(`${a.base}/invoices/patients`, { headers: headers(a, target), data: { pageNo: 1, pageSize: 20, invoiceOrder } });
   const json = await body(res);
   const data = json?.result?.data;
@@ -62,14 +62,14 @@ test.describe(`Isolation entre structures — données de ${tenant.name}`, () =>
     await test.step(`Contrôle : trouvé dans ${tenant.name}`, async () => {
       expect((await patientsByIdentifier(page, a, tenant, identifier)).map(p => p.id), 'Patient trouvé dans sa structure').toContain(patient.id);
     });
-    for (const other of otherTenants) {
+    for (const other of otherTenants()) {
       await test.step(`Introuvable depuis ${other.name}`, async () => {
         const found = await patientsByIdentifier(page, a, other, identifier);
-        expect(found.map(p => p.id), `Recherche par identifiant depuis ${other.key}`).not.toContain(patient.id);
+        expect(found.map(p => p.id), `Recherche par identifiant depuis ${other.code}`).not.toContain(patient.id);
         const direct = await page.request.get(`${a.base}/patients/${patient.id}`, { headers: headers(a, other) });
         const json = await body(direct);
         const leaked = direct.ok() && json?.code === 200 && json?.result?.id === patient.id;
-        expect(leaked, `Accès direct au patient ${patient.id} depuis ${other.key} (HTTP ${direct.status()}, code ${json?.code})`).toBe(false);
+        expect(leaked, `Accès direct au patient ${patient.id} depuis ${other.code} (HTTP ${direct.status()}, code ${json?.code})`).toBe(false);
       });
     }
   });
@@ -83,10 +83,10 @@ test.describe(`Isolation entre structures — données de ${tenant.name}`, () =>
     await test.step(`Contrôle : trouvée dans ${tenant.name}`, async () => {
       expect((await invoicesByOrder(page, a, tenant, order)).map(i => i.invoiceOrder), 'Facture trouvée dans sa structure').toContain(order);
     });
-    for (const other of otherTenants) {
+    for (const other of otherTenants()) {
       await test.step(`Introuvable depuis ${other.name}`, async () => {
         const found = await invoicesByOrder(page, a, other, order);
-        expect(found.map(i => i.id), `Recherche de la facture ${order} depuis ${other.key}`).not.toContain(invoice.id);
+        expect(found.map(i => i.id), `Recherche de la facture ${order} depuis ${other.code}`).not.toContain(invoice.id);
       });
     }
   });
