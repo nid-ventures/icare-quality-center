@@ -7,6 +7,7 @@ import { PatientCarePage } from '../../pages/structure/patient/patient-care.page
 import { PatientDataGenerator, type PatientData } from '../../pages/structure/generator/data-generator';
 import { ContactPersonGenerator } from '../../pages/structure/generator/contact-person-generator';
 import { CareDataGenerator } from '../../pages/structure/generator/care-data-generator';
+import { hasModule, withoutModuleReason } from '../../test-data/tenants';
 
 // 5 min : la création d'un patient attend la liste des patients (/patients/getAll), qui peut
 // dépasser une minute en local ; multiplié par 6 en mode visuel (SLOWMO) comme dans la configuration
@@ -245,6 +246,7 @@ test.describe('Module Base patients', () => {
   // Raccourcis vers la facturation
   // ======================================================================
   test.describe('Raccourcis de facturation', () => {
+    test.skip(!hasModule('Facturation'), withoutModuleReason('Facturation'));
     test('Facturer un patient depuis la liste', async ({ page, portal }) => {
       const patientPage = new PatientPage(page);
       const data = await createTestPatient(page);

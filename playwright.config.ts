@@ -2,6 +2,7 @@ import { defineConfig } from '@playwright/test';
 import dotenv from 'dotenv';
 import fs from 'fs';
 import path from 'path';
+import { tenant, adminStorageState } from './test-data/tenants';
 
 // Sélection de l'environnement cible via TEST_ENV=local|dev|test (npm run test:local /
 // test:dev / test:test). Sans TEST_ENV (ex: `npm test`, ou le workflow CI qui génère son
@@ -48,7 +49,8 @@ export default defineConfig({
   workers: 1,
   reporter: [
     ['list'],
-    ['allure-playwright', { outputFolder: 'allure-results' }],
+    // Structure testée affichée dans l'onglet « Environnement » du rapport
+    ['allure-playwright', { outputFolder: 'allure-results', environmentInfo: { Structure: `${tenant.name} (${tenant.key})`, Environnement: testEnv ?? 'défaut (.env)' } }],
     ['html', { open: 'never' }],
   ],
   use: {
@@ -75,14 +77,15 @@ export default defineConfig({
     {
       // Application structure (hi-icare-patient) : un fichier .spec.ts par module métier.
       name: 'structure-app',
+      metadata: { tenant: tenant.key },
       testDir: './tests/structure-app',
       testMatch: /.*\.spec\.ts/,
       dependencies: ['setup'],
       use: {
         ...chrome,
-        // Même chemin que ADMIN_STORAGE_STATE (test-data/structure-users.ts), non importé ici
-        // pour ne pas évaluer ce module avant le chargement du fichier .env.
-        storageState: 'playwright/.auth/structure-admin.json',
+        // Session de la structure testée (variable TENANT, cf. test-data/tenants.ts) : même chemin
+        // que ADMIN_STORAGE_STATE ; tenants.ts ne dépend pas du fichier .env
+        storageState: adminStorageState(),
       },
     },
     {

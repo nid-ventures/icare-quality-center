@@ -12,6 +12,11 @@ import { createDossierPatient, DOSSIER_SETUP_TIMEOUT, type DossierPatient } from
 import {
   ensureHonorairePrerequisites, billActForMedecin, HONORAIRE_SETUP_TIMEOUT, HONORAIRE_SPECIALITY, type HonoraireContext,
 } from '../../fixtures/honoraires-setup';
+import { hasModule, withoutModuleReason } from '../../test-data/tenants';
+
+// Module absent de certaines structures (cf. test-data/tenants.ts) : fichier ignoré pour elles
+test.skip(!hasModule('Facturation'), withoutModuleReason('Facturation'));
+test.skip(!hasModule('Honoraires'), withoutModuleReason('Honoraires'));
 
 test.setTimeout(240000);
 

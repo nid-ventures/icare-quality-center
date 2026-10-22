@@ -19,6 +19,7 @@ import { PortalPage } from '../../pages/structure/portal/portal.page';
 import { PatientPage } from '../../pages/structure/patient/patient.page';
 import { PatientCarePage } from '../../pages/structure/patient/patient-care.page';
 import { createDossierPatient, DOSSIER_SETUP_TIMEOUT, type DossierPatient } from '../../fixtures/dossier-patient';
+import { hasModule, withoutModuleReason } from '../../test-data/tenants';
 
 // Libellé réel du rôle non-soignant dans le sélecteur de rôles
 const NON_CAREGIVER_ROLE = 'HI-ADMINISTRATOR';
@@ -855,10 +856,12 @@ test.describe('Module Administration', () => {
     });
 
     test("L'acte ajouté est proposé en facturation", async ({ page }) => {
+      test.skip(!hasModule('Facturation'), withoutModuleReason('Facturation'));
       expect(await billingActs(page, listed.type)).toContain(listed.nom);
     });
 
     test("Désactiver un acte non utilisé : il n'est plus proposé en facturation, puis le réactiver", async ({ page }) => {
+      test.skip(!hasModule('Facturation'), withoutModuleReason('Facturation'));
       let acts = await openActs(page);
       await acts.search({ nom: listed.nom });
       expect(await acts.toggle(listed.nom)).toMatch(/réussi/i);
@@ -1457,6 +1460,7 @@ test.describe('Module Administration', () => {
     });
 
     test('Enregistrer les détails : sans déconnexion, affichés et imprimés sur les factures', async ({ page }) => {
+      test.skip(!hasModule('Facturation'), withoutModuleReason('Facturation'));
       test.setTimeout(Math.max(test.info().timeout, 600000));
       let settings = await openSettings(page);
       await settings.openDetails();
@@ -1510,6 +1514,7 @@ test.describe('Module Administration', () => {
     });
 
     test('Enregistrer la configuration de facture : sans déconnexion, appliquée aux factures imprimées', async ({ page }) => {
+      test.skip(!hasModule('Facturation'), withoutModuleReason('Facturation'));
       test.setTimeout(Math.max(test.info().timeout, 600000));
       let settings = await openSettings(page);
       await settings.openInvoice();

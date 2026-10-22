@@ -15,6 +15,7 @@ import { BillingInvoicePage } from '../../pages/structure/billing/billing-invoic
 import { BillingListPatientPage, BillingListGarantPage } from '../../pages/structure/billing/billing-list.page';
 import { createDossierPatient, DOSSIER_SETUP_TIMEOUT, type DossierPatient } from '../../fixtures/dossier-patient';
 import { ACTS, INSURER } from '../../test-data/cover-scenarios';
+import { hasModule, withoutModuleReason } from '../../test-data/tenants';
 
 // Le dashboard statistique historique (/my-space/dashboard) redirige désormais vers le portail
 // des modules (cf. my-space.routes.ts) : il n'existe plus de fonctionnalité à tester.
@@ -433,6 +434,7 @@ test.describe('Module Reporting', () => {
   // Liste des actes : statuts et N° de factures d'un patient dédié
   // ======================================================================
   test.describe('Liste des actes : statut et factures de chaque acte', () => {
+    test.skip(!hasModule('Facturation'), withoutModuleReason('Facturation'));
     // Patient pris en charge à 80 % ; deux actes à facturer, dont un seul est facturé.
     test.describe.configure({ mode: 'serial' });
     const BILLED = ACTS.cardio;

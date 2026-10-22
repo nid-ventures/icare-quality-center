@@ -336,6 +336,12 @@ export class BillingInvoicePage {
     /** Actes proposés pour une catégorie dans "Ajouter un acte" (fenêtre refermée sans enregistrer). */
     async proposedActs(category: string): Promise<string[]> {
         await this.openAddActModal();
+        // Catégorie absente (son seul acte est désactivé, par exemple) : aucun de ses actes n'est proposé
+        if (!(await this.categoryProposed(category))) {
+            await this.page.keyboard.press('Escape');
+            await this.closeAddActModal();
+            return [];
+        }
         await this.selectNgOptionByText(this.addActCategorySelect, category);
         await this.addActBillableActsSelect.click();
         const options = this.page.locator('.ng-dropdown-panel:visible .ng-option:not(.ng-optgroup):not(.ng-option-disabled)');
@@ -344,6 +350,18 @@ export class BillingInvoicePage {
         await this.page.keyboard.press('Escape');
         await this.closeAddActModal();
         return names;
+    }
+
+    /** La catégorie figure-t-elle parmi celles de la fenêtre "Ajouter un acte" ? (liste refermée ensuite) */
+    private async categoryProposed(category: string): Promise<boolean> {
+        await this.addActCategorySelect.click();
+        const input = this.addActCategorySelect.locator('input[type="text"]');
+        if (await input.isEditable().catch(() => false)) await input.fill(category.trim().split(/\s+/)[0]);
+        const pattern = new RegExp(`^\\s*${category.replace(/\s+/g, ' ').trim().replace(/[.*+?^${}()|[\]\\]/g, '\\$&').replace(/ /g, '\\s+')}\\s*$`, 'i');
+        const option = this.page.locator('.ng-dropdown-panel:visible .ng-option:not(.ng-optgroup)').filter({ hasText: pattern }).first();
+        const found = await option.waitFor({ state: 'visible', timeout: 5000 }).then(() => true, () => false);
+        await this.page.keyboard.press('Escape');
+        return found;
     }
 
     /** Ferme la fenêtre "Ajouter un acte" sans enregistrer. */

@@ -11,6 +11,10 @@ import { ConsultationFormPage, type FieldSpec } from '../../pages/structure/cons
 import { ImagerieDashboardPage } from '../../pages/structure/imagerie/imagerie-dashboard.page';
 import { HealthChecksListPage, HealthCheckDetailPage } from '../../pages/structure/analyse/health-check.page';
 import { isoDate, prenatalFields, planificationFields, pediatricFields, dentalFields } from '../../test-data/consultation-fields';
+import { hasModule, withoutModuleReason } from '../../test-data/tenants';
+
+// Module absent de certaines structures (cf. test-data/tenants.ts) : fichier ignoré pour elles
+test.skip(!hasModule('Facturation'), withoutModuleReason('Facturation'));
 
 test.setTimeout(300000);
 

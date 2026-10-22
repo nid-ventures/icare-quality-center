@@ -18,7 +18,8 @@ import { check, group, sleep } from 'k6';
 const TARGETS = {
   local: {
     api: 'https://nid-dev.localhost.com:9090/nid-api/v1',
-    oauth: 'https://keycloak.pro-icare.com/realms/icare/protocol/openid-connect/token',
+    // Même Keycloak que le front local (src/environments/environment.ts) et le backend (Boot-launch/.env)
+    oauth: 'https://keycloak.icare-nestlabs-test.net/realms/icare/protocol/openid-connect/token',
   },
   dev: {
     api: 'https://backend.icare-nestlabs-test.net:9090/nid-api/v1',
@@ -36,7 +37,7 @@ const VUS = Number(__ENV.VUS) || 10;
 const DURATION = __ENV.DURATION || '1m';
 const USERNAME = __ENV.ICARE_USER || 'hi-admin@gmail.com';
 const PASSWORD = __ENV.ICARE_PASSWORD || 'BcIsX7V&ZRh7';
-const HI_CODE = __ENV.ICARE_HI_CODE || 'NEST';
+const HI_CODE = __ENV.ICARE_HI_CODE || (__ENV.TENANT || 'nest').toUpperCase();
 
 export const options = {
   // Certificat auto-signé du backend local

@@ -8,6 +8,10 @@ import { PatientCarePage } from '../../pages/structure/patient/patient-care.page
 import { createDossierPatient, DOSSIER_SETUP_TIMEOUT, type DossierPatient } from '../../fixtures/dossier-patient';
 import { ACTS, COVER_SCENARIOS, INSURER, computeCover, scenarioTotal, type CoverComputation, type CoverScenario } from '../../test-data/cover-scenarios';
 import { type InvoiceDetail } from '../../pages/structure/billing/billing-list.page';
+import { hasModule, withoutModuleReason } from '../../test-data/tenants';
+
+// Module absent de certaines structures (cf. test-data/tenants.ts) : fichier ignoré pour elles
+test.skip(!hasModule('Facturation'), withoutModuleReason('Facturation'));
 
 test.setTimeout(120000);
 

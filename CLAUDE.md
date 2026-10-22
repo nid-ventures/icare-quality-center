@@ -47,6 +47,20 @@ npm run perf:lighthouse   # Lighthouse audit of the main screens -> lighthouse-r
 npm run perf:charge       # k6 load test of the API (k6 installed separately: winget install GrafanaLabs.k6)
 ```
 
+## Multi-tenant (structures)
+
+The platform is multi-tenant: one database per structure (`hi_nest`, `hi_mboursaly`, `hi_mcad`…), chosen at login in "Sélectionnez votre établissement" (same account `hi-admin@gmail.com` in each). One run tests one structure, set by `TENANT` (`nest` by default):
+
+```bash
+npm run test:local:mboursaly          # or: npx cross-env TEST_ENV=local TENANT=mcad npx playwright test --project=structure-app
+npm run test:local:isolation          # 10-isolation.spec.ts on the current TENANT
+```
+
+- `test-data/tenants.ts` lists the structures (login name, `X-HI-CODE`, admin full name, `withoutModules`). Login picks `tenant.name`; the session is saved per structure (`playwright/.auth/structure-admin[-<key>].json`); Allure shows the structure in Environment.
+- Some structures lack modules (front `EXCLUS_HIS_INVOICE` / `EXCLUS_HIS_FEE_STATEMENT` in `app-modules.service.ts`; Rendez-vous also needs billing): MCAD has no Facturation, Honoraires, Rendez-vous. Tests depending on them call `test.skip(!hasModule('…'), withoutModuleReason('…'))` (whole files 04-*, 05; parts of 01, 02, 06, 07, 09); 01-portail checks absent modules are not offered.
+- `10-isolation.spec.ts`: a patient and an invoice of the tested structure are found with its own `X-HI-CODE` (control) and not found from each other structure (search and direct access); an unknown structure code is refused.
+- Tests create their own data in the tested structure: run only on test structures, never on production.
+
 ## Performance tests
 
 - **`tests/structure-app/09-performance.spec.ts`** (part of the structure suite): times the main screens from click to usable screen (login, portal, patients list, dossier search/open, patient invoices, fee statements, acts list, settings) against thresholds (`SEUILS`), plus Web Vitals (FCP, LCP, CLS) on first load. Soft checks, results in the test annotations / Allure. `PERF_FACTOR` scales every threshold; skipped in visual mode (SLOWMO). Thresholds target the local dev server (`ng serve`, unminified).

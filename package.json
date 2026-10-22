@@ -15,7 +15,10 @@
     "report": "npm run report:generate && npm run report:open",
     "perf:web": "cross-env TEST_ENV=local npx playwright test tests/structure-app/09-performance.spec.ts --project=structure-app --workers=1",
     "perf:lighthouse": "cross-env TEST_ENV=local node perf/lighthouse.mjs",
-    "perf:charge": "k6 run perf/k6/charge.js"
+    "perf:charge": "k6 run perf/k6/charge.js",
+    "test:local:mboursaly": "rimraf allure-results && cross-env TEST_ENV=local TENANT=mboursaly npx playwright test --project=structure-app",
+    "test:local:mcad": "rimraf allure-results && cross-env TEST_ENV=local TENANT=mcad npx playwright test --project=structure-app",
+    "test:local:isolation": "cross-env TEST_ENV=local npx playwright test tests/structure-app/10-isolation.spec.ts --project=structure-app"
   },
   "keywords": [],
   "author": "",

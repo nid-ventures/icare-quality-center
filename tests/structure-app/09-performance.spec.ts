@@ -5,6 +5,7 @@ import { LoginPage } from '../../pages/structure/patient/login.page';
 import { DossierSearchPage } from '../../pages/structure/patient/dossier-search.page';
 import { BillableBillingReportingPage } from '../../pages/structure/my-space/reporting.page';
 import { adminUser } from '../../test-data/structure-users';
+import { hasModule, withoutModuleReason } from '../../test-data/tenants';
 
 /**
  * Performance perçue : temps des écrans les plus utilisés, du clic à l'écran utilisable (données
@@ -172,6 +173,7 @@ test.describe('Performance', () => {
     });
 
     test('Facturation : liste des factures patients', async ({ portal, page }) => {
+      test.skip(!hasModule('Facturation'), withoutModuleReason('Facturation'));
       await portal.enterModule('Facturation');
       await mesurer('Liste des factures patients', SEUILS.facturesPatients, async () => {
         const liste = reponse(page, '/invoices/patients');
@@ -181,6 +183,7 @@ test.describe('Performance', () => {
     });
 
     test('Honoraires : liste des relevés', async ({ portal, page }) => {
+      test.skip(!hasModule('Honoraires'), withoutModuleReason('Honoraires'));
       await portailPret(page);
       await mesurer('Liste des relevés d\'honoraires', SEUILS.honoraires, async () => {
         const liste = reponse(page, '/search/paged');

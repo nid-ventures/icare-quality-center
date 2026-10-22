@@ -327,7 +327,8 @@ test.describe('Module Dossier médical — Parcours de soins paramétrés', () =
   });
 
   test('Un parcours créé depuis une autre session est proposé sans reconnexion', async ({ page, browser }) => {
-    test.fail(true, "Anomalie : les modèles de parcours sont mis en cache dans le navigateur à la connexion (localStorage 'careplantemplates') ; une session déjà ouverte ne voit un nouveau parcours qu'après reconnexion.");
+    // Les modèles de parcours sont rechargés avec les autres référentiels peu après l'ouverture
+    // d'un module (ModuleService.refreshConfigCaches) : pas besoin de se reconnecter
     const other = await browser.newContext({ baseURL: process.env.BASE_URL, storageState: ADMIN_STORAGE_STATE, viewport: null, ignoreHTTPSErrors: true });
     try {
       const otherPage = await other.newPage();
