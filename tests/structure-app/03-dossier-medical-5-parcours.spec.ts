@@ -4,6 +4,7 @@ import { createDossierPatient, openDossier, DOSSIER_SETUP_TIMEOUT, type DossierP
 import { PortalPage } from '../../pages/structure/portal/portal.page';
 import { CarePathwayPage } from '../../pages/structure/patient/care-pathway.page';
 import { CarePathwayTemplatePage, ACT_DOMAINS, type CarePathwayTemplate, type SelectedActs } from '../../pages/structure/my-space/care-pathway-template.page';
+import { ConsultationFormPage } from '../../pages/structure/consultation/consultation-form.page';
 import { ADMIN_STORAGE_STATE } from '../../test-data/structure-users';
 
 test.setTimeout(300000);
@@ -38,6 +39,15 @@ const MEN_ONLY: CarePathwayTemplate = {
 const OTHER_SESSION: CarePathwayTemplate = {
   name: `QA-AUTRE-SESSION-${stamp}`,
   description: 'Créé depuis une autre session',
+  targetSex: 'Tous les sexes',
+  steps: [{ plannedPeriod: '0', groups: [{ domain: 'Vaccination', acts: 1 }] }],
+};
+
+// Parcours de vaccination du bloc « vaccinal et archives » : créé par le test (aucun modèle de
+// référence supposé en base), archivé puis désactivé à la fin
+const VACCINAL: CarePathwayTemplate = {
+  name: `QA-VACCINAL-${stamp}`,
+  description: 'Parcours de vaccination créé par les tests',
   targetSex: 'Tous les sexes',
   steps: [{ plannedPeriod: '0', groups: [{ domain: 'Vaccination', acts: 1 }] }],
 };
@@ -83,6 +93,34 @@ async function startPathway(page: Page, stepCount: number) {
   await carePathway.fillStartForm(isoDate());
   await carePathway.start();
   await expect(page.getByRole('button', { name: /^Étape \d+$/ })).toHaveCount(stepCount);
+}
+
+/**
+ * Nettoyage d'un modèle démarré : un modèle qui a servi n'est jamais supprimé, et ne peut être
+ * désactivé qu'une fois tous ses parcours archivés (sinon il reste actif et s'accumule en base à
+ * chaque exécution). Archive le parcours en cours du patient, puis désactive le modèle.
+ */
+async function archiveThenDeactivate(page: Page, patient: DossierPatient, name: string) {
+  await test.step(`Archiver le parcours ${name}`, async () => {
+    await openPatientFile(page, patient);
+    await page.getByRole('link', { name: new RegExp(`${name}\\s*Voir le parcours`) }).first().click();
+    await page.waitForURL('**/patient/patient-care-pathway-detail/**');
+    await expect(page.locator('.pw-hero')).toBeVisible({ timeout: 30000 });
+    await page.locator('.pw-actions-bar').getByRole('button', { name: /^\W*Archiver\b/ }).click();
+    const modal = page.locator('#obstetrical');
+    await expect(modal).toBeVisible();
+    await new ConsultationFormPage(page, modal).fill([
+      { name: 'annee', kind: 'number', value: String(new Date().getFullYear()) },
+      { name: 'sexe', kind: 'select' },
+    ]);
+    await modal.getByRole('button', { name: /^\W*Enregistrer\s*$/ }).click();
+    await page.waitForURL('**/patient/patient-care-pathway-list/**', { timeout: 30000 });
+  });
+  await test.step(`Désactiver le modèle ${name}`, async () => {
+    const templates = await openTemplates(page);
+    await expect(templates.deactivateButton(name), 'Désactivation possible une fois archivé').toBeEnabled({ timeout: 15000 });
+    await templates.deactivate(name);
+  });
 }
 
 test.describe('Module Dossier médical — Parcours de soins paramétrés', () => {
@@ -343,11 +381,18 @@ test.describe('Module Dossier médical — Parcours de soins paramétrés', () =
       await test.step(`Supprimer le reliquat ${name}`, async () => templates.remove(name));
     }
   });
+
+  test('Archiver les parcours démarrés puis désactiver leurs modèles', async ({ page }) => {
+    // Après le contrôle « en cours : ni supprimé ni désactivé » : sans ce nettoyage, ces modèles
+    // resteraient actifs en base à chaque exécution
+    test.setTimeout(Number(process.env.SLOWMO) > 0 ? 1800000 : 300000);
+    for (const template of [ALL_ACTS, COMBINED]) await archiveThenDeactivate(page, patient, template.name);
+  });
 });
 
 // ======================================================================
-// Parcours prédéfinis (vaccinal) et archives : patiente dédiée. Le cas d'exception passe avant le
-// démarrage, car un parcours en cours désactive son bouton de démarrage sur le dashboard.
+// Parcours de vaccination et archives : patiente dédiée, modèle créé par le test. Le cas
+// d'exception passe avant le démarrage, car un parcours en cours désactive son bouton de démarrage.
 // ======================================================================
 test.describe('Module Dossier médical — Parcours vaccinal et archives', () => {
   test.describe.configure({ mode: 'serial' });
@@ -358,14 +403,21 @@ test.describe('Module Dossier médical — Parcours vaccinal et archives', () =>
     patient = await createDossierPatient(browser);
   });
 
-  test.beforeEach(async ({ portal, page }) => {
+  test.beforeEach(async ({ portal }) => {
     await portal.goto();
+  });
+
+  test('Paramétrer un parcours de vaccination', async ({ page }) => {
+    const templates = await openTemplates(page);
+    await templates.create(VACCINAL);
     await openPatientFile(page, patient);
+    await expect(new CarePathwayPage(page).startLink(VACCINAL.name), 'Proposé dans le dossier').toHaveCount(1, { timeout: 30000 });
   });
 
   test('Démarrer un parcours vaccinal sans date ni praticien est refusé', async ({ page }) => {
+    await openPatientFile(page, patient);
     const carePathway = new CarePathwayPage(page);
-    await carePathway.openStartForm('VACCINAL');
+    await carePathway.openStartForm(VACCINAL.name);
     await page.locator('#startDate').fill('');
     await carePathway.startButton.click();
     // Date de début : message "<libellé de la date> est obligatoire" (libellé paramétrable)
@@ -376,21 +428,28 @@ test.describe('Module Dossier médical — Parcours vaccinal et archives', () =>
   });
 
   test('Démarrer un parcours vaccinal', async ({ page }) => {
+    await openPatientFile(page, patient);
     const carePathway = new CarePathwayPage(page);
-    await carePathway.openStartForm('VACCINAL');
+    await carePathway.openStartForm(VACCINAL.name);
     await carePathway.fillStartForm(new Date().toISOString().split('T')[0]);
     await carePathway.start();
   });
 
   test('Le parcours vaccinal en cours est affiché et ne peut plus être redémarré', async ({ page }) => {
-    await expect(page.getByRole('link', { name: /VACCINAL\s*Voir le parcours/ }).first()).toBeVisible();
-    await expect(page.getByRole('button', { name: /VACCINAL/ }).first()).toBeDisabled();
+    await openPatientFile(page, patient);
+    await expect(page.getByRole('link', { name: new RegExp(`${VACCINAL.name}\\s*Voir le parcours`) }).first()).toBeVisible();
+    await expect(page.getByRole('button', { name: new RegExp(VACCINAL.name) }).first()).toBeDisabled();
   });
 
   test('Consulter les archives des parcours de soins', async ({ page }) => {
+    await openPatientFile(page, patient);
     await new CarePathwayPage(page).openArchivesFromDashboard();
     for (const column of ['Type', 'Médecin', 'Date enregistrement', 'État', 'Date clôture', 'Actions']) {
       await expect(page.getByRole('columnheader', { name: column, exact: true })).toBeVisible();
     }
+  });
+
+  test('Archiver le parcours de vaccination puis désactiver son modèle', async ({ page }) => {
+    await archiveThenDeactivate(page, patient, VACCINAL.name);
   });
 });

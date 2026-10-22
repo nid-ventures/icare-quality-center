@@ -147,8 +147,8 @@ test.describe('Performance', () => {
         const liste = reponse(page, '/patients/getAll');
         await portal.enterModule('Base patients');
         await liste;
-        // Lignes de patients réelles : « Aucun patient disponible » s'affiche pendant le chargement
-        await expect(page.locator('.compact-table tbody tr').filter({ hasNotText: /Aucun patient/ }).first()).toBeVisible({ timeout: 60000 });
+        // Lignes de patients réelles, pas la ligne d'attente (« Chargement des patients… ») ni « Aucun patient »
+        await expect(page.locator('.compact-table tbody tr').filter({ hasNotText: /Aucun patient|Chargement des patients/ }).first()).toBeVisible({ timeout: 60000 });
       });
     });
 

@@ -302,11 +302,11 @@ export class PatientPage {
     await this.waitForLoader();
     await this.patientLink.click();
     await this.page.waitForURL('**/patient/patients');
-    // La liste peut encore afficher l'état "Aucun patient disponible" le temps que les données
+    // La liste affiche "Chargement des patients…" (ou "Aucun patient disponible") le temps que les données
     // arrivent : sans cette attente, un getFirstPatientXxx() appelé juste après peut lire ce
     // texte de chargement au lieu d'une vraie valeur.
     await expect(this.firstChildRowTablePatient).toBeVisible();
-    await expect(this.firstChildRowTablePatient).not.toContainText('Aucun patient disponible', { timeout: 10000 });
+    await expect(this.firstChildRowTablePatient).not.toContainText(/Aucun patient disponible|Chargement des patients/, { timeout: 30000 });
   }
 
   async openCreationModal() {
@@ -560,10 +560,10 @@ export class PatientPage {
     await this.waitForLoader();
     await this.patientLink.click();
     await this.page.waitForURL('**/patient/patients');
-    // La liste peut encore afficher l'état "Aucun patient disponible" le temps que les données
+    // La liste affiche "Chargement des patients…" (ou "Aucun patient disponible") le temps que les données
     // arrivent : on attend la vraie première ligne avant de lire ses champs.
     await expect(this.firstChildRowTablePatient).toBeVisible();
-    await expect(this.firstChildRowTablePatient).not.toContainText('Aucun patient disponible', { timeout: 10000 });
+    await expect(this.firstChildRowTablePatient).not.toContainText(/Aucun patient disponible|Chargement des patients/, { timeout: 30000 });
 
     const patientId = await this.getFirstPatientId();
     const folderOrder = await this.getFirstPatientFolderOrder();
