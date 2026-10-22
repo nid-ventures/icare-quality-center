@@ -5,6 +5,7 @@ import { BillingInvoicePage } from '../pages/structure/billing/billing-invoice.p
 import { RemunerationProfilePage } from '../pages/structure/my-space/remuneration-profile.page';
 import { CreateHonorairePage } from '../pages/structure/honoraire/create-honoraire.page';
 import { ADMIN_STORAGE_STATE } from '../test-data/structure-users';
+import { structure, tenant } from '../test-data/tenants';
 
 /**
  * Prérequis des relevés d'honoraires, créés par les tests eux-mêmes si besoin :
@@ -14,7 +15,16 @@ import { ADMIN_STORAGE_STATE } from '../test-data/structure-users';
  *  3. des actes de ce médecin facturés dans la période (voir billActForMedecin, appelé par chaque
  *     test qui crée un relevé : un acte déjà relevé n'est plus éligible).
  */
-export const HONORAIRE_SPECIALITY = 'pédiatrie';
+/** Spécialité des relevés : choisie par structure-data.setup.ts parmi les soignants de la structure. */
+export function honoraireSpeciality(): string {
+  return structure().honoraireSpeciality ?? 'pédiatrie';
+}
+
+/** Le soignant est-il l'administrateur de test (parfois soignant aussi) ? */
+export function isAdmin(nom: string): boolean {
+  const norm = (s: string) => s.replace(/\s+/g, ' ').trim().toLowerCase();
+  return !!tenant.adminFullName && norm(nom) === norm(tenant.adminFullName);
+}
 
 export type HonoraireContext = { medecin: string; patientIdentifier: string; act: string; category: string };
 
@@ -54,11 +64,11 @@ export async function ensureHonorairePrerequisites(browser: Browser): Promise<Ho
     const profiles = new RemunerationProfilePage(page);
     await profiles.open();
     // Un acte déjà couvert par un profil n'est plus proposé : on réutilise d'abord le profil existant.
-    let profile = await profiles.findActiveProfile(HONORAIRE_SPECIALITY);
+    let profile = await profiles.findActiveProfile(honoraireSpeciality());
     if (!profile) {
-      profile = await profiles.firstProposition(HONORAIRE_SPECIALITY);
+      profile = await profiles.firstProposition(honoraireSpeciality());
       await profiles.create({
-        speciality: HONORAIRE_SPECIALITY, act: profile.act, coverage: '15', mount: '5000',
+        speciality: honoraireSpeciality(), act: profile.act, coverage: '15', mount: '5000',
         startDate: isoDate(-730), endDate: isoDate(730),
       });
     }
@@ -73,8 +83,9 @@ export async function ensureHonorairePrerequisites(browser: Browser): Promise<Ho
     // médecins dont la rémunération est désactivée (anomalie : profils lus sans filtre "actif")
     const medecins = await createPage.listMedecins();
     await page.keyboard.press('Escape');
-    const pediatre = medecins.find(m => new RegExp(HONORAIRE_SPECIALITY, 'i').test(m.specialite));
-    expect(pediatre, `Un médecin de spécialité "${HONORAIRE_SPECIALITY}" proposé`).toBeDefined();
+    const ofSpeciality = medecins.filter(m => new RegExp(honoraireSpeciality(), 'i').test(m.specialite));
+    const pediatre = ofSpeciality.find(m => !isAdmin(m.nom)) ?? ofSpeciality[0];
+    expect(pediatre, `Un médecin de spécialité "${honoraireSpeciality()}" proposé`).toBeDefined();
     await createPage.selectMedecin(pediatre!.nom);
     const medecin = pediatre!.nom;
     return { medecin, patientIdentifier, act, category };

@@ -30,6 +30,8 @@ export interface StructureContext extends StructureRef {
   modules: string[];
   /** Autres structures proposées au même compte (tests d'isolation) */
   others: StructureRef[];
+  /** Spécialité des relevés d'honoraires, choisie par structure-data.setup.ts parmi ses soignants */
+  honoraireSpeciality?: string;
 }
 
 /** Session de l'administrateur, un fichier par structure (NEST garde le chemin historique). */

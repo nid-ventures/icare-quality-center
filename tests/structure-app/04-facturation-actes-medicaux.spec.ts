@@ -12,7 +12,6 @@ import { ImagerieDashboardPage } from '../../pages/structure/imagerie/imagerie-d
 import { HealthChecksListPage, HealthCheckDetailPage } from '../../pages/structure/analyse/health-check.page';
 import { isoDate, prenatalFields, planificationFields, pediatricFields, dentalFields } from '../../test-data/consultation-fields';
 import { tenant, hasModule, withoutModuleReason } from '../../test-data/tenants';
-import { ensureBilanAnalyses } from '../../fixtures/bilans-setup';
 
 // Module absent de certaines structures (cf. test-data/tenants.ts) : fichier ignoré pour elles
 test.skip(!hasModule('Facturation'), withoutModuleReason('Facturation'));
@@ -405,9 +404,6 @@ test.describe('Module Facturation — Actes à facturer depuis le dossier médic
 
     test.beforeAll(async ({ browser }) => {
       test.setTimeout(DOSSIER_SETUP_TIMEOUT);
-      // Structure sans analyse parmi ses actes : analyses ajoutées pour que le type de bilan
-      // présélectionne des actes à facturer
-      await ensureBilanAnalyses(browser);
       patient = await createDossierPatient(browser);
     });
 

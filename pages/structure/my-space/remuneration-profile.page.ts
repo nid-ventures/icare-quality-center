@@ -116,15 +116,18 @@ export class RemunerationProfilePage {
     await this.section.getByRole('button', { name: /Rechercher/ }).first().click();
     await this.page.locator('app-loader .backdrop.full-screen').waitFor({ state: 'hidden', timeout: 10000 }).catch(() => {});
     await expect(this.section.locator('table tbody tr').first()).toBeVisible();
-    const rows = this.rows().filter({ hasText: /Actif/ });
-    const result = [];
-    for (const row of await rows.all()) {
-      const cell = async (label: string) => ((await row.locator(`td[data-label="${label}"]`).textContent()) ?? '').replace(/\s+/g, ' ').trim();
-      // "15 %", "5 000 F CFA" ou "-" : seuls les chiffres (et une éventuelle décimale) comptent
-      const num = (text: string) => /\d/.test(text) ? Number(text.replace(/[^\d,]/g, '').replace(',', '.')) : null;
-      result.push({ act: await cell('Acte'), category: await cell('Type'), rate: num(await cell('Taux')), amount: num(await cell('Montant')) });
-    }
-    return result;
+    // Les lignes d'avant la recherche restent affichées un instant : lecture une fois le tableau
+    // filtré (toutes ses lignes de la spécialité), en une seule fois
+    const specialityRe = new RegExp(speciality.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), 'i');
+    await expect.poll(async () => (await this.rows().allInnerTexts()).every(t => specialityRe.test(t)),
+      { message: `Tableau filtré sur ${speciality}`, timeout: 15000 }).toBe(true);
+    const cells = await this.rows().filter({ hasText: /Actif/ }).evaluateAll(trs => trs.map(tr => {
+      const cell = (label: string) => (tr.querySelector(`td[data-label="${label}"]`)?.textContent ?? '').replace(/\s+/g, ' ').trim();
+      return { act: cell('Acte'), category: cell('Type'), rate: cell('Taux'), amount: cell('Montant') };
+    }));
+    // "15 %", "5 000 F CFA" ou "-" : seuls les chiffres (et une éventuelle décimale) comptent
+    const num = (text: string) => /\d/.test(text) ? Number(text.replace(/[^\d,]/g, '').replace(',', '.')) : null;
+    return cells.map(c => ({ act: c.act, category: c.category, rate: num(c.rate), amount: num(c.amount) }));
   }
 
   /** Comme firstProposition, mais renvoie null (fenêtre refermée) si aucun acte n'est encore libre. */

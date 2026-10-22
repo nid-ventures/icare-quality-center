@@ -75,12 +75,21 @@ export default defineConfig({
       use: { ...chrome },
     },
     {
+      // Données nécessaires aux tests ajoutées à la structure si elles manquent (actes, garant,
+      // analyses), spécialité des honoraires choisie parmi ses soignants.
+      name: 'setup-data',
+      testDir: './tests/structure-app',
+      testMatch: /structure-data\.setup\.ts/,
+      dependencies: ['setup'],
+      use: { ...chrome, storageState: adminStorageState() },
+    },
+    {
       // Application structure (hi-icare-patient) : un fichier .spec.ts par module métier.
       name: 'structure-app',
       metadata: { tenant: tenant.key },
       testDir: './tests/structure-app',
       testMatch: /.*\.spec\.ts/,
-      dependencies: ['setup'],
+      dependencies: ['setup-data'],
       use: {
         ...chrome,
         // Session de la structure testée (variable TENANT, cf. test-data/tenants.ts) : même chemin

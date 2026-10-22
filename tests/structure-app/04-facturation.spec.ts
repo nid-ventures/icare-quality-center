@@ -204,10 +204,40 @@ test.describe('Module Facturation', () => {
   // Factures garants
   // ======================================================================
   test.describe('Factures garants', () => {
+    let patient: DossierPatient;
+
+    test.beforeAll(async ({ browser }) => {
+      test.setTimeout(DOSSIER_SETUP_TIMEOUT);
+      patient = await createDossierPatient(browser);
+    });
+
     test('Rechercher des factures garants par chaque critère', async ({ portal, page }) => {
+      test.setTimeout(Number(process.env.SLOWMO) > 0 ? 900000 : 180000);
       const listPage = new BillingListGarantPage(page);
-      const patientIdentifier = await getReferencePatientIdentifier(portal, page);
-      await createInvoice(portal, page, patientIdentifier);
+
+      // Facture garant créée par le test : la structure n'en a pas forcément
+      await test.step(`Prise en charge ${INSURER} à 80 % pour un patient dédié`, async () => {
+        await portal.enterModule('Base patients');
+        const patientPage = new PatientPage(page);
+        await patientPage.searchByName(patient.firstName, patient.lastName);
+        await patientPage.openPatient(patient.lastName);
+        await page.waitForURL('**/patient/patient-info-administration/**');
+        const carePage = new PatientCarePage(page);
+        await carePage.goToCareTab();
+        await carePage.addCover({ insurer: INSURER, rate: 80 });
+      });
+      await test.step(`Facturer ${ACTS.pharmacie.act} avec la prise en charge`, async () => {
+        await portal.enterModule('Facturation');
+        await page.waitForURL('**/billing/billings-create');
+        const invoicePage = new BillingInvoicePage(page);
+        await invoicePage.searchPatientByIdentifier(patient.identifier);
+        await invoicePage.selectFirstSearchResult();
+        await invoicePage.addAct(ACTS.pharmacie);
+        await invoicePage.setActAmount(ACTS.pharmacie.act, 5000);
+        await invoicePage.proceedToBilling();
+        await invoicePage.chooseCover(INSURER);
+        await invoicePage.generateInvoice();
+      });
 
       await test.step('Ouvrir la liste des factures garants depuis le menu', async () => {
         await portal.openMenu('Factures garants', '**/billing/billings-garants');
