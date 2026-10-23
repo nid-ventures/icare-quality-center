@@ -1,5 +1,6 @@
 import { type Page, type Locator } from '@playwright/test';
 import { test, expect } from '../../fixtures/structure.fixture';
+import { clearPrefilledConsultant } from '../../pages/structure/shared/consultant';
 import { createDossierPatient, openDossier, DOSSIER_SETUP_TIMEOUT, type DossierPatient } from '../../fixtures/dossier-patient';
 import { DossierSearchPage } from '../../pages/structure/patient/dossier-search.page';
 import { HealthChecksListPage, HealthCheckDetailPage } from '../../pages/structure/analyse/health-check.page';
@@ -313,6 +314,8 @@ test.describe("Module Dossier médical — Bilans d'analyses", () => {
     const list = new HealthChecksListPage(page);
     const before = await list.getBilanOrderNumbers();
     await list.openNewBilanModal();
+    // Prescripteur prérempli quand l'utilisateur connecté est soignant (selon la structure)
+    await clearPrefilledConsultant(modal(page));
     await modal(page).getByRole('button', { name: /Enregistrer/ }).click();
     await expect(modal(page).getByText('Le prescripteur est obligatoire')).toBeVisible();
     await expect(modal(page).getByText('Le type de bilan est obligatoire')).toBeVisible();
@@ -325,6 +328,7 @@ test.describe("Module Dossier médical — Bilans d'analyses", () => {
     const list = new HealthChecksListPage(page);
     await list.openNewBilanModal();
     await new ConsultationFormPage(page, modal(page)).fill([{ name: 'type', kind: 'select' }]);
+    await clearPrefilledConsultant(modal(page));
     await modal(page).getByRole('button', { name: /Enregistrer/ }).click();
     await expect(modal(page).getByText('Le prescripteur est obligatoire')).toBeVisible();
     await expect(modal(page).getByText('Le type de bilan est obligatoire')).toHaveCount(0);

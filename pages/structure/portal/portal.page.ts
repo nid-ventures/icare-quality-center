@@ -77,8 +77,9 @@ export class PortalPage {
       await this.goto();
     }
     await this.moduleCard(name).click();
-    // Le module charge sa page d'accueil avant d'afficher le sélecteur : plus de 5 s si la machine est chargée
-    await expect(this.moduleSwitcher).toContainText(name, { timeout: 20000 });
+    // Le module charge sa page d'accueil avant d'afficher le sélecteur : plus de 5 s si la machine est
+    // chargée, bien plus en mode visuel (SLOWMO), comme les autres délais (playwright.config.ts)
+    await expect(this.moduleSwitcher).toContainText(name, { timeout: Number(process.env.SLOWMO) > 0 ? 60000 : 20000 });
   }
 
   /** Ouvre une entrée du menu latéral du module courant (ex: "Factures patients"). */

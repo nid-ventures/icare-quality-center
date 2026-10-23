@@ -58,6 +58,10 @@ export class CarePathwayTemplatePage {
     const labels: string[] = [];
     const total = mode === 'all' ? await free.count() : mode;
     for (let i = 0; i < total; i++) {
+      // La liste peut se refermer entre deux choix (lenteur, mode visuel) : rouverte au besoin
+      if (!await panel.isVisible().catch(() => false)) await select.locator('.ng-select-container').click();
+      await expect(panel).toBeVisible();
+      if (mode === 'all' && await free.count() === 0) break;
       const option = free.first();
       labels.push(((await option.textContent()) ?? '').replace(/\s+/g, ' ').trim());
       await option.click({ timeout: 5000 }).catch(() => option.dispatchEvent('click'));
