@@ -354,12 +354,21 @@ test.describe('Module Dossier médical — Imagerie', () => {
       await expect(page.getByRole('button', { name: /^\W*Confirmer$/ })).toHaveCount(0);
     });
 
-    test("Valider un acte d'imagerie sans type est refusé", async ({ page }) => {
-      test.fail(true, "Anomalie : \"Valider\" sans type d'acte ferme la fenêtre et ouvre le formulaire sans type (imagerie-dashboard.component.ts, onAddEchographie sans contrôle).");
+    test("Annuler après le choix d'un acte ferme le formulaire sans rien créer", async ({ page }) => {
+      const root = await startActe(page, 'SCANNER', 'app-scanner-static');
+      await expect(root, 'Formulaire du scanner ouvert').toBeVisible();
+      await new ImagerieDashboardPage(page).cancelNewActe();
+      // Le composant reste dans la page (cadre vide) : c'est son formulaire qui disparaît
+      await expect(page.locator('app-scanner-static form'), 'Formulaire fermé').toHaveCount(0);
+    });
+
+    test("Rechercher un acte d'imagerie inconnu ne propose aucun acte", async ({ page }) => {
       const imagerie = new ImagerieDashboardPage(page);
       await imagerie.openNewActeModal();
-      await page.locator('.modal.show').getByRole('button', { name: /Valider/ }).click();
-      await expect(page.locator('.modal.show'), 'La fenêtre doit rester ouverte avec un message').toBeVisible({ timeout: 3000 });
+      await imagerie.searchActe('zzz-qa-inconnu');
+      await expect(imagerie.newActeButton.getByText(/Aucun acte ne correspond/), 'Message "aucun acte"').toBeVisible();
+      await expect(imagerie.subTypeChips, 'Aucun acte proposé').toHaveCount(0);
+      await expect(imagerie.currentTypeBar, 'Aucun formulaire ouvert').toHaveCount(0);
     });
   });
 });

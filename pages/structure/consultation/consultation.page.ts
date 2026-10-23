@@ -12,11 +12,13 @@ export class ConsultationPage {
   newConsultationButton: Locator;
   filterByTypeText: Locator;
 
-  // Modal Nouvelle consultation
-  newConsultationModalHeading: Locator;
-  specialtySelect: Locator;
-  consultationTypeSelect: Locator;
-  createConsultationButton: Locator;
+  // Bandeau "Nouvelle consultation" (spécialités en pastilles, types en boutons, recherche)
+  newConsultationBar: Locator;
+  specialtyPills: Locator;
+  typeChips: Locator;
+  typeSearchInput: Locator;
+  /** Rappel du type choisi pendant la saisie, avec son bouton "Annuler" */
+  currentTypeBar: Locator;
   cancelButton: Locator;
 
   // Formulaire consultation médicale
@@ -44,15 +46,17 @@ export class ConsultationPage {
 
     // Liste des consultations
     this.consultationsHeading = page.getByRole('heading', { name: 'Liste des consultations' });
-    this.newConsultationButton = page.getByRole('button', { name: /^\W*Nouvelle consultation/ });
+    // Plus de bouton ni de fenêtre : le bandeau "Nouvelle consultation" est affiché sur la page
+    this.newConsultationButton = page.locator('.new-consultation-bar').filter({ hasText: 'Nouvelle consultation' });
     this.filterByTypeText = page.locator('.consultation-filter ng-select');
 
-    // Modal Nouvelle consultation
-    this.newConsultationModalHeading = page.getByRole('heading', { name: 'Nouvelle consultation' });
-    this.specialtySelect = page.locator('ng-select').filter({ hasText: 'Sélectionner une spécialité' });
-    this.consultationTypeSelect = page.locator('ng-select').filter({ hasText: 'Sélectionner un type' });
-    this.createConsultationButton = page.getByRole('button', { name: /^\W*Créer la consultation/ });
-    this.cancelButton = page.getByRole('button', { name: /^\W*Annuler/ });
+    // Bandeau Nouvelle consultation
+    this.newConsultationBar = this.newConsultationButton;
+    this.specialtyPills = this.newConsultationBar.locator('.ncb-pills .speciality-pill');
+    this.typeChips = this.newConsultationBar.locator('.ncb-types .type-chip');
+    this.typeSearchInput = this.newConsultationBar.getByRole('textbox', { name: 'Rechercher un type de consultation' });
+    this.currentTypeBar = page.locator('.current-type-bar');
+    this.cancelButton = this.currentTypeBar.getByRole('button', { name: /Annuler/ });
 
     // Formulaire consultation médicale
     this.medicalConsultationHeading = page.getByRole('heading', { name: /^\W*Consultation Médicale/ });
@@ -95,60 +99,49 @@ export class ConsultationPage {
   }
 
   /**
-   * Ouvre le modal de nouvelle consultation
+   * Affiche le bandeau "Nouvelle consultation" (il remplace l'ancienne fenêtre : rien à ouvrir).
    */
   async openNewConsultationModal() {
-    // Le loader plein écran d'un chargement précédent peut encore rendre ce bouton instable.
+    // Le loader plein écran d'un chargement précédent peut encore masquer le bandeau.
     await this.page.locator('app-loader .backdrop.full-screen').waitFor({ state: 'hidden', timeout: 5000 }).catch(() => {});
-    await this.newConsultationButton.click();
-    await expect(this.newConsultationModalHeading).toBeVisible();
+    await expect(this.newConsultationBar).toBeVisible();
   }
 
   /**
-   * Remplit la première partie du formulaire (spécialité et type)
+   * Choisit la spécialité (pastille) puis le type (bouton). Une spécialité à type unique
+   * (pédiatrie, dentiste…) ouvre directement le formulaire, sans bouton de type.
    */
   async fillConsultationBasics(data: { specialty: string; consultationType: string }) {
-    await this.selectAndVerify(this.specialtySelect, data.specialty, 'spécialité');
-    await this.selectAndVerify(this.consultationTypeSelect, data.consultationType, 'type de consultation');
-  }
-
-  private async selectAndVerify(ngSelect: Locator, value: string, fieldName: string) {
-    await ngSelect.click();
-    const panel = this.page.locator('.ng-dropdown-panel:visible');
-    await panel.waitFor({ state: 'visible', timeout: 5000 });
-    const options = this.page.locator('.ng-dropdown-panel .ng-option');
-
-    // Normaliser la valeur recherchée (supprimer les espaces superflus)
-    const normalizedValue = value.replace(/\s+/g, ' ').trim();
-
-    let optionFound = false;
-    const optionCount = await options.count();
-    for (let i = 0; i < optionCount; i++) {
-      const option = options.nth(i);
-      const text = await option.textContent();
-      const normalizedText = text?.replace(/\s+/g, ' ').trim();
-      if (normalizedText?.toLowerCase() === normalizedValue.toLowerCase()) {
-        await option.click();
-        optionFound = true;
-        break;
-      }
+    const pill = this.specialtyPills.filter({ hasText: exactLabel(data.specialty, true) });
+    await expect(pill, `Spécialité "${data.specialty}" proposée`).toHaveCount(1);
+    await pill.click();
+    const chip = this.typeChips.filter({ hasText: exactLabel(data.consultationType) });
+    // Formulaire ouvert directement (type unique) ou boutons des types de la spécialité
+    await expect(this.currentTypeBar.or(chip).first()).toBeVisible();
+    if (!await this.currentTypeBar.isVisible()) {
+      await expect(chip, `Type "${data.consultationType}" proposé`).toHaveCount(1);
+      await chip.click();
     }
-
-    if (!optionFound) {
-      const allTexts = await options.allTextContents();
-      throw new Error(`Option "${value}" introuvable dans ${fieldName}. Trouvé : ${JSON.stringify(allTexts)}`);
-    }
-
-    await this.page.locator('.ng-dropdown-panel:visible').waitFor({ state: 'hidden', timeout: 3000 });
-    await expect(ngSelect).toContainText(value, { ignoreCase: true, timeout: 3000 });
   }
 
   /**
-   * Créer la consultation (bouton "Créer la consultation") et attend le formulaire détaillé
+   * Le formulaire du type choisi est ouvert : plus de bouton "Créer la consultation", le choix
+   * du type suffit ; le rappel du type reste affiché pendant la saisie.
    */
   async createConsultation() {
-    await this.createConsultationButton.click();
-    // await expect(this.medicalConsultationHeading).toBeVisible();
+    await expect(this.currentTypeBar).toBeVisible();
+  }
+
+  /** Recherche un type de consultation dans le bandeau (sans tenir compte des accents). */
+  async searchConsultationType(term: string) {
+    await this.typeSearchInput.fill(term);
+  }
+
+  /** Ferme le formulaire en cours (bouton "Annuler" du rappel du type) : le bandeau revient. */
+  async cancelNewConsultation() {
+    await this.cancelButton.click();
+    await expect(this.currentTypeBar).toBeHidden();
+    await expect(this.newConsultationBar).toBeVisible();
   }
 
   /**
@@ -310,4 +303,10 @@ export class ConsultationPage {
       .first();
     await firstConsultationButton.click();
   }
+}
+
+/** Libellé exact (casse ignorée), suivi éventuellement du nombre de types affiché sur la pastille. */
+export function exactLabel(label: string, withCount = false): RegExp {
+  const escaped = label.replace(/\s+/g, ' ').trim().replace(/[.*+?^${}()|[\]\\]/g, '\\$&').replace(/ /g, '\\s+');
+  return new RegExp(`^\\s*${escaped}\\s*${withCount ? '\\d*\\s*' : ''}$`, 'i');
 }

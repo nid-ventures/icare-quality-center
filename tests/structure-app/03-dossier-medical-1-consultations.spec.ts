@@ -546,25 +546,39 @@ test.describe('Module Dossier médical — Consultations', () => {
       await prescriptions.expectCount('Analyses', 0);
     });
 
-    test('Annuler la fenêtre "Nouvelle consultation" ne crée rien', async ({ page }) => {
+    test('Annuler après le choix d\'un type ferme le formulaire sans rien créer', async ({ page }) => {
       const consultationPage = await openConsultations(page, patient);
+      const def = TYPES.prenatal;
       await consultationPage.openNewConsultationModal();
-      await page.locator('#popupAddConsultation').getByRole('button', { name: /Annuler/ }).click();
-      await expect(page.locator('#popupAddConsultation')).toBeHidden();
-      for (const def of Object.values(TYPES)) {
-        await expect(consultationRoot(page, def.createRoot)).toHaveCount(0);
+      await consultationPage.fillConsultationBasics({ specialty: def.specialty, consultationType: def.type });
+      await consultationPage.createConsultation();
+      await expect(consultationRoot(page, def.createRoot), 'Formulaire du type choisi ouvert').toBeVisible();
+      await consultationPage.cancelNewConsultation();
+      for (const d of Object.values(TYPES)) {
+        await expect(consultationRoot(page, d.createRoot)).toHaveCount(0);
       }
     });
 
-    test('Créer une consultation sans spécialité ni type est refusé', async ({ page }) => {
-      test.fail(true, "Anomalie : \"Créer la consultation\" sans spécialité ni type ferme la fenêtre sans message (onChooseConsultation n'a aucun contrôle).");
+    test('Rechercher un type inconnu ne propose aucun type', async ({ page }) => {
       const consultationPage = await openConsultations(page, patient);
       await consultationPage.openNewConsultationModal();
-      await page.getByRole('button', { name: /Créer la consultation/ }).click();
-      // Comportement attendu : la fenêtre reste ouverte et signale les champs manquants.
-      const modal = page.locator('#popupAddConsultation');
-      await expect(modal.getByText(/obligatoire|veuillez (choisir|sélectionner)/i).first(), 'Message de validation').toBeVisible({ timeout: 3000 });
-      await expect(modal).toBeVisible();
+      await consultationPage.searchConsultationType('zzz-qa-inconnu');
+      await expect(consultationPage.newConsultationBar.getByText(/Aucun type ne correspond/), 'Message "aucun type"').toBeVisible();
+      await expect(consultationPage.typeChips, 'Aucun type proposé').toHaveCount(0);
+      await expect(consultationPage.currentTypeBar, 'Aucun formulaire ouvert').toHaveCount(0);
+    });
+
+    test('Rechercher un type puis Entrée ouvre son formulaire', async ({ page }) => {
+      const consultationPage = await openConsultations(page, patient);
+      const def = TYPES.prenatal;
+      await consultationPage.openNewConsultationModal();
+      // Sans accent : la recherche ignore les accents
+      await consultationPage.searchConsultationType('prenatale');
+      await expect(consultationPage.typeChips, 'Un seul type correspond').toHaveCount(1);
+      await consultationPage.typeSearchInput.press('Enter');
+      await consultationPage.createConsultation();
+      await expect(consultationRoot(page, def.createRoot), 'Formulaire prénatal ouvert').toBeVisible();
+      await consultationPage.cancelNewConsultation();
     });
   });
 });

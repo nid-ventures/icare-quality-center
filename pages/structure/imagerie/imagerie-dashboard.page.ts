@@ -4,22 +4,28 @@ import { EchographieData } from '../generator/imaging-data-generator';
 
 export type ImagingActeKind = 'ECHOGRAPHIE' | 'SCANNER' | 'IRM' | 'RADIOGRAPHIE';
 
+/** Libellé de chaque type sur sa pastille (IMAGING_KIND_LABELS de imagerie-dashboard.component.ts). */
+const IMAGING_KIND_LABELS: Record<ImagingActeKind, string> = {
+  ECHOGRAPHIE: 'Échographie',
+  SCANNER: 'Scanner',
+  IRM: 'IRM',
+  RADIOGRAPHIE: 'Radiographie',
+};
+
 export class ImagerieDashboardPage {
   // Lien d'accès rapide depuis le dashboard patient (classe statique dédiée dans le template).
   readonly imagerieQuickActionLink: Locator;
 
   // En-tête / liste des actes d'imagerie du patient
   readonly listHeading: Locator;
+  /** Bandeau "Nouvel acte d'imagerie" (types en pastilles, sous-types en boutons, recherche) */
   readonly newActeButton: Locator;
+  readonly kindPills: Locator;
+  readonly subTypeChips: Locator;
+  readonly searchInput: Locator;
+  /** Rappel de l'acte choisi pendant la saisie, avec son bouton "Annuler" */
+  readonly currentTypeBar: Locator;
   readonly cancelActeButton: Locator;
-
-  // Modale "Veuillez choisir le type d'acte d'imagerie"
-  readonly chooseTypeModal: Locator;
-  readonly chooseTypeModalHeading: Locator;
-  readonly typeSelect: Locator;
-  readonly subTypeSelect: Locator;
-  readonly fermerModalButton: Locator;
-  readonly validerButton: Locator;
 
   // Formulaire de création échographie (app-echographie-simple-static)
   readonly echoForm: Locator;
@@ -45,16 +51,13 @@ export class ImagerieDashboardPage {
     this.imagerieQuickActionLink = page.locator('a.qa-imagerie');
 
     this.listHeading = page.getByRole('heading', { name: /Liste des actes d'Imagerie/ });
-    this.newActeButton = page.locator('button.btn-action-new');
-    this.cancelActeButton = page.locator('button.btn-action-cancel');
-
-    this.chooseTypeModal = page.locator('#chooseTypeOfEchographieSimple');
-    this.chooseTypeModalHeading = this.chooseTypeModal.getByRole('heading', { name: "Veuillez choisir le type d'acte d'imagerie" });
-    // Premier ng-select de la modale = type d'acte, second (optionnel) = sous-type.
-    this.typeSelect = this.chooseTypeModal.locator('ng-select').first();
-    this.subTypeSelect = this.chooseTypeModal.locator('ng-select').nth(1);
-    this.fermerModalButton = this.chooseTypeModal.locator('button.btn-modal-secondary');
-    this.validerButton = this.chooseTypeModal.locator('button.btn-modal-primary');
+    // Plus de bouton ni de fenêtre de choix : le bandeau est affiché sur la page
+    this.newActeButton = page.locator('.new-consultation-bar').filter({ hasText: "Nouvel acte d'imagerie" });
+    this.kindPills = this.newActeButton.locator('.ncb-pills .speciality-pill');
+    this.subTypeChips = this.newActeButton.locator('.ncb-types .type-chip');
+    this.searchInput = this.newActeButton.getByRole('textbox', { name: "Rechercher un acte d'imagerie" });
+    this.currentTypeBar = page.locator('.current-type-bar');
+    this.cancelActeButton = this.currentTypeBar.getByRole('button', { name: /Annuler/ });
 
     this.echoForm = page.locator('app-echographie-simple-static');
     this.echoDoctorSelect = this.echoForm.locator('ng-select[formcontrolname="caregiverId"]');
@@ -81,22 +84,34 @@ export class ImagerieDashboardPage {
     await expect(this.listHeading).toBeVisible();
   }
 
+  /** Affiche le bandeau "Nouvel acte d'imagerie" (il remplace l'ancienne fenêtre : rien à ouvrir). */
   async openNewActeModal() {
-    await this.newActeButton.click();
-    await expect(this.chooseTypeModalHeading).toBeVisible();
+    await this.page.locator('app-loader .backdrop.full-screen').waitFor({ state: 'hidden', timeout: 5000 }).catch(() => {});
+    await expect(this.newActeButton).toBeVisible();
   }
 
-  // Choisit le type d'acte d'imagerie dans la modale, sélectionne un sous-type quand le
-  // sélecteur "Acte d'imagerie" apparaît (échographie : Standard/T1/T2/T3), puis valide.
+  // Choisit le type d'acte (pastille) : scanner, IRM et radiographie ouvrent directement leur
+  // formulaire ; l'échographie propose ses sous-types en boutons ("Standard" en premier, comme
+  // l'ancienne présélection) et le premier est choisi.
   async chooseType(kind: ImagingActeKind) {
-    await this.selectNgOptionByText(this.typeSelect, kind);
+    const pill = this.kindPills.filter({ hasText: new RegExp(`^\\s*${IMAGING_KIND_LABELS[kind]}\\s*\\d*\\s*$`, 'i') });
+    await expect(pill, `Type "${IMAGING_KIND_LABELS[kind]}" proposé`).toHaveCount(1);
+    await pill.click();
+    await expect(this.currentTypeBar.or(this.subTypeChips.first()).first()).toBeVisible();
+    if (!await this.currentTypeBar.isVisible()) await this.subTypeChips.first().click();
+    await expect(this.currentTypeBar).toBeVisible();
+  }
 
-    if (await this.subTypeSelect.isVisible().catch(() => false)) {
-      await this.selectFirstNgOption(this.subTypeSelect);
-    }
+  /** Recherche un acte d'imagerie dans le bandeau (sans tenir compte des accents). */
+  async searchActe(term: string) {
+    await this.searchInput.fill(term);
+  }
 
-    await this.validerButton.click();
-    await expect(this.chooseTypeModal).toBeHidden();
+  /** Ferme le formulaire en cours (bouton "Annuler" du rappel de l'acte) : le bandeau revient. */
+  async cancelNewActe() {
+    await this.cancelActeButton.click();
+    await expect(this.currentTypeBar).toBeHidden();
+    await expect(this.newActeButton).toBeVisible();
   }
 
   async fillEchographieCreateForm(data: EchographieData) {
