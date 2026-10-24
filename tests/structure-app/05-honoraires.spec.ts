@@ -488,8 +488,19 @@ test.describe('Module Honoraires', () => {
         await new PortalPage(page).enterModule('Honoraires');
         await createPage.gotoViaMenu();
         const pediatres = (await createPage.listMedecins()).filter(m => new RegExp(honoraireSpeciality(), 'i').test(m.specialite) && !isAdmin(m.nom));
-        medecin = (pediatres.find(m => m.nom !== ctx.medecin) ?? pediatres[0])?.nom ?? '';
-        expect(medecin, `Un médecin de ${honoraireSpeciality()} autre que l'administrateur`).toBeTruthy();
+        expect(pediatres.length, `Un médecin de ${honoraireSpeciality()} autre que l'administrateur`).toBeGreaterThan(0);
+        // Un compte abonné (application iCare) ne peut pas être désactivé (bouton grisé) : seul un
+        // médecin dont l'état peut changer est retenu, de préférence autre que celui des autres tests
+        const candidates = [...pediatres].sort((a, b) => Number(a.nom === ctx.medecin) - Number(b.nom === ctx.medecin));
+        await new PortalPage(page).enterModule('Administration');
+        const accounts = new AccountListPage(page);
+        await accounts.goto();
+        await accounts.expectListLoaded();
+        for (const candidate of candidates) {
+          const login = await accounts.loginOf(candidate.nom, 'Actif').catch(() => '');
+          if (login && await accounts.rowButton(login, 1).isEnabled()) { medecin = candidate.nom; break; }
+        }
+        test.skip(!medecin, `Aucun médecin de ${honoraireSpeciality()} dont le compte peut être désactivé (comptes abonnés)`);
       });
       await test.step(`Facturer un acte de ${medecin} et créer son relevé`, async () => {
         await new PortalPage(page).enterModule('Facturation');
@@ -508,8 +519,11 @@ test.describe('Module Honoraires', () => {
     });
 
     test('Médecin désactivé : la liste des relevés reste affichée, avec son relevé', async ({ page }) => {
+      test.skip(!medecin, 'Aucun médecin dont le compte peut être désactivé');
+      let deactivated = false;
       try {
         await test.step(`Désactiver ${medecin}`, async () => setDoctorActive(page, false));
+        deactivated = true;
         await test.step('La liste des relevés s\'affiche, avec le relevé du médecin désactivé', async () => {
           await new PortalPage(page).enterModule('Honoraires');
           // Soignants en cache (actifs seulement) rafraîchis par loadconfigs après un chargement de
@@ -531,7 +545,8 @@ test.describe('Module Honoraires', () => {
           expect.soft(detail.text, 'Détail consultable').toContain(reference);
         });
       } finally {
-        await test.step(`Réactiver ${medecin}`, async () => setDoctorActive(page, true));
+        // Réactivé seulement s'il a été désactivé : sinon l'erreur de la réactivation masquerait la vraie
+        if (deactivated) await test.step(`Réactiver ${medecin}`, async () => setDoctorActive(page, true));
       }
     });
   });

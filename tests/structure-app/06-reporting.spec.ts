@@ -195,6 +195,8 @@ test.describe('Module Reporting', () => {
     };
 
     test('Contrôles de recherche dans chaque onglet : date de début, type, ordre des dates', async ({ portal, page }) => {
+      // Quatre onglets et plusieurs recherches chacun : plus de 30 s sur un serveur distant
+      test.setTimeout(Number(process.env.SLOWMO) > 0 ? 900000 : 180000);
       for (const tab of ['Consultations', 'Imagerie', 'Bilans', 'Vaccinations'] as PrestationsTab[]) {
         await test.step(tab, async () => {
           const reporting = await openReporting(portal, page, tab);

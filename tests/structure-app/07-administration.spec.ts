@@ -460,6 +460,8 @@ test.describe('Module Administration', () => {
         originalName = await configPage.getHiDetailsName();
         await configPage.fillHiDetailsName(`${originalName} QA`);
         await configPage.ensureHiDetailsEmailFilled('qa-structure@icaresenegal.com');
+        // Pays et téléphone obligatoires pour que la confirmation s'affiche (fiche parfois incomplète)
+        await new StructureSettingsPage(page).completeRequiredDetails();
       });
 
       await test.step('Enregistrer : la confirmation apparaît, on l\'annule', async () => {
@@ -1401,6 +1403,8 @@ test.describe('Module Administration', () => {
       await settings.openDetails();
       const original = await settings.readDetails();
       await settings.enableDetails();
+      // Fiche incomplète possible (serveur partagé) : champs obligatoires vides remplis, sans enregistrer
+      await settings.completeRequiredDetails();
       await expect(settings.detailsSave, 'Formulaire valide').toBeEnabled();
       await test.step('Nom vide refusé', async () => {
         await settings.fillDetails({ name: '' });

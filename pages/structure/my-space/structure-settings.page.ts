@@ -59,6 +59,23 @@ export class StructureSettingsPage {
     await expect(save, 'Formulaire en modification').toBeVisible({ timeout: wait });
   }
 
+  /**
+   * Formulaire en modification : remplit les champs obligatoires restés vides dans la fiche de la
+   * structure (e-mail, pays, téléphone), sans enregistrer. Une fiche incomplète (vu sur un serveur
+   * partagé) laisse sinon "Enregistrer" grisé, ou empêche la confirmation faute de téléphone.
+   */
+  async completeRequiredDetails() {
+    const email = this.detailsInput('primaryEmail');
+    if (!(await email.inputValue()).trim()) await email.fill('qa-structure@icaresenegal.com');
+    const country = this.details.locator('ng-select[formcontrolname="primaryCountry"]');
+    if (await country.locator('.ng-value').count() === 0) {
+      await country.locator('.ng-select-container').click();
+      await this.page.locator('.ng-dropdown-panel .ng-option').first().click();
+    }
+    const phone = this.details.getByRole('textbox', { name: 'Entrez le numéro' });
+    if (await phone.isVisible().catch(() => false) && !(await phone.inputValue()).trim()) await phone.fill('771234567');
+  }
+
   async cancelDetails() { await this.details.locator('.form-actions').getByRole('button', { name: 'Annuler' }).click(); }
   async cancelInvoice() { await this.invoice.locator('.form-actions').getByRole('button', { name: /Annuler/ }).click(); }
 
