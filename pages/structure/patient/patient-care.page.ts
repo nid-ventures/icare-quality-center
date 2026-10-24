@@ -301,11 +301,13 @@ export class PatientCarePage {
      * option disponible (hors `except`) ; renvoie le libellé choisi.
      */
     private async pickOption(wanted?: string, except?: string): Promise<string> {
-        const options = this.page.getByRole('option');
+        // Assureurs groupés par type : les titres de groupe (ASSURANCE, IPM…) ne sont pas des choix
+        const options = this.page.locator('.ng-dropdown-panel .ng-option:not(.ng-optgroup):not(.ng-option-disabled)');
         await expect(options.first(), 'Au moins un assureur proposé').toBeVisible({ timeout: 15000 });
         const labels = (await options.allInnerTexts()).map(s => s.replace(/\s+/g, ' ').trim()).filter(Boolean);
         const chosen = (wanted && labels.find(l => l === wanted)) || labels.find(l => l !== except) || labels[0];
         await options.filter({ hasText: chosen }).first().click();
+        await expect(this.page.locator('.ng-dropdown-panel'), 'Assureur choisi : liste refermée').toBeHidden();
         return chosen;
     }
 
