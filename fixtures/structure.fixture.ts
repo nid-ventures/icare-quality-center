@@ -1,5 +1,7 @@
 import { test as base, expect, type Page } from '@playwright/test';
 import { PortalPage } from '../pages/structure/portal/portal.page';
+import { ensureFreshAdminSession } from './admin-login';
+import { ADMIN_STORAGE_STATE } from '../test-data/structure-users';
 import { installVisualNotes, showVisualNote, visualNotesEnabled, visualPause, VISIBLE_STEPS, type VisualNote } from './visual-notes';
 
 type StructureFixtures = {
@@ -19,6 +21,13 @@ let currentPage: Page | null = null;
 let currentNote: VisualNote | null = null;
 
 export const test = base.extend<StructureFixtures>({
+  // Session administrateur refaite avant le contexte du test si son jeton expire bientôt (le front
+  // ne le renouvelle pas) ; sans effet pour les tests qui demandent un navigateur déconnecté.
+  storageState: async ({ storageState, browser }, use) => {
+    if (storageState === ADMIN_STORAGE_STATE) await ensureFreshAdminSession(browser);
+    await use(storageState);
+  },
+
   slowMoTimeout: [async ({}, use, testInfo) => {
     if (Number(process.env.SLOWMO) > 0) {
       testInfo.setTimeout(testInfo.timeout * 6);

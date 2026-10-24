@@ -583,7 +583,7 @@ export class PatientPage {
     if (patientId && patientId !== '-') {
       fields.push({
         name: 'Identifiant patient',
-        fill: async (val: string) => await this.identifiantInput.fill('123'),
+        fill: async (val: string) => await this.identifiantInput.fill(val),
         value: patientId,
         displayValue: patientId,
       });
@@ -629,7 +629,7 @@ export class PatientPage {
     }
     if (dateNaissance && dateNaissance !== '-') {
       fields.push({
-        name: 'Date de création',
+        name: 'Date de naissance',
         fill: async (val: string) => {
           const [day, month, year] = val.split('/');
           const isoDate = `${year}-${month}-${day}`;
@@ -693,13 +693,20 @@ export class PatientPage {
     for (let i = 0; i < n; i++) {
       await this.resetForm();
       await fields[i].fill(fields[i].value);
+      // Un critère large (sexe, ville, date…) renvoie beaucoup de patients dans une structure
+      // peuplée : le patient de référence peut être sur une autre page. Le critère est donc
+      // combiné au nom (au prénom pour le critère Nom) pour que le patient reste en première page.
+      if (fields[i].name !== 'Nom' && lastName && lastName !== '-') await this.nomInput.fill(lastName);
+      else if (fields[i].name === 'Nom' && firstName && firstName !== '-') await this.prenomInput.fill(firstName);
+      const searched = this.page.waitForResponse(r => r.url().includes('/patients/getAll') && r.request().method() === 'POST', { timeout: 30000 }).catch(() => null);
       await this.buttonRechercherHelper.click();
-      await page.waitForTimeout(300);
+      await searched;
 
       // Vérifie que le patient de référence est bien retrouvé pour ce critère de recherche.
       await expect(
-        this.page.locator(`.compact-table tbody tr td:first-child:has-text("${patientId}")`)
-      ).toBeVisible({ timeout: 1000 });
+        this.page.locator(`.compact-table tbody tr td:first-child:has-text("${patientId}")`),
+        `Patient ${patientId} retrouvé par le critère « ${fields[i].name} »`
+      ).toBeVisible({ timeout: 15000 });
     }
   }
 }

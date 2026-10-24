@@ -6,6 +6,7 @@ import { RemunerationProfilePage } from '../pages/structure/my-space/remuneratio
 import { CreateHonorairePage } from '../pages/structure/honoraire/create-honoraire.page';
 import { ADMIN_STORAGE_STATE } from '../test-data/structure-users';
 import { structure, tenant } from '../test-data/tenants';
+import { ensureFreshAdminSession } from './admin-login';
 
 /**
  * Prérequis des relevés d'honoraires, créés par les tests eux-mêmes si besoin :
@@ -47,6 +48,7 @@ async function referencePatientIdentifier(portal: PortalPage, page: Page): Promi
 
 /** Garantit le profil de rémunération et renvoie le médecin à utiliser pour les relevés. */
 export async function ensureHonorairePrerequisites(browser: Browser): Promise<HonoraireContext> {
+  await ensureFreshAdminSession(browser);
   const context = await browser.newContext({
     baseURL: process.env.BASE_URL,
     storageState: ADMIN_STORAGE_STATE,

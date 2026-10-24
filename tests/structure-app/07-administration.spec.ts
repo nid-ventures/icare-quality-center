@@ -20,6 +20,7 @@ import { PatientPage } from '../../pages/structure/patient/patient.page';
 import { PatientCarePage } from '../../pages/structure/patient/patient-care.page';
 import { createDossierPatient, DOSSIER_SETUP_TIMEOUT, type DossierPatient } from '../../fixtures/dossier-patient';
 import { hasModule, withoutModuleReason } from '../../test-data/tenants';
+import { ensureFreshAdminSession } from '../../fixtures/admin-login';
 
 // Libellé réel du rôle non-soignant dans le sélecteur de rôles
 const NON_CAREGIVER_ROLE = 'HI-ADMINISTRATOR';
@@ -956,6 +957,7 @@ test.describe('Module Administration', () => {
     // active et ferait apparaître des médecins d'une autre spécialité dans les relevés d'honoraires.
     test.afterAll(async ({ browser }) => {
       if (!act) return;
+      await ensureFreshAdminSession(browser);
       const context = await browser.newContext({ baseURL: process.env.BASE_URL, storageState: ADMIN_STORAGE_STATE, viewport: null, ignoreHTTPSErrors: true });
       const page = await context.newPage();
       try {

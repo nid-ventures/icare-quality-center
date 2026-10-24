@@ -38,13 +38,25 @@ export class StructureSettingsPage {
   get logoInput(): Locator { return this.details.locator('input[type="file"]'); }
 
   async enableDetails() {
-    await this.details.locator('button.edit-btn').click();
-    await expect(this.detailsSave).toBeVisible();
+    await this.enable(this.details.locator('button.edit-btn'), this.detailsSave);
   }
 
   async enableInvoice() {
-    await this.invoice.getByRole('button', { name: /Activer la modification/ }).click();
-    await expect(this.invoiceSave).toBeVisible();
+    await this.enable(this.invoice.getByRole('button', { name: /Activer la modification/ }), this.invoiceSave);
+  }
+
+  /**
+   * "Activer la modification" puis attente du bouton Enregistrer. Un clic arrivé avant la fin du
+   * chargement de la section reste sans effet (vu en mode visuel) : un second clic est alors fait.
+   */
+  private async enable(button: Locator, save: Locator) {
+    const wait = Number(process.env.SLOWMO) > 0 ? 20000 : 10000;
+    await this.page.locator('app-loader .backdrop.full-screen').waitFor({ state: 'hidden', timeout: wait }).catch(() => {});
+    await button.click();
+    if (await save.waitFor({ state: 'visible', timeout: wait }).then(() => false, () => true)) {
+      await button.click();
+    }
+    await expect(save, 'Formulaire en modification').toBeVisible({ timeout: wait });
   }
 
   async cancelDetails() { await this.details.locator('.form-actions').getByRole('button', { name: 'Annuler' }).click(); }

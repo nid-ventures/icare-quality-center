@@ -1,6 +1,7 @@
 import { type Browser } from '@playwright/test';
 import { ADMIN_STORAGE_STATE } from '../test-data/structure-users';
 import { structureApi, type StructureApi } from './structure-api';
+import { ensureFreshAdminSession } from './admin-login';
 
 /** Type de bilan dont les analyses sont ajoutées si besoin (code du référentiel BILAN : prénatal). */
 const BILAN_PRENATAL = '141';
@@ -45,6 +46,7 @@ export async function addBilanAnalyses(api: StructureApi): Promise<string[]> {
 
 /** Même vérification depuis un spec (beforeAll), dans un contexte de navigateur à part. */
 export async function ensureBilanAnalyses(browser: Browser): Promise<number> {
+  await ensureFreshAdminSession(browser);
   const context = await browser.newContext({ baseURL: process.env.BASE_URL, storageState: ADMIN_STORAGE_STATE, viewport: null, ignoreHTTPSErrors: true });
   try {
     const page = await context.newPage();

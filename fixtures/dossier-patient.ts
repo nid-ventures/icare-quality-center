@@ -4,6 +4,7 @@ import { PatientPage } from '../pages/structure/patient/patient.page';
 import { DossierSearchPage } from '../pages/structure/patient/dossier-search.page';
 import { PatientDataGenerator } from '../pages/structure/generator/data-generator';
 import { ADMIN_STORAGE_STATE } from '../test-data/structure-users';
+import { ensureFreshAdminSession } from './admin-login';
 
 export type DossierPatient = { identifier: string; firstName: string; lastName: string };
 
@@ -16,6 +17,7 @@ const SEX_CODES = { FEMME: '1', HOMME: '2' } as const;
  * de planification familiale ; HOMME pour les parcours de soins ciblés par sexe.
  */
 export async function createDossierPatient(browser: Browser, sex: keyof typeof SEX_CODES = 'FEMME'): Promise<DossierPatient> {
+  await ensureFreshAdminSession(browser);
   const context = await browser.newContext({
     baseURL: process.env.BASE_URL,
     storageState: ADMIN_STORAGE_STATE,

@@ -1,4 +1,5 @@
-import { type Page, expect } from '@playwright/test';
+import fs from 'fs';
+import { type Browser, type Page, expect } from '@playwright/test';
 import { LoginPage } from '../pages/structure/patient/login.page';
 import { PortalPage } from '../pages/structure/portal/portal.page';
 import { adminUser, ADMIN_STORAGE_STATE } from '../test-data/structure-users';
@@ -43,4 +44,34 @@ export async function loginAdminAndSave(page: Page) {
   });
 
   await page.context().storageState({ path: ADMIN_STORAGE_STATE });
+}
+
+/** Marge avant expiration du jeton en dessous de laquelle la session est refaite. */
+const SESSION_MARGIN_MS = 10 * 60 * 1000;
+
+/** Fin de validité (ms) du jeton enregistré dans la session, 0 si illisible. */
+function savedTokenExpiry(): number {
+  try {
+    const state = JSON.parse(fs.readFileSync(ADMIN_STORAGE_STATE, 'utf8'));
+    const token = state.origins?.flatMap((o: any) => o.localStorage ?? []).find((i: any) => i.name === 'access_token')?.value;
+    const payload = JSON.parse(Buffer.from(String(token).split('.')[1], 'base64url').toString('utf8'));
+    return Number(payload.exp) * 1000 || 0;
+  } catch {
+    return 0;
+  }
+}
+
+/**
+ * Le front ne renouvelle pas le jeton (Keycloak : 30 min) : passé ce délai, la première requête
+ * en 401 renvoie à la connexion. Un fichier de tests long dépasse cette durée : la session
+ * enregistrée est refaite quand son jeton expire bientôt, avant d'ouvrir un contexte qui l'utilise.
+ */
+export async function ensureFreshAdminSession(browser: Browser) {
+  if (savedTokenExpiry() - Date.now() > SESSION_MARGIN_MS) return;
+  const context = await browser.newContext({ baseURL: process.env.BASE_URL, viewport: null, ignoreHTTPSErrors: true });
+  try {
+    await loginAdminAndSave(await context.newPage());
+  } finally {
+    await context.close();
+  }
 }
