@@ -212,8 +212,16 @@ export class ConsultationPage {
    */
   async filterByConsultationType(type: string) {
     const filterSelect = this.page.locator('app-consultations').getByRole('textbox');
-    await filterSelect.click();
-    await this.page.getByRole('option', { name: type.toUpperCase() }).click();
+    const option = this.page.getByRole('option', { name: type.toUpperCase() });
+    // Les types du filtre arrivent avec le chargement de la liste : une liste ouverte trop tôt est
+    // vide ; elle est alors refermée puis rouverte
+    for (let attempt = 1; ; attempt++) {
+      await filterSelect.click();
+      if (await option.waitFor({ state: 'visible', timeout: 10000 }).then(() => true, () => false) || attempt >= 3) break;
+      await this.page.keyboard.press('Escape');
+      await this.page.waitForTimeout(1000);
+    }
+    await option.click();
   }
   /**
    * Sélectionne la première consultation dans la liste (filtre préalable possible)
