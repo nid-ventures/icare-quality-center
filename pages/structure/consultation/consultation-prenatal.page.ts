@@ -2,6 +2,7 @@
 import { type Page, type Locator, expect } from '@playwright/test';
 import { ConsultationPage } from './consultation.page';
 import { ConsultationPrenatalData } from '../generator/consultation-prenatal-data-generator';
+import { confirmSave } from '../shared/confirm-save';
 
 export class ConsultationPrenatalPage extends ConsultationPage {
     private prenatalHeading: Locator;
@@ -316,7 +317,7 @@ export class ConsultationPrenatalPage extends ConsultationPage {
         // Forcer le clic pour contourner les overlays
         await updateButton.click({ force: true });
         await expect(this.confirmButton).toBeVisible({ timeout: 10000 });
-        await this.confirmButton.click();
+        await confirmSave(this.page, this.confirmButton);
     }
 
     // ********************************************

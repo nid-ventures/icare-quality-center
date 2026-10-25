@@ -84,6 +84,7 @@ test.describe('Module Facturation — Actes à facturer depuis le dossier médic
       const acts = await consultationPage.availableActs(2);
       expect(acts, `Deux actes à facturer proposés par ${tenant.name}`).toHaveLength(2);
       [BILLED, NOT_BILLED] = acts;
+      test.info().annotations.push({ type: 'Actes à facturer choisis', description: acts.join(' ; ') });
       data.acts = acts;
       await consultationPage.fillMedicalConsultationForm(data);
       for (const act of data.acts) await expect(actChip(page, act), `Acte à facturer "${act}" choisi`).toHaveCount(1);

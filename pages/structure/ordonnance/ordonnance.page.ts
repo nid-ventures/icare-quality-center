@@ -1,6 +1,7 @@
 // pages/structure/ordonnance/ordonnance.page.ts
 import { type Page, type Locator, expect } from '@playwright/test';
 import { openFromDashboard } from '../patient/care-pathway.page';
+import { confirmSave } from '../shared/confirm-save';
 
 export interface OrdonnanceData {
   title: string;
@@ -114,7 +115,7 @@ export class OrdonnancePage {
   async submitOrdonnance() {
     await this.enregistrerOrdonnanceButton.click();
     await expect(this.saveConfirmHeading).toBeVisible();
-    await this.confirmButton.click();
+    await confirmSave(this.page, this.confirmButton);
     await expect(this.ordonnanceSavedToast).toBeVisible();
   }
 

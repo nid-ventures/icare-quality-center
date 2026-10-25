@@ -1,6 +1,7 @@
 // pages/structure/consultation/consultation.page.ts
 import { type Page, type Locator, expect } from '@playwright/test';
 import { ConsultationData } from '../generator/consultation-standard-data-generator';
+import { confirmSave } from '../shared/confirm-save';
 
 export class ConsultationPage {
   // Onglet Consultation (à adapter selon votre application)
@@ -197,7 +198,7 @@ export class ConsultationPage {
   async saveConsultation() {
     await this.saveConsultationButton.click();
     await expect(this.confirmButton).toBeVisible();
-    await this.confirmButton.click();
+    await confirmSave(this.page, this.confirmButton);
   }
 
   /**
@@ -279,7 +280,7 @@ export class ConsultationPage {
     const updateButton = this.page.getByRole('button', { name: /^\W*Mettre à jour la/ });
     await updateButton.click();
     await expect(this.confirmButton).toBeVisible();
-    await this.confirmButton.click();
+    await confirmSave(this.page, this.confirmButton);
   }
 
   /**

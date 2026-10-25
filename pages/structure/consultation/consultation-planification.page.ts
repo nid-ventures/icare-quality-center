@@ -2,6 +2,7 @@
 import { type Page, type Locator, expect } from '@playwright/test';
 import { ConsultationPage } from './consultation.page';
 import { ConsultationPlanificationData } from '../generator/consultation-planification-data-generator';
+import { confirmSave } from '../shared/confirm-save';
 
 export class ConsultationPlanificationPage extends ConsultationPage {
     private planificationHeading: Locator;
@@ -167,7 +168,7 @@ export class ConsultationPlanificationPage extends ConsultationPage {
         await expect(updateButton).toBeVisible();
         await updateButton.click();
         await expect(this.confirmButton).toBeVisible();
-        await this.confirmButton.click();
+        await confirmSave(this.page, this.confirmButton);
     }
 
     async fillUpdatedPlanificationForm(data: Partial<ConsultationPlanificationData>) {

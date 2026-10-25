@@ -1,5 +1,6 @@
 // pages/structure/vaccination/vaccination.page.ts
 import { type Page, type Locator, expect } from '@playwright/test';
+import { confirmSave } from '../shared/confirm-save';
 
 export interface VaccinationData {
   date: string;
@@ -166,7 +167,7 @@ export class VaccinationPage {
 
     await this.enregistrerDoseButton.click();
     await expect(this.page.getByText('Voulez-vous ajouter cette dose')).toBeVisible();
-    await this.confirmButton.click();
+    await confirmSave(this.page, this.confirmButton);
     await expect(this.doseAddedToast).toBeVisible();
   }
 

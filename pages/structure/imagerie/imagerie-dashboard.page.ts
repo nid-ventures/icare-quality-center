@@ -1,6 +1,7 @@
 // pages/structure/imagerie/imagerie-dashboard.page.ts
 import { type Page, type Locator, expect } from '@playwright/test';
 import { EchographieData } from '../generator/imaging-data-generator';
+import { confirmSave } from '../shared/confirm-save';
 
 export type ImagingActeKind = 'ECHOGRAPHIE' | 'SCANNER' | 'IRM' | 'RADIOGRAPHIE';
 
@@ -131,7 +132,7 @@ export class ImagerieDashboardPage {
   async submitEchographieCreateForm() {
     await this.echoSubmitButton.click();
     await this.confirmButton.waitFor({ state: 'visible' });
-    await this.confirmButton.click();
+    await confirmSave(this.page, this.confirmButton);
   }
 
   async fillScannerCreateForm() {
@@ -142,7 +143,7 @@ export class ImagerieDashboardPage {
   async submitScannerCreateForm() {
     await this.scannerSubmitButton.click();
     await this.confirmButton.waitFor({ state: 'visible' });
-    await this.confirmButton.click();
+    await confirmSave(this.page, this.confirmButton);
   }
 
   // L'input date est déjà pré-rempli avec la date du jour par le composant (voir
