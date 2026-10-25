@@ -1,12 +1,14 @@
 name: ICARE Automation Tests
 
 on:
+  # Lancement manuel uniquement (onglet Actions > Run workflow) : plus de lancement automatique
+  # quotidien, ni sur push ou pull request vers main.
   # schedule:
   #   - cron: '0 3 * * *' # Tous les jours à 3h du matin (UTC)
-  push:
-    branches: [ main, master ]
-  pull_request:
-    branches: [ main, master ]
+  # push:
+  #   branches: [ main, master ]
+  # pull_request:
+  #   branches: [ main, master ]
   workflow_dispatch: # Permet le déclenchement manuel
 
 permissions:

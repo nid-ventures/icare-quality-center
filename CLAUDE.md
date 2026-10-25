@@ -111,7 +111,7 @@ npm run test:local:isolation          # 10-isolation.spec.ts on the current TENA
 - **Multi-environment support**: three env files, none committed (`.env.local`, `.env.dev`, `.env.test`), selected at runtime via the `TEST_ENV` variable (`local`/`dev`/`test`) — see `npm run test:local|dev|test` above. Without `TEST_ENV` (e.g. plain `npx playwright test`, or CI), the config falls back to loading the legacy `.env` file. `TEST_ENV` values map to: `local` → local Docker backend, `dev` → icare-nestlabs-test.net, `test` → pro-icare.com.
 - **Browser / projects**: Google Chrome (`channel: 'chrome'`), maximized window with `viewport: null` and `--force-device-scale-factor=1` (1920×1080 headless) so the app stays in its desktop layout (≥1300px). Projects: `setup` (login), `structure-app` (depends on `setup`), `caregiver-app`.
 - **Reporters**: list (console), allure-playwright (to `allure-results/`), HTML (auto-generated to `playwright-report/`).
-- **CI**: GitHub Actions workflow (`.github/workflows/playwright.yml`) runs daily at 3:00 UTC, on push/PR to main, and manually. Sends email notification with results via OVH SMTP. Secrets required: `BASE_URL`, `USER_EMAIL`, `USER_PASSWORD`, `SMTP_USERNAME`, `SMTP_PASSWORD`.
+- **CI**: GitHub Actions workflow (`.github/workflows/playwright.yml`) runs manually only (Actions > Run workflow): the daily, push and pull-request triggers are disabled. Sends email notification with results via OVH SMTP. Secrets required: `BASE_URL`, `USER_EMAIL`, `USER_PASSWORD`, `SMTP_USERNAME`, `SMTP_PASSWORD`.
 
 ## Conventions
 
