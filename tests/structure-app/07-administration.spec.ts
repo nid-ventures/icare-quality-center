@@ -19,7 +19,7 @@ import { PortalPage } from '../../pages/structure/portal/portal.page';
 import { PatientPage } from '../../pages/structure/patient/patient.page';
 import { PatientCarePage } from '../../pages/structure/patient/patient-care.page';
 import { createDossierPatient, DOSSIER_SETUP_TIMEOUT, type DossierPatient } from '../../fixtures/dossier-patient';
-import { hasModule, withoutModuleReason } from '../../test-data/tenants';
+import { hasModule, tenant, withoutModuleReason } from '../../test-data/tenants';
 import { ensureFreshAdminSession } from '../../fixtures/admin-login';
 
 // Libellé réel du rôle non-soignant dans le sélecteur de rôles
@@ -1425,6 +1425,8 @@ test.describe('Module Administration', () => {
       const settings = await openSettings(page);
       await settings.openDetails();
       await settings.enableDetails();
+      // Fiche incomplète possible (serveur partagé) : sans cela "Enregistrer" reste grisé quel que soit le logo
+      await settings.completeRequiredDetails();
       const error = (text: string) => settings.details.getByText(text);
       await test.step('Fichier PDF refusé', async () => {
         await settings.logoInput.setInputFiles({ name: 'logo.pdf', mimeType: 'application/pdf', buffer: Buffer.from('%PDF-1.4 test') });
@@ -1470,6 +1472,10 @@ test.describe('Module Administration', () => {
       test.setTimeout(Math.max(test.info().timeout, 600000));
       let settings = await openSettings(page);
       await settings.openDetails();
+      // Fiche incomplète : l'enregistrer obligerait à écrire des valeurs de test dans des champs
+      // que ce test ne remet pas (serveur partagé) ; le test est alors ignoré
+      const missing = await settings.missingRequiredDetails();
+      test.skip(missing.length > 0, `Fiche de ${tenant.name} incomplète (${missing.join(', ')} vide) : enregistrement non testé`);
       const original = await settings.readDetails();
       const changed = { name: `${original.name} QA`, primaryStreet: `Rue QA ${stamp}`, postalCode: `QA${stamp}` };
       try {

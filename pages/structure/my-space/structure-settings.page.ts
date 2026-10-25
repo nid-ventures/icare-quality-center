@@ -59,6 +59,16 @@ export class StructureSettingsPage {
     await expect(save, 'Formulaire en modification').toBeVisible({ timeout: wait });
   }
 
+  /** Champs obligatoires vides dans la fiche de la structure (lecture seule, rien n'est modifié). */
+  async missingRequiredDetails(): Promise<string[]> {
+    const missing: string[] = [];
+    if (!(await this.detailsInput('primaryEmail').inputValue()).trim()) missing.push('e-mail');
+    if (await this.details.locator('ng-select[formcontrolname="primaryCountry"] .ng-value').count() === 0) missing.push('pays');
+    const phone = this.details.getByRole('textbox', { name: 'Entrez le numéro' });
+    if (await phone.isVisible().catch(() => false) && !(await phone.inputValue()).trim()) missing.push('téléphone');
+    return missing;
+  }
+
   /**
    * Formulaire en modification : remplit les champs obligatoires restés vides dans la fiche de la
    * structure (e-mail, pays, téléphone), sans enregistrer. Une fiche incomplète (vu sur un serveur
