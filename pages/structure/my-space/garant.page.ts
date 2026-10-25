@@ -74,6 +74,10 @@ export class GarantPage {
   async proposedInsurers(): Promise<string[]> {
     await this.openNew();
     await this.form.locator('ng-select[formcontrolname="code"] .ng-select-container').click();
+    // Les assureurs arrivent après l'ouverture (liste filtrée sur les garants existants) : attendre
+    // des options, ou la mention "aucun élément" (option désactivée) quand il n'y en a vraiment plus
+    await expect(this.page.locator('.ng-dropdown-panel .ng-option').first(), 'Liste des assureurs chargée').toBeVisible({ timeout: 15000 });
+    await this.page.waitForTimeout(500);
     const options = (await this.page.locator('.ng-dropdown-panel .ng-option:not(.ng-option-disabled)').allTextContents()).map(s => s.replace(/\s+/g, ' ').trim());
     await this.form.locator('ng-select[formcontrolname="code"] .ng-arrow-wrapper').click();
     await this.close();
