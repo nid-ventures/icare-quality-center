@@ -90,27 +90,29 @@ function expectDetailConformity(detail: InvoiceDetail, side: 'patient' | 'garant
 test.describe('Module Facturation', () => {
 
   // ======================================================================
-  // Nouvelle facture (assistant)
+  // Nouvelle facture (une seule page : recherche du patient puis panier de ses actes)
   // ======================================================================
   test.describe('Nouvelle facture', () => {
-    test("Afficher l'assistant de facturation", async ({ portal, page }) => {
+    test('Afficher la page Nouvelle facture', async ({ portal, page }) => {
       await portal.enterModule('Facturation');
       await page.waitForURL('**/billing/billings-create');
-      await test.step('Vérifier les 3 étapes de l\'assistant', async () => {
-        for (const step of ['Recherche Patient', 'Actes Médicaux', 'Facturation']) {
-          await expect(page.getByRole('button', { name: new RegExp(`${step}$`) }).first()).toBeVisible();
+      await test.step('En-tête, recherche du patient et accès aux listes de factures', async () => {
+        await expect(page.getByRole('heading', { name: 'Nouvelle facture', level: 1 })).toBeVisible();
+        await expect(page.getByText('Rechercher un patient', { exact: true })).toBeVisible();
+        for (const link of ['Factures patients', 'Factures garants']) {
+          await expect(page.locator('.header-links').getByRole('link', { name: new RegExp(link) }), `Lien "${link}"`).toBeVisible();
         }
       });
       await test.step('Le bouton Rechercher est désactivé sans critère', async () => {
-        await expect(page.getByRole('button', { name: /Rechercher$/ })).toBeDisabled();
+        await expect(page.locator('.search-form').getByRole('button', { name: /Rechercher$/ })).toBeDisabled();
       });
     });
 
-    test("Créer une facture patient via l'assistant de facturation", async ({ portal, page }) => {
+    test('Créer une facture patient depuis la page Nouvelle facture', async ({ portal, page }) => {
       const invoicePage = new BillingInvoicePage(page);
       const patientIdentifier = await getReferencePatientIdentifier(portal, page);
 
-      await test.step("Ouvrir l'assistant et sélectionner le patient", async () => {
+      await test.step('Rechercher et choisir le patient', async () => {
         await portal.enterModule('Facturation');
         await page.waitForURL('**/billing/billings-create');
         await invoicePage.searchPatientByIdentifier(patientIdentifier);
@@ -118,14 +120,13 @@ test.describe('Module Facturation', () => {
         await invoicePage.selectFirstSearchResult();
       });
 
-      await test.step('Ajouter un acte facturable et saisir son montant', async () => {
+      await test.step('Ajouter un acte et saisir son prix (la ligne se coche)', async () => {
         await invoicePage.seedBillableAct();
         const filled = await invoicePage.fillFirstAvailableActAmount('5000');
-        expect(filled, "Aucune ligne d'acte facturable exploitable après ajout de l'acte de test").toBeTruthy();
+        expect(filled, "Aucune ligne d'acte à chiffrer après l'ajout de l'acte de test").toBeTruthy();
       });
 
-      await test.step('Facturer les actes, appliquer une prise en charge si disponible, générer', async () => {
-        await invoicePage.proceedToBilling();
+      await test.step('Appliquer une prise en charge si disponible, émettre la facture', async () => {
         await invoicePage.tryApplyFirstAvailableInsurance();
         await invoicePage.generateInvoice();
         await expect(page).toHaveURL(/\/billing\/billings-patients/);
@@ -280,8 +281,8 @@ test.describe('Module Facturation', () => {
       patient = await createDossierPatient(browser);
     });
 
-    /** "AAAA-MM-JJTHH:mm" → "JJ/MM/AAAA HH:mm" (affichage des dates de séjour). */
-    const shown = (value: string) => { const [d, t] = value.split('T'); const [y, m, j] = d.split('-'); return `${j}/${m}/${y} ${t}`; };
+    /** "AAAA-MM-JJTHH:mm" → "JJ/MM/AA HH:mm" (affichage du séjour dans le panier). */
+    const shown = (value: string) => { const [d, t] = value.split('T'); const [y, m, j] = d.split('-'); return `${j}/${m}/${y.slice(2)} ${t}`; };
 
     /** Ouvre la fenêtre "Ajouter un acte" d'une chambre pour le patient dédié. */
     async function openRoomForm(portal: PortalPage, page: Page): Promise<BillingInvoicePage> {
@@ -310,11 +311,10 @@ test.describe('Module Facturation', () => {
         await test.step('Enregistrer la chambre', async () => {
           await invoicePage.submitAddActForm();
         });
-        await test.step(`Chambre en attente de facturation : ${stay.days} jour(s), du ${shown(entry)} au ${shown(exit)}`, async () => {
+        await test.step(`Chambre à facturer : ${stay.days} jour(s), du ${shown(entry)} au ${shown(exit)}`, async () => {
           const row = await invoicePage.findPendingRoom(ROOM, shown(entry));
-          await expect(row.locator('td').nth(2), 'Quantité enregistrée').toHaveText(String(stay.days));
-          await expect(row.locator('td').nth(4), "Date d'entrée enregistrée").toHaveText(shown(entry));
-          await expect(row.locator('td').nth(5), 'Date de sortie enregistrée').toHaveText(shown(exit));
+          await expect(row.locator('span.num').first(), 'Nombre de jours enregistré').toHaveText(new RegExp(`^\\s*${stay.days}\\s*j\\s*$`));
+          await expect(row.locator('.stay'), "Dates d'entrée et de sortie enregistrées").toHaveText(new RegExp(`${shown(entry)}\\s*${shown(exit)}`));
         });
       });
     }
@@ -327,7 +327,7 @@ test.describe('Module Facturation', () => {
         const invoicePage = await openRoomForm(portal, page);
         await test.step('Saisir le séjour et constater le refus', async () => {
           await invoicePage.setRoomStay(dateTimeLocal(refused.entry[0], refused.entry[1]), dateTimeLocal(refused.exit[0], refused.exit[1]));
-          await expect(invoicePage.roomStayError, "Message : la date de sortie doit être supérieure à la date d'entrée").toBeVisible();
+          await expect(invoicePage.roomStayError, "Message : la sortie doit être après l'entrée").toBeVisible();
           await expect(invoicePage.addActSaveButton, 'Enregistrement impossible').toBeDisabled();
         });
         await invoicePage.closeAddActModal();
@@ -377,98 +377,96 @@ test.describe('Module Facturation', () => {
       await carePage.addCover(COVER);
     });
 
-    test('Un acte coché sans montant ne peut pas être facturé', async ({ portal, page }) => {
+    /** Saisit les prix des actes indiqués (les lignes se cochent). */
+    async function price(invoicePage: BillingInvoicePage, lines: { act: string; amount: number }[]) {
+      for (const line of lines) await invoicePage.setActAmount(line.act, line.amount);
+    }
+    const THREE = [{ ...ACTS.cardio, amount: 10000 }, { ...ACTS.uro, amount: 8000 }, { ...ACTS.accouchement, amount: 20000 }];
+
+    test('Un acte coché sans prix ne peut pas être facturé', async ({ portal, page }) => {
       const invoicePage = await openBilling(portal, page);
       await test.step('Ajouter une consultation cardiologique', async () => invoicePage.addAct(ACTS.cardio));
       const row = await invoicePage.showPendingAct(ACTS.cardio.act);
       expect(row, 'Consultation à facturer').not.toBeNull();
-      const amount = row!.locator('input[type="text"]');
-      await test.step('Cocher l\'acte sans saisir de montant : pas de facturation possible', async () => {
-        await row!.locator('td').first().locator('input[type="checkbox"]').click();
-        await expect(amount, 'Montant saisissable').toBeEnabled();
-        await expect(invoicePage.proceedButton, '"Procéder à la facturation" absent').toBeHidden();
+      await test.step("L'acte ajouté arrive coché, sans prix : signalé, émission refusée", async () => {
+        await expect.poll(() => invoicePage.isSelected(row!), { message: 'Acte ajouté coché d\'office' }).toBe(true);
+        await expect(invoicePage.cart.getByText(/1 acte\(s\) coché\(s\) sans prix/), 'Prix manquant signalé').toBeVisible();
+        await invoicePage.generateButton.click();
+        await expect(row!, 'Ligne sans prix marquée en erreur').toHaveClass(/error/);
+        await expect(page.getByText(/Émettre la facture pour ces actes/i), 'Pas de confirmation : émission refusée').toHaveCount(0);
       });
-      await test.step('Saisir un montant : la facturation devient possible', async () => {
-        await amount.fill('10000');
-        await expect(invoicePage.proceedButton).toBeVisible();
+      await test.step("Saisir un prix : plus d'alerte, la ligne figure dans la facture", async () => {
+        await invoicePage.priceInput(row!).fill('10000');
+        await expect(invoicePage.cart.getByText(/coché\(s\) sans prix/)).toHaveCount(0);
+        await expect(invoicePage.invoiceLine(ACTS.cardio.act)).toContainText(/10\s?000/);
       });
-      await test.step('Décocher l\'acte : montant effacé, plus de facturation possible', async () => {
-        await row!.locator('td').first().locator('input[type="checkbox"]').click();
-        await expect(amount).toBeDisabled();
-        await expect(amount).toHaveValue('');
-        await expect(invoicePage.proceedButton).toBeHidden();
+      await test.step("Décocher l'acte : facture vide, émission impossible", async () => {
+        await invoicePage.toggleLine(row!);
+        await expect(invoicePage.invoiceLine(ACTS.cardio.act)).toHaveCount(0);
+        await expect(invoicePage.cart.getByText('Cochez les actes à facturer.')).toBeVisible();
+        await expect(invoicePage.generateButton).toBeDisabled();
       });
     });
 
-    test('"Tous" coche puis décoche tous les actes de la catégorie', async ({ portal, page }) => {
+    test('Émettre avec un acte coché sans prix affiche un message', async ({ portal, page }) => {
+      test.fail(true, "Anomalie : « Saisissez le prix de chaque acte coché » n'est jamais affiché (billing-cart generate → ModalService.messageError, qui n'affiche rien sans fenêtre ouverte).");
+      const invoicePage = await openBilling(portal, page);
+      const row = await invoicePage.showPendingAct(ACTS.cardio.act, true);
+      expect(row, 'Consultation à facturer').not.toBeNull();
+      if (!await invoicePage.isSelected(row!)) await invoicePage.toggleLine(row!);
+      await invoicePage.priceInput(row!).fill('');
+      await invoicePage.generateButton.click();
+      await expect(page.getByText('Saisissez le prix de chaque acte coché').first(), 'Message affiché').toBeVisible({ timeout: 5000 });
+    });
+
+    test('« Tout cocher » coche puis décoche tous les actes affichés', async ({ portal, page }) => {
       const invoicePage = await openBilling(portal, page);
       await test.step('Ajouter une consultation urologique', async () => invoicePage.addAct(ACTS.uro));
-      const row = await invoicePage.showPendingAct(ACTS.cardio.act);
-      const table = row!.locator('xpath=ancestor::table[1]');
-      const amounts = table.locator('tbody input[type="text"]');
-      const all = table.locator('thead input[type="checkbox"]');
-      await test.step('Cocher "Tous" : chaque acte du tableau est coché', async () => {
-        await all.click();
-        for (let i = 0; i < await amounts.count(); i++) await expect(amounts.nth(i)).toBeEnabled();
+      await test.step('« Tout cocher » : chaque acte est coché', async () => {
+        await invoicePage.cart.getByRole('button', { name: /Tout cocher/ }).click();
+        await expect.poll(() => invoicePage.counters()).toEqual({ toBill: 2, inInvoice: 2 });
       });
-      await test.step('Décocher "Tous" : plus aucun acte coché', async () => {
-        await all.click();
-        for (let i = 0; i < await amounts.count(); i++) await expect(amounts.nth(i)).toBeDisabled();
-        await expect(invoicePage.proceedButton).toBeHidden();
+      await test.step('« Tout décocher » : plus aucun acte coché', async () => {
+        await invoicePage.cart.getByRole('button', { name: /Tout décocher/ }).click();
+        await expect.poll(() => invoicePage.counters()).toEqual({ toBill: 2, inInvoice: 0 });
+        await expect(invoicePage.generateButton).toBeDisabled();
       });
     });
 
-    test('Procéder à la facturation : les actes saisis passent dans la facture en cours', async ({ portal, page }) => {
+    test("Le prix saisi coche l'acte et l'ajoute à la facture ; le brouillon est repris", async ({ portal, page }) => {
       const invoicePage = await openBilling(portal, page);
       await test.step('Ajouter un accouchement', async () => invoicePage.addAct(ACTS.accouchement));
-      await expect.poll(() => invoicePage.counters(), { message: 'Compteurs avant facturation' }).toEqual({ toBill: 3, inInvoice: 0 });
-      await test.step('Saisir les montants des 3 actes', async () => {
-        await invoicePage.setActAmount(ACTS.cardio.act, 10000);
-        await invoicePage.setActAmount(ACTS.uro.act, 8000);
-        await invoicePage.setActAmount(ACTS.accouchement.act, 20000);
-      });
-      await test.step('Procéder : 3 actes dans la facture en cours, plus aucun à facturer', async () => {
-        await invoicePage.proceedToBilling();
-        await expect.poll(() => invoicePage.counters()).toEqual({ toBill: 0, inInvoice: 3 });
-        for (const [act, amount] of [[ACTS.cardio.act, '10 000'], [ACTS.uro.act, '8 000'], [ACTS.accouchement.act, '20 000']]) {
-          await expect(invoicePage.invoiceLine(act), `"${act}" dans la facture en cours`).toHaveCount(1);
-          await expect(invoicePage.invoiceLine(act)).toContainText(amount.replace(' ', ' '));
+      await expect.poll(() => invoicePage.counters(), { message: "Trois actes, seul l'accouchement ajouté est coché" }).toEqual({ toBill: 3, inInvoice: 1 });
+      await test.step('Saisir les prix des 3 actes : tous cochés et dans la facture', async () => {
+        await price(invoicePage, THREE);
+        await expect.poll(() => invoicePage.counters()).toEqual({ toBill: 3, inInvoice: 3 });
+        for (const [act, amount] of [[ACTS.cardio.act, /10\s?000/], [ACTS.uro.act, /8\s?000/], [ACTS.accouchement.act, /20\s?000/]] as const) {
+          await expect(invoicePage.invoiceLine(act), `"${act}" dans la facture`).toContainText(amount);
         }
       });
+      await test.step('Revenir sur le patient : le brouillon (actes cochés et prix) est repris', async () => {
+        const again = await openBilling(portal, page);
+        await expect(again.cart.getByText(/Brouillon repris : 3 acte\(s\)/), 'Brouillon repris').toBeVisible();
+        await expect.poll(() => again.counters()).toEqual({ toBill: 3, inInvoice: 3 });
+        await again.cart.getByRole('button', { name: 'Repartir de zéro' }).click();
+        await expect.poll(() => again.counters(), { message: 'Brouillon effacé' }).toEqual({ toBill: 3, inInvoice: 0 });
+      });
     });
 
-    test("La facture en cours est conservée en quittant l'assistant", async ({ portal, page }) => {
+    test('Exceptions de la prise en charge : acte exclu et cas spécifique signalés sur les lignes', async ({ portal, page }) => {
       const invoicePage = await openBilling(portal, page);
-      await expect.poll(() => invoicePage.counters(), { message: 'Facture en cours retrouvée' }).toEqual({ toBill: 0, inInvoice: 3 });
-      await invoicePage.openInvoiceTab();
-      for (const act of [ACTS.cardio.act, ACTS.uro.act, ACTS.accouchement.act]) {
-        await expect(invoicePage.invoiceLine(act), `"${act}" toujours dans la facture en cours`).toHaveCount(1);
-      }
-    });
-
-    test('Exceptions de la prise en charge : listes des actes exclus et des cas spécifiques', async ({ portal, page }) => {
-      const invoicePage = await openBilling(portal, page);
-      await invoicePage.openInvoiceTab();
+      await price(invoicePage, THREE);
       await invoicePage.chooseCover(INSURER);
-      const computed = computeCover([{ ...ACTS.cardio, amount: 10000 }, { ...ACTS.uro, amount: 8000 }, { ...ACTS.accouchement, amount: 20000 }], COVER);
+      const computed = computeCover(THREE, COVER);
       await expect.poll(() => invoicePage.coverSummary(), { message: 'Quote-parts avec exceptions' })
         .toEqual({ rate: 80, cap: 0, garant: computed.garant, patient: computed.patient });
-      await test.step('Afficher les actes exclus', async () => {
-        await invoicePage.exceptionsButton('Actes Exclus').click();
-        await expect(invoicePage.exceptionsTable('actes exclus')).toContainText(ACTS.accouchement.act, { ignoreCase: true });
-      });
-      await test.step('Afficher les cas spécifiques avec leur taux et leur plafond', async () => {
-        await invoicePage.exceptionsButton('Cas Spécifiques').click();
-        const row = invoicePage.exceptionsTable('cas spécifiques').locator('tbody tr').filter({ hasText: new RegExp(ACTS.uro.act, 'i') });
-        await expect(row).toHaveCount(1);
-        await expect(row.locator('td').nth(2), 'Taux du cas spécifique').toHaveText('30');
-        await expect(row.locator('td').nth(3), 'Plafond du cas spécifique').toHaveText(/6\s?000/);
-      });
+      await expect(invoicePage.lineTag(ACTS.accouchement.act, 'Exclu'), 'Accouchement exclu').toBeVisible();
+      await expect(invoicePage.lineTag(ACTS.uro.act, /30\s*%\s*·\s*plafond\s*6\s?000\s*F/), 'Cas spécifique : taux et plafond').toBeVisible();
     });
 
     test('Retirer la prise en charge : tout revient au patient', async ({ portal, page }) => {
       const invoicePage = await openBilling(portal, page);
-      await invoicePage.openInvoiceTab();
+      await price(invoicePage, THREE);
       await invoicePage.chooseCover(INSURER);
       await expect.poll(async () => (await invoicePage.coverSummary()).garant).toBeGreaterThan(0);
       await invoicePage.clearCover();
@@ -476,44 +474,37 @@ test.describe('Module Facturation', () => {
         .toEqual({ rate: 0, cap: 0, garant: 0, patient: 38000 });
     });
 
-    test('Retirer un acte de la facture en cours : il redevient à facturer et le calcul suit', async ({ portal, page }) => {
+    test('Décocher un acte : il sort de la facture, reste à facturer, et le calcul suit', async ({ portal, page }) => {
       const invoicePage = await openBilling(portal, page);
-      await invoicePage.openInvoiceTab();
-      await test.step('Retirer la consultation urologique', async () => invoicePage.removeFromInvoice([ACTS.uro.act]));
-      await expect.poll(() => invoicePage.counters(), { message: 'Compteurs après retrait' }).toEqual({ toBill: 1, inInvoice: 2 });
-      await expect(invoicePage.invoiceLine(ACTS.uro.act), 'Plus dans la facture en cours').toHaveCount(0);
-      await test.step('Quote-parts recalculées sans l\'acte retiré', async () => {
-        await invoicePage.chooseCover(INSURER);
+      await price(invoicePage, THREE);
+      await invoicePage.chooseCover(INSURER);
+      await test.step('Décocher la consultation urologique', async () => invoicePage.removeFromInvoice([ACTS.uro.act]));
+      await expect.poll(() => invoicePage.counters(), { message: 'Compteurs après retrait' }).toEqual({ toBill: 3, inInvoice: 2 });
+      await test.step("Quote-parts recalculées sans l'acte retiré", async () => {
         const computed = computeCover([{ ...ACTS.cardio, amount: 10000 }, { ...ACTS.accouchement, amount: 20000 }], COVER);
         await expect.poll(() => invoicePage.coverSummary())
           .toEqual({ rate: 80, cap: 0, garant: computed.garant, patient: computed.patient });
       });
-      await test.step('L\'acte retiré est de nouveau à facturer, sans montant', async () => {
-        await invoicePage.openActsTab();
-        const row = await invoicePage.showPendingAct(ACTS.uro.act);
-        expect(row, 'Consultation urologique de nouveau à facturer').not.toBeNull();
-        await expect(row!.locator('input[type="text"]')).toHaveValue('');
-      });
+      expect(await invoicePage.showPendingAct(ACTS.uro.act, true), 'Consultation urologique toujours à facturer').not.toBeNull();
     });
 
-    test("Ajouter un acte depuis l'étape Facturation", async ({ portal, page }) => {
+    test('Ajouter un acte depuis la facture', async ({ portal, page }) => {
       const invoicePage = await openBilling(portal, page);
-      await invoicePage.openInvoiceTab();
       await invoicePage.addAct(ACTS.pharmacie);
-      await expect.poll(() => invoicePage.counters(), { message: 'Un acte de plus à facturer' }).toEqual({ toBill: 2, inInvoice: 2 });
+      await expect.poll(() => invoicePage.counters(), { message: 'Un acte de plus à facturer, coché d\'office' }).toEqual({ toBill: 4, inInvoice: 1 });
     });
 
-    test('Générer la facture : les actes facturés ne sont plus proposés', async ({ portal, page }) => {
+    test('Émettre la facture : les actes facturés ne sont plus proposés', async ({ portal, page }) => {
       const invoicePage = await openBilling(portal, page);
-      await invoicePage.openInvoiceTab();
+      await price(invoicePage, [{ ...ACTS.cardio, amount: 10000 }, { ...ACTS.accouchement, amount: 20000 }]);
       await invoicePage.chooseCover(INSURER);
       await invoicePage.generateInvoice();
       const again = await openBilling(portal, page);
-      await expect.poll(() => again.counters(), { message: 'Facture en cours vide, 2 actes encore à facturer' }).toEqual({ toBill: 2, inInvoice: 0 });
+      await expect.poll(() => again.counters(), { message: '2 actes encore à facturer, aucun coché' }).toEqual({ toBill: 2, inInvoice: 0 });
       for (const act of [ACTS.cardio.act, ACTS.accouchement.act]) {
         expect(await again.showPendingAct(act, true), `"${act}" facturé : plus proposé`).toBeNull();
       }
-      expect(await again.showPendingAct(ACTS.uro.act), 'Consultation retirée : toujours à facturer').not.toBeNull();
+      expect(await again.showPendingAct(ACTS.uro.act), 'Consultation non cochée : toujours à facturer').not.toBeNull();
     });
   });
 

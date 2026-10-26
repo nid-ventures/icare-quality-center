@@ -2,271 +2,170 @@
 import { type Page, type Locator, expect } from '@playwright/test';
 
 /**
- * Page object pour l'assistant de création de facture (`/billing/billings-create`,
- * `BillingInvoiceComponent`), organisé en 3 onglets :
- *   1. "Recherche Patient"  -> sélectionner un patient (clic sur une ligne de résultat,
- *      ce qui bascule automatiquement vers l'onglet "Actes Médicaux").
- *   2. "Actes Médicaux"     -> choisir/saisir un montant sur un acte non facturé du patient,
- *      ce qui fait apparaître le bouton flottant "Procéder à la facturation".
- *   3. "Facturation"        -> sélectionner (facultativement) une prise en charge puis
- *      "Générer la facture".
- *
- * PROBLÈME DE DONNÉES CONNU : un patient fraîchement sélectionné n'a en général aucun acte
- * médical NON FACTURÉ en attente dans l'onglet "Actes Médicaux" (tableau vide -> le bouton
- * "Procéder à la facturation" n'apparaît jamais). Pour fiabiliser le test de bout en bout,
- * cette page ajoute d'abord un acte facturable au patient via la modale "Ajouter un acte"
- * (`AddMedicalActToBillingComponent`) avant de poursuivre le flux à 3 onglets - voir
- * `seedBillableAct()` et `createInvoiceForPatient()`.
+ * Page "Nouvelle facture" (`/billing/billings-create`) : la facture tient sur une seule page.
+ *   1. Recherche du patient (identifiant, prénom, nom…) puis clic sur sa ligne.
+ *   2. Panier (`app-billing-cart`) : actes non facturés du patient, une ligne par acte, cochée dès
+ *      qu'un prix est saisi ; à droite, le récapitulatif (prise en charge, part garant, net patient)
+ *      et "Valider et émettre la facture" (confirmation, puis liste des factures du patient).
+ *   "Ajouter un acte" ouvre la fenêtre "Ajouter des actes" : praticien et date communs, actes
+ *   choisis par catégorie / recherche, chambres avec entrée, sortie et nombre de jours.
+ * Les anciennes étapes "Actes Médicaux" puis "Facturation" n'existent plus : les méthodes qui les
+ * représentaient (proceedToBilling, openInvoiceTab…) sont gardées sans effet pour les specs.
  */
 export class BillingInvoicePage {
     private readonly page: Page;
 
-    // Onglets
-    private readonly rechercheTabButton: Locator;
-    private readonly actesTabButton: Locator;
-    private readonly facturationTabButton: Locator;
-
-    // Onglet "Recherche Patient"
+    // Recherche du patient
     private readonly identifiantInput: Locator;
-    private readonly naissanceInput: Locator;
-    private readonly telephoneInput: Locator;
-    private readonly initialiserButton: Locator;
     private readonly rechercherButton: Locator;
     private readonly resultRows: Locator;
 
-    // Onglet "Actes Médicaux"
-    private readonly ajouterActeButton: Locator;
-    private readonly procederFacturationButton: Locator;
+    // Panier
+    readonly cart: Locator;
+    private readonly lines: Locator;
+    private readonly preview: Locator;
+    private readonly coverSelect: Locator;
+    readonly generateButton: Locator;
 
-    // Modale "Ajouter un acte" (AddMedicalActToBillingComponent, insérée dynamiquement)
+    // Fenêtre "Ajouter des actes"
+    readonly addActModal: Locator;
     private readonly addActHeading: Locator;
-    private readonly addActCategorySelect: Locator;
-    private readonly addActBillableActsSelect: Locator;
     private readonly addActCaregiverSelect: Locator;
-    private readonly addActEnregistrerButton: Locator;
+    private readonly addActSearch: Locator;
+    private readonly addActSubmit: Locator;
 
-    // Modale de confirmation partagée (ModalComponent)
+    // Fenêtre de confirmation partagée (ModalComponent)
     private readonly confirmerButton: Locator;
-
-    // Onglet "Facturation"
-    private readonly assuranceSelect: Locator;
-    private readonly genererFactureButton: Locator;
 
     constructor(page: Page) {
         this.page = page;
 
-        this.rechercheTabButton = page.getByRole('button', { name: /Recherche Patient/ });
-        this.actesTabButton = page.getByRole('button', { name: /Actes Médicaux/ });
-        // Libellé exact de l'étape : le bouton "Changer de module Facturation" contient aussi "Facturation".
-        // Onglet de l'assistant (le libellé peut être suivi d'un compteur d'actes, et l'onglet existe
-        // en double pour l'affichage mobile) : on prend le bouton visible.
-        this.facturationTabButton = page.locator('button.nav-tab-integrated').filter({ hasText: /^\s*Facturation/ }).filter({ visible: true });
+        this.identifiantInput = page.getByPlaceholder('Identifiant patient…');
+        this.rechercherButton = page.locator('.search-form').getByRole('button', { name: /Rechercher/ });
+        this.resultRows = page.locator('table.patients-table tbody tr');
 
-        this.identifiantInput = page.getByPlaceholder('Identifiant patient...');
-        this.naissanceInput = page.getByPlaceholder('Date de naissance');
-        this.telephoneInput = page.getByPlaceholder('Entrez le numéro');
-        this.initialiserButton = page.getByRole('button', { name: /Initialiser/ });
-        this.rechercherButton = page.getByRole('button', { name: /Rechercher/ });
-        this.resultRows = page.locator('table.table-modern-compact tbody tr.patient-row-compact');
+        this.cart = page.locator('app-billing-cart');
+        this.lines = this.cart.locator('.acts-row.act');
+        this.preview = this.cart.locator('aside.invoice-preview');
+        this.coverSelect = this.preview.locator('ng-select');
+        this.generateButton = this.preview.getByRole('button', { name: /Valider et émettre la facture/ });
 
-        // Bouton avec attribut title -> ciblage par getByTitle (cf. consigne locators fiables)
-        this.ajouterActeButton = page.getByTitle('Ajouter un acte');
-        this.procederFacturationButton = page.getByRole('button', { name: /Procéder à la facturation/ });
-
-        this.addActHeading = page.getByRole('heading', { name: 'Nouvel acte à ajouter' });
-        this.addActCategorySelect = page.locator('ng-select[formcontrolname="category"]');
-        this.addActBillableActsSelect = page.locator('ng-select[formcontrolname="billableActs"]');
-        this.addActCaregiverSelect = page.locator('ng-select[formcontrolname="caregiverId"]');
-        this.addActEnregistrerButton = page.getByRole('button', { name: 'Enregistrer' });
+        this.addActModal = page.locator('.ama-card');
+        this.addActHeading = this.addActModal.getByRole('heading', { name: 'Ajouter des actes' });
+        this.addActCaregiverSelect = this.addActModal.locator('.ama-row ng-select').first();
+        this.addActSearch = this.addActModal.getByRole('textbox', { name: 'Rechercher un acte' });
+        this.addActSubmit = this.addActModal.locator('.ama-footer').getByRole('button', { name: /^\W*Ajouter/ });
 
         this.confirmerButton = page.getByRole('button', { name: 'Confirmer' });
-
-        this.assuranceSelect = page.locator('ng-select#insurance');
-        this.genererFactureButton = page.getByRole('button', { name: /Générer la facture/ });
     }
 
-    // ======================== Onglet Recherche Patient ========================
+    // ======================== Recherche du patient ========================
 
     async searchPatientByIdentifier(identifier: string): Promise<void> {
-        await expect(this.rechercheTabButton).toBeVisible();
+        // "Changer de patient" quand un patient est déjà choisi (le panier masque alors la recherche)
+        const change = this.page.getByRole('button', { name: /Changer de patient/ });
+        if (await change.isVisible().catch(() => false)) await change.click();
         await this.identifiantInput.fill(identifier);
-        // L'appel /patients/getAll peut être lent sur le backend local (jusqu'à plusieurs
-        // secondes à froid) : on attend sa réponse, enregistrée avant le clic. Attendre seulement
-        // la disparition de l'indicateur de chargement passait avant même son apparition.
         const searched = this.page.waitForResponse(r => r.url().includes('/patients/getAll') && r.request().method() === 'POST', { timeout: 30000 }).catch(() => null);
         await this.rechercherButton.click();
         await searched;
-        await this.page.locator('.loading-compact').waitFor({ state: 'hidden', timeout: 15000 }).catch(() => { });
+        await this.page.getByText('Recherche en cours…').waitFor({ state: 'hidden', timeout: 15000 }).catch(() => { });
     }
 
     async getSearchResultsCount(): Promise<number> {
         return this.resultRows.count();
     }
 
-    /** Sélectionne le premier résultat de recherche : bascule automatiquement vers l'onglet "Actes Médicaux". */
+    /** Choisit le premier patient trouvé : le panier de ses actes à facturer s'affiche. */
     async selectFirstSearchResult(): Promise<void> {
         await this.resultRows.first().click();
-        await expect(this.actesTabButton).toHaveClass(/active/, { timeout: 10000 });
+        await expect(this.cart, 'Panier du patient affiché').toBeVisible({ timeout: 15000 });
+        await this.waitCartLoaded();
     }
 
-    // ======================== Modale "Ajouter un acte" ========================
-
-    /** Choisit l'option d'un ng-select dont le libellé correspond (sans tenir compte de la casse). */
-    private async selectNgOptionByText(ngSelect: Locator, text: string): Promise<void> {
-        await ngSelect.click();
-        const input = ngSelect.locator('input[type="text"]');
-        // Filtre sur le premier mot : les libellés peuvent contenir des espaces multiples.
-        if (await input.isEditable().catch(() => false)) await input.fill(text.trim().split(/\s+/)[0]);
-        const panel = this.page.locator('.ng-dropdown-panel:visible');
-        const option = panel.locator('.ng-option:not(.ng-option-disabled):not(.ng-optgroup)')
-            // Les libellés de l'application contiennent parfois des espaces multiples.
-            .filter({ hasText: new RegExp(`^\\s*${text.replace(/\s+/g, ' ').trim().replace(/[.*+?^${}()|[\]\\]/g, '\\$&').replace(/ /g, '\\s+')}\\s*$`, 'i') }).first();
-        await expect(option, `Option "${text}" proposée`).toBeVisible({ timeout: 10000 });
-        await option.click();
-        await panel.waitFor({ state: 'hidden', timeout: 3000 }).catch(() => { });
+    /** Attend la fin du chargement des actes du panier. */
+    private async waitCartLoaded(): Promise<void> {
+        await expect(this.cart.getByText('Chargement des actes…'), 'Actes du patient chargés').toBeHidden({ timeout: 30000 });
     }
 
-    /** Sélectionne la première option disponible (non-groupe, non désactivée) d'un ng-select. */
-    private async selectFirstNgOption(ngSelect: Locator): Promise<void> {
-        await ngSelect.click();
-        const panel = this.page.locator('.ng-dropdown-panel:visible');
-        await panel.waitFor({ state: 'visible', timeout: 5000 });
-        const option = panel.locator('.ng-option:not(.ng-option-disabled):not(.ng-optgroup)').first();
-        await option.waitFor({ state: 'visible', timeout: 5000 });
-        await option.click();
-        await panel.waitFor({ state: 'hidden', timeout: 3000 }).catch(() => { });
-    }
+    // ======================== Fenêtre "Ajouter des actes" ========================
 
     async openAddActModal(): Promise<void> {
-        await this.ajouterActeButton.click();
+        await this.page.locator('.patient-card').getByRole('button', { name: /Ajouter un acte/ }).click();
         await expect(this.addActHeading).toBeVisible();
     }
 
+    /** Ferme la fenêtre "Ajouter des actes" sans enregistrer. */
+    async closeAddActModal(): Promise<void> {
+        await this.addActModal.locator('.ama-footer').getByRole('button', { name: 'Fermer' }).click();
+        await expect(this.addActHeading).toBeHidden();
+    }
+
+    /** Praticien commun : celui demandé, sinon le premier proposé s'il n'y en a pas déjà un. */
+    private async chooseCaregiver(practitioner?: string): Promise<void> {
+        if (!practitioner && await this.addActCaregiverSelect.locator('.ng-value').count() > 0) return;
+        await this.addActCaregiverSelect.locator('.ng-select-container').click();
+        const options = this.page.locator('.ng-dropdown-panel:visible .ng-option:not(.ng-option-disabled)');
+        const option = practitioner ? options.filter({ hasText: new RegExp(escapeRegExp(practitioner), 'i') }).first() : options.first();
+        await expect(option, practitioner ? `Praticien "${practitioner}" proposé` : 'Un praticien proposé').toBeVisible({ timeout: 10000 });
+        await option.click();
+    }
+
+    /** Pastille d'une catégorie ("ACTE DE CHAMBRE" → "Acte de chambre 3"). */
+    private categoryPill(category: string): Locator {
+        return this.addActModal.locator('.ama-cats .ama-cat').filter({ hasText: new RegExp(`^\\s*${pattern(category)}\\s*\\d*\\s*$`, 'i') });
+    }
+
     /**
-     * Remplit la modale "Ajouter un acte" en choisissant systématiquement la première option
-     * disponible pour la catégorie, l'acte puis le praticien. Les autres champs (date, date de
-     * sortie, quantité) ont déjà des valeurs par défaut valides posées par le composant Angular
-     * (`AddMedicalActToBillingComponent.ngOnInit`), il n'est donc pas nécessaire d'y toucher.
+     * Bouton d'un acte proposé. Le libellé peut porter ou non le préfixe de domaine ("Consultation
+     * cardiologique" / "Cardiologique") : les deux formes sont acceptées.
      */
-    async fillAddActFormWithFirstAvailableOptions(): Promise<void> {
-        await this.selectFirstNgOption(this.addActCategorySelect);
-        await this.selectFirstNgOption(this.addActBillableActsSelect);
-        await this.selectFirstNgOption(this.addActCaregiverSelect);
+    private actButton(act: string): Locator {
+        const rest = act.replace(/^\s*(consultation|visite)\s+/i, '');
+        return this.addActModal.locator('.ama-acts .ama-act')
+            .filter({ hasText: new RegExp(`^\\s*((consultation|visite)\\s+)?${pattern(rest)}\\s*$`, 'i') });
     }
 
+    /** Choisit un acte (catégorie puis recherche sur son nom, la liste d'une catégorie est limitée). */
+    private async pickAct(category: string, act: string): Promise<void> {
+        const pill = this.categoryPill(category);
+        await expect(pill, `Catégorie "${category}" proposée`).toHaveCount(1);
+        if (!(await pill.getAttribute('class'))?.includes('active')) await pill.click();
+        await this.addActSearch.fill(act.replace(/^\s*(consultation|visite)\s+/i, '').replace(/\s+/g, ' ').trim());
+        const button = this.actButton(act).first();
+        await expect(button, `Acte "${act}" proposé`).toBeVisible({ timeout: 10000 });
+        await button.click();
+        await this.addActSearch.fill('');
+    }
+
+    /** "Ajouter" : l'acte est enregistré pour le patient (il arrive coché dans le panier) et la fenêtre se ferme. */
     async submitAddActForm(): Promise<void> {
-        await this.addActEnregistrerButton.click();
-        // L'appel POST createBillableToInvoices (fermeture de la modale dans son callback subscribe)
-        // peut être lent sur le backend local, comme d'autres appels observés dans ce module.
+        const saved = this.page.waitForResponse(r => r.url().includes('/billableacts') && r.request().method() === 'POST', { timeout: 30000 });
+        await this.addActSubmit.click();
+        const res = await saved;
+        expect(res.status(), 'Ajout des actes : réponse du serveur').toBeLessThan(400);
         await expect(this.addActHeading).toBeHidden({ timeout: 30000 });
+        await this.waitCartLoaded();
     }
 
-    /** Ajoute un acte facturable au patient courant (catégorie/acte/praticien = première option disponible). */
+    /** Ajoute au patient courant le premier acte de la première catégorie (premier praticien). */
     async seedBillableAct(): Promise<void> {
         await this.openAddActModal();
-        await this.fillAddActFormWithFirstAvailableOptions();
+        await this.chooseCaregiver();
+        await this.addActModal.locator('.ama-cats .ama-cat').first().click();
+        await this.addActModal.locator('.ama-acts .ama-act').first().click();
         await this.submitAddActForm();
     }
-
-    // ======================== Onglet Actes Médicaux ========================
-
-    /**
-     * Parcourt les onglets de catégories (`nav-pills`) puis, le cas échéant, les sous-onglets
-     * de sous-catégories à la recherche de la première ligne exploitable (typiquement celle
-     * qui vient d'être ajoutée via `seedBillableAct`). `app-billing-space-prestation-medical:visible`
-     * cible directement l'instance actuellement affichée, quel que soit l'onglet actif (les
-     * onglets Bootstrap inactifs ont `display:none`, donc invisibles pour Playwright).
-     * Cliquer sur la ligne (hors cellule de saisie) l'active, puis on saisit un montant dans
-     * son champ : `onMountInput` active alors automatiquement l'acte pour la facturation.
-     */
-    async fillFirstAvailableActAmount(amount: string = '5000'): Promise<boolean> {
-        const parentTabs = this.page.locator('.modern-tabs ul.nav-pills > li.nav-item > button.nav-link');
-        const parentCount = await parentTabs.count();
-
-        for (let i = 0; i < parentCount; i++) {
-            await parentTabs.nth(i).click();
-            const subTabs = this.page.locator('.tab-pane.show.active .nav-tabs-custom .nav-link');
-            const subCount = await subTabs.count();
-            const attempts = Math.max(subCount, 1);
-
-            for (let j = 0; j < attempts; j++) {
-                if (subCount > 0) {
-                    await subTabs.nth(j).click();
-                }
-                const row = this.page.locator('app-billing-space-prestation-medical:visible tbody tr').first();
-                if ((await row.count()) === 0) continue;
-                // La ligne "Aucun enregistrement" n'a qu'une seule <td colspan="7">.
-                const cellCount = await row.locator('td').count();
-                if (cellCount < 2) continue;
-
-                await row.locator('td').nth(1).click();
-                const amountInput = row.locator('input[type="text"]');
-                await expect(amountInput).toBeEnabled({ timeout: 3000 });
-                await amountInput.fill(amount);
-                return true;
-            }
-        }
-        return false;
-    }
-
-    /** Clique sur "Procéder à la facturation" puis confirme la modale associée. */
-    async proceedToBilling(): Promise<void> {
-        await expect(this.procederFacturationButton).toBeVisible({ timeout: 10000 });
-        await this.procederFacturationButton.click();
-        await expect(this.page.getByText(/Confirmez-vous la facturation/i)).toBeVisible();
-        await this.confirmerButton.click();
-        await expect(this.facturationTabButton).toHaveClass(/active/, { timeout: 15000 });
-    }
-
-    // ======================== Onglet Facturation ========================
-
-    /**
-     * Sélectionne, si disponible, la première prise en charge de la liste "Prise en charge à
-     * appliquer". Purement facultatif (best-effort) : le bouton "Générer la facture" ne dépend
-     * que des actes sélectionnés, pas d'une assurance choisie.
-     */
-    async tryApplyFirstAvailableInsurance(): Promise<void> {
-        await this.assuranceSelect.click();
-        const panel = this.page.locator('.ng-dropdown-panel:visible');
-        const hasPanel = await panel
-            .waitFor({ state: 'visible', timeout: 3000 })
-            .then(() => true)
-            .catch(() => false);
-        if (!hasPanel) return;
-
-        const options = panel.locator('.ng-option:not(.ng-option-disabled)');
-        if ((await options.count()) > 0) {
-            await options.first().click();
-        } else {
-            await this.page.keyboard.press('Escape');
-        }
-    }
-
-    async expectGenerateButtonEnabled(): Promise<void> {
-        await expect(this.genererFactureButton).toBeEnabled({ timeout: 10000 });
-    }
-
-    /** Clique sur "Générer la facture", confirme la modale associée puis attend le retour à la liste des factures patients. */
-    async generateInvoice(): Promise<void> {
-        await this.expectGenerateButtonEnabled();
-        await this.genererFactureButton.click();
-        await expect(this.page.getByText(/Voulez-vous facturer/i)).toBeVisible();
-        await this.confirmerButton.click();
-        await this.page.waitForURL('**/billing/billings-patients', { timeout: 15000 });
-    }
-
-    // ======================== Actes et prise en charge précis ========================
 
     /**
      * Ajoute un acte précis au patient courant (premier praticien proposé). Pour une chambre,
      * `days` jours : entrée à 10:00 il y a `days − 1` jours, sortie aujourd'hui à 10:00 (avant 18 h,
-     * donc chaque jour calendaire compte), et la quantité calculée doit valoir `days`.
+     * donc chaque jour calendaire compte), et le nombre de jours calculé doit valoir `days`.
      */
-    async addAct(act: { category: string; act: string; days?: number }): Promise<void> {
+    async addAct(act: { category: string; act: string; days?: number }, practitioner?: string): Promise<void> {
         await this.openAddActModal();
-        await this.selectNgOptionByText(this.addActCategorySelect, act.category);
-        await this.selectNgOptionByText(this.addActBillableActsSelect, act.act);
-        await this.selectFirstNgOption(this.addActCaregiverSelect);
+        await this.chooseCaregiver(practitioner);
+        await this.pickAct(act.category, act.act);
         if (act.days) {
             await this.setRoomStay(dateTimeLocal(-(act.days - 1), '10:00'), dateTimeLocal(0, '10:00'));
             await expect(this.roomQuantity, `Chambre : ${act.days} jour(s)`).toHaveValue(String(act.days));
@@ -274,220 +173,268 @@ export class BillingInvoicePage {
         await this.submitAddActForm();
     }
 
-    // ======================== Chambre : séjour ========================
-
-    /** Quantité (nombre de jours) calculée par la fenêtre "Ajouter un acte" pour une chambre. */
-    get roomQuantity(): Locator {
-        return this.page.locator('#quantity');
-    }
-
-    /** Message affiché quand la date de sortie n'est pas après la date d'entrée. */
-    get roomStayError(): Locator {
-        return this.page.getByText(/date de sortie doit\s+être supérieure à la date\s+d'entrée/i);
-    }
-
-    get addActSaveButton(): Locator {
-        return this.addActEnregistrerButton;
-    }
-
-    /**
-     * Ouvre la fenêtre "Ajouter un acte" sur une chambre (catégorie ACTE DE CHAMBRE), praticien
-     * choisi : seules les dates restent à saisir.
-     */
-    async openRoomForm(room = 'CHAMBRE CATÉGORIE 1'): Promise<void> {
-        await this.openAddActModal();
-        await this.selectNgOptionByText(this.addActCategorySelect, 'ACTE DE CHAMBRE');
-        await this.selectNgOptionByText(this.addActBillableActsSelect, room);
-        await this.selectFirstNgOption(this.addActCaregiverSelect);
-        await expect(this.addActCaregiverSelect.locator('.ng-value'), 'Praticien choisi').toBeVisible();
-        await expect(this.page.locator('#endDate'), 'Date de sortie demandée pour une chambre').toBeVisible();
-    }
-
-    /** Saisit les dates d'entrée et de sortie ("AAAA-MM-JJTHH:mm") d'un séjour en chambre. */
-    async setRoomStay(entry: string, exit: string): Promise<void> {
-        await this.page.locator('#date').fill(entry);
-        await this.page.locator('#endDate').fill(exit);
-        await this.page.locator('#endDate').dispatchEvent('change');
-    }
-
-    /**
-     * Ligne d'une chambre en attente de facturation (onglet "Actes Médicaux"), retrouvée par son
-     * entrée "JJ/MM/AAAA HH:mm" en parcourant les onglets de catégories. Colonnes : case, acte,
-     * quantité, consultant, date d'entrée, date de sortie, montant journalier.
-     */
-    async findPendingRoom(room: string, entry: string): Promise<Locator> {
-        const parentTabs = this.page.locator('.modern-tabs ul.nav-pills > li.nav-item > button.nav-link');
-        const name = new RegExp(escapeRegExp(room).replace(/\s+/g, '\\s+'), 'i');
-        await expect(parentTabs.first(), 'Actes en attente affichés').toBeVisible({ timeout: 15000 });
-        for (let i = 0; i < await parentTabs.count(); i++) {
-            await parentTabs.nth(i).click();
-            const subTabs = this.page.locator('.tab-pane.show.active .nav-tabs-custom .nav-link');
-            const subCount = await subTabs.count();
-            for (let j = 0; j < Math.max(subCount, 1); j++) {
-                if (subCount > 0) await subTabs.nth(j).click();
-                const row = this.page.locator('app-billing-space-prestation-medical:visible tbody tr')
-                    .filter({ hasText: name }).filter({ hasText: entry });
-                if (await row.count() > 0) return row.first();
-            }
-        }
-        throw new Error(`Chambre "${room}" entrée le ${entry} introuvable dans l'onglet Actes Médicaux`);
-    }
-
-    /** Actes proposés pour une catégorie dans "Ajouter un acte" (fenêtre refermée sans enregistrer). */
+    /** Actes proposés pour une catégorie dans "Ajouter des actes" (fenêtre refermée sans enregistrer). */
     async proposedActs(category: string): Promise<string[]> {
         await this.openAddActModal();
-        // Catégorie absente (son seul acte est désactivé, par exemple) : aucun de ses actes n'est proposé
-        if (!(await this.categoryProposed(category))) {
-            await this.page.keyboard.press('Escape');
+        const pill = this.categoryPill(category);
+        // Catégorie absente (ses actes sont tous désactivés, par exemple) : aucun acte proposé
+        if (await pill.count() === 0) {
             await this.closeAddActModal();
             return [];
         }
-        await this.selectNgOptionByText(this.addActCategorySelect, category);
-        await this.addActBillableActsSelect.click();
-        const options = this.page.locator('.ng-dropdown-panel:visible .ng-option:not(.ng-optgroup):not(.ng-option-disabled)');
-        await options.first().waitFor({ state: 'visible', timeout: 10000 }).catch(() => {});
-        const names = (await options.allTextContents()).map(s => s.replace(/\s+/g, ' ').trim()).filter(n => n && !/No items found/i.test(n));
-        await this.page.keyboard.press('Escape');
+        await pill.click();
+        const buttons = this.addActModal.locator('.ama-acts .ama-act');
+        await buttons.first().waitFor({ state: 'visible', timeout: 10000 }).catch(() => { });
+        const names = (await buttons.allInnerTexts()).map(s => s.replace(/\s+/g, ' ').trim()).filter(Boolean);
         await this.closeAddActModal();
         return names;
     }
 
-    /** La catégorie figure-t-elle parmi celles de la fenêtre "Ajouter un acte" ? (liste refermée ensuite) */
-    private async categoryProposed(category: string): Promise<boolean> {
-        await this.addActCategorySelect.click();
-        const input = this.addActCategorySelect.locator('input[type="text"]');
-        if (await input.isEditable().catch(() => false)) await input.fill(category.trim().split(/\s+/)[0]);
-        const pattern = new RegExp(`^\\s*${category.replace(/\s+/g, ' ').trim().replace(/[.*+?^${}()|[\]\\]/g, '\\$&').replace(/ /g, '\\s+')}\\s*$`, 'i');
-        const option = this.page.locator('.ng-dropdown-panel:visible .ng-option:not(.ng-optgroup)').filter({ hasText: pattern }).first();
-        const found = await option.waitFor({ state: 'visible', timeout: 5000 }).then(() => true, () => false);
-        await this.page.keyboard.press('Escape');
-        return found;
+    // ======================== Chambre : séjour ========================
+
+    /** Ligne de la chambre choisie dans la fenêtre (entrée, sortie, jours). */
+    private get roomBlock(): Locator {
+        return this.addActModal.locator('.ama-room').first();
     }
 
-    /** Ferme la fenêtre "Ajouter un acte" sans enregistrer. */
-    async closeAddActModal(): Promise<void> {
-        await this.page.locator('.ama-footer').getByRole('button', { name: 'Fermer' }).click();
-        await expect(this.addActHeading).toBeHidden();
+    /** Nombre de jours calculé par la fenêtre pour une chambre. */
+    get roomQuantity(): Locator {
+        return this.roomBlock.locator('.ama-qty input');
+    }
+
+    /** Message affiché quand la sortie n'est pas après l'entrée. */
+    get roomStayError(): Locator {
+        return this.addActModal.getByText(/La sortie doit être après l'entrée/i);
+    }
+
+    get addActSaveButton(): Locator {
+        return this.addActSubmit;
+    }
+
+    /** Ouvre "Ajouter des actes" avec une chambre choisie (praticien choisi) : seules les dates restent à saisir. */
+    async openRoomForm(room = 'CHAMBRE CATÉGORIE 1'): Promise<void> {
+        await this.openAddActModal();
+        await this.chooseCaregiver();
+        await this.pickAct('ACTE DE CHAMBRE', room);
+        await expect(this.roomBlock, 'Entrée et sortie demandées pour une chambre').toBeVisible();
+    }
+
+    /** Saisit l'entrée et la sortie ("AAAA-MM-JJTHH:mm") du séjour en chambre. */
+    async setRoomStay(entry: string, exit: string): Promise<void> {
+        const [entryInput, exitInput] = [this.roomBlock.locator('input[type="datetime-local"]').nth(0), this.roomBlock.locator('input[type="datetime-local"]').nth(1)];
+        await entryInput.fill(entry);
+        await entryInput.dispatchEvent('change');
+        await exitInput.fill(exit);
+        await exitInput.dispatchEvent('change');
+    }
+
+    /** Ligne d'une chambre à facturer, retrouvée par son entrée affichée "JJ/MM/AA HH:mm". */
+    async findPendingRoom(room: string, entry: string): Promise<Locator> {
+        await this.showAllPeriod();
+        const row = this.lineOf(room).filter({ has: this.page.locator('.stay', { hasText: entry }) });
+        await expect(row.first(), `Chambre "${room}" entrée le ${entry} à facturer`).toBeVisible({ timeout: 15000 });
+        return row.first();
+    }
+
+    // ======================== Panier : actes à facturer ========================
+
+    /** Période "Tous" : les actes plus anciens que la semaine restent visibles. */
+    private async showAllPeriod(): Promise<void> {
+        const all = this.cart.locator('.period-switch').getByRole('button', { name: /^Tous/ });
+        if (await all.isVisible().catch(() => false) && !(await all.getAttribute('class'))?.includes('active')) await all.click();
+    }
+
+    /** Lignes du panier d'un acte (nom affiché, sans tenir compte de la casse ni des espaces). */
+    lineOf(act: string): Locator {
+        return this.lines.filter({ has: this.page.locator('.col-name .name', { hasText: new RegExp(`^\\s*${pattern(act)}\\s*$`, 'i') }) });
+    }
+
+    /** Champ "Prix unitaire" d'une ligne du panier. */
+    priceInput(line: Locator): Locator {
+        return line.locator('.col-price input');
+    }
+
+    /** Une ligne du panier est-elle cochée ? */
+    async isSelected(line: Locator): Promise<boolean> {
+        return (await line.getAttribute('class'))?.includes('selected') ?? false;
     }
 
     /**
-     * Affiche, dans l'onglet "Actes Médicaux", la ligne à facturer d'un acte (première dont le
-     * montant n'est pas saisi, sauf `anyRow`) en parcourant les onglets de catégories ; null si absente.
+     * Ligne à facturer d'un acte : la première dont le prix n'est pas saisi (sauf `anyRow`), en
+     * préférant une ligne déjà cochée (acte qu'on vient d'ajouter) ; null si l'acte n'est pas dans le panier.
      */
     async showPendingAct(act: string, anyRow = false): Promise<Locator | null> {
-        const parentTabs = this.page.locator('.modern-tabs ul.nav-pills > li.nav-item > button.nav-link');
-        const name = new RegExp(escapeRegExp(act).replace(/\s+/g, '\\s+'), 'i');
-        if (!await parentTabs.first().isVisible().catch(() => false)) return null;
-        for (let i = 0; i < await parentTabs.count(); i++) {
-            await parentTabs.nth(i).click();
-            const subTabs = this.page.locator('.tab-pane.show.active .nav-tabs-custom .nav-link');
-            const subCount = await subTabs.count();
-            for (let j = 0; j < Math.max(subCount, 1); j++) {
-                if (subCount > 0) await subTabs.nth(j).click();
-                const rows = this.page.locator('app-billing-space-prestation-medical:visible tbody tr').filter({ hasText: name });
-                for (let k = 0; k < await rows.count(); k++) {
-                    if (anyRow || (await rows.nth(k).locator('input[type="text"]').inputValue()) === '') return rows.nth(k);
-                }
+        if (!await this.cart.isVisible().catch(() => false)) return null;
+        await this.waitCartLoaded();
+        await this.showAllPeriod();
+        const rows = this.lineOf(act);
+        if (anyRow) return await rows.count() > 0 ? rows.first() : null;
+        for (const selectedFirst of [true, false]) {
+            for (let i = 0; i < await rows.count(); i++) {
+                const row = rows.nth(i);
+                if ((await this.priceInput(row).inputValue()) === '' && (!selectedFirst || await this.isSelected(row))) return row;
             }
         }
         return null;
     }
 
     /**
-     * Saisit le montant (journalier pour une chambre) d'un acte non encore saisi, en parcourant les
-     * onglets de catégories : la saisie coche l'acte pour la facturation.
+     * Ligne cochée d'un acte dont le prix est celui repris automatiquement (dernier prix saisi sur ce
+     * poste, égal à l'indication du champ) : un acte qu'on vient d'ajouter arrive ainsi chiffré.
      */
+    private async autoPricedLine(act: string): Promise<Locator | null> {
+        const rows = this.lineOf(act);
+        for (let i = 0; i < await rows.count(); i++) {
+            const row = rows.nth(i);
+            const input = this.priceInput(row);
+            const value = (await input.inputValue()).replace(/\s/g, '');
+            const hint = ((await input.getAttribute('placeholder')) ?? '').replace(/\s/g, '');
+            if (await this.isSelected(row) && value !== '' && value === hint) return row;
+        }
+        return null;
+    }
+
+    /** Saisit le prix unitaire (journalier pour une chambre) d'un acte non encore chiffré : la ligne se coche. */
     async setActAmount(act: string, amount: number): Promise<void> {
-        const row = await this.showPendingAct(act);
-        if (!row) throw new Error(`Acte "${act}" à facturer introuvable (ou déjà saisi) dans l'onglet Actes Médicaux`);
-        const input = row.locator('input[type="text"]');
-        await row.locator('td').nth(1).click();
-        await expect(input).toBeEnabled({ timeout: 3000 });
-        await input.fill(String(amount));
+        const row = await this.showPendingAct(act) ?? await this.autoPricedLine(act);
+        if (!row) throw new Error(`Acte "${act}" à facturer introuvable (ou déjà chiffré) dans le panier`);
+        await this.priceInput(row).fill(String(amount));
+        await expect.poll(() => this.isSelected(row), { message: `"${act}" coché par la saisie du prix` }).toBe(true);
     }
 
-    /** Compteurs de l'en-tête patient : actes à facturer et actes dans la facture en cours. */
+    /**
+     * Saisit le prix d'une ligne non chiffrée (true si une ligne a été trouvée) : d'abord une ligne
+     * déjà cochée (un acte qu'on vient d'ajouter arrive coché d'office), sinon la première venue.
+     */
+    async fillFirstAvailableActAmount(amount: string = '5000'): Promise<boolean> {
+        await this.waitCartLoaded();
+        await this.showAllPeriod();
+        for (const selectedFirst of [true, false]) {
+            for (let i = 0; i < await this.lines.count(); i++) {
+                const line = this.lines.nth(i);
+                const input = this.priceInput(line);
+                if ((await input.inputValue()) === '' && (!selectedFirst || await this.isSelected(line))) {
+                    await input.fill(amount);
+                    return true;
+                }
+            }
+        }
+        return false;
+    }
+
+    /** Coche ou décoche une ligne (clic sur la ligne, hors du prix). */
+    async toggleLine(line: Locator): Promise<void> {
+        await line.locator('.col-date').click();
+    }
+
+    /** Actes du panier (toBill) et actes cochés pour la facture (inInvoice). */
     async counters(): Promise<{ toBill: number; inInvoice: number }> {
-        const read = async (selector: string) => Number(((await this.page.locator(selector).first().innerText()).match(/\d+/) ?? ['0'])[0]);
-        return {
-            toBill: await read('.patient-badge-header.notification-global'),
-            inInvoice: await read('.patient-badge-header.notification-global-invoice'),
-        };
+        await this.waitCartLoaded();
+        const toBill = await this.lines.count();
+        let inInvoice = 0;
+        for (let i = 0; i < toBill; i++) if (await this.isSelected(this.lines.nth(i))) inInvoice++;
+        return { toBill, inInvoice };
     }
 
-    get proceedButton(): Locator {
-        return this.procederFacturationButton;
-    }
-
-    /** Étape Facturation : ligne d'un acte de la facture en cours (avec sa case à cocher). */
+    /** Ligne d'un acte coché dans le récapitulatif de la facture. */
     invoiceLine(act: string): Locator {
-        return this.page.locator('app-billing-space-facturation-item ul')
-            .filter({ has: this.page.locator('input[type="checkbox"]') })
-            .filter({ hasText: new RegExp(escapeRegExp(act).replace(/\s+/g, '\\s+'), 'i') });
+        return this.preview.locator('.preview-line').filter({ has: this.page.locator('.pl-name', { hasText: new RegExp(`^\\s*${pattern(act)}\\s*$`, 'i') }) });
     }
 
-    /** Étape Facturation : retire les actes indiqués de la facture en cours (case + "Retirer"). */
+    /** Décoche les actes indiqués : ils sortent de la facture (et restent à facturer). */
     async removeFromInvoice(acts: string[]): Promise<void> {
-        for (const act of acts) await this.invoiceLine(act).first().locator('input[type="checkbox"]').check();
-        await this.page.getByRole('button', { name: 'Retirer' }).click();
-        await expect(this.page.getByText(/voulez-vous retirer/i)).toBeVisible();
-        await this.confirmerButton.click();
-        await expect(this.page.getByText(/retrait.*r[ée]ussi/i).first()).toBeVisible({ timeout: 15000 });
+        for (const act of acts) {
+            const line = this.lineOf(act).first();
+            if (await this.isSelected(line)) await this.toggleLine(line);
+            await expect(this.invoiceLine(act), `"${act}" retiré de la facture`).toHaveCount(0);
+        }
     }
 
-    /** Étape Facturation : bouton d'affichage d'une liste d'exceptions de la prise en charge. */
-    exceptionsButton(list: 'Actes Exclus' | 'Cas Spécifiques'): Locator {
-        return this.page.getByRole('button', { name: new RegExp(`^\\W*${list}\\s*$`) });
+    /** Étiquette d'une ligne du panier ("Exclu", "30 % · plafond 6 000 F", "En attente"…). */
+    lineTag(act: string, text: RegExp | string): Locator {
+        return this.lineOf(act).first().locator('.tag').filter({ hasText: text });
     }
 
-    /** Étape Facturation : tableau "Liste des actes exclus" ou "Liste des cas spécifiques". */
-    exceptionsTable(list: 'actes exclus' | 'cas spécifiques'): Locator {
-        return this.page.locator('div').filter({ has: this.page.getByRole('heading', { name: new RegExp(`Liste des ${list}`, 'i') }) }).locator('table').last();
-    }
+    // ======================== Prise en charge et émission ========================
 
-    /** Étape Facturation : retire la prise en charge choisie (croix du sélecteur). */
-    async clearCover(): Promise<void> {
-        await this.assuranceSelect.locator('.ng-clear-wrapper').click();
-        await expect(this.assuranceSelect.locator('.ng-value')).toHaveCount(0);
-    }
-
-    /** Onglet "Facturation" de l'assistant (facture en cours). */
-    async openInvoiceTab(): Promise<void> {
-        await this.facturationTabButton.click();
-        await expect(this.facturationTabButton).toHaveClass(/active/, { timeout: 10000 });
-    }
-
-    /** Onglet "Actes Médicaux" de l'assistant (actes à facturer). */
-    async openActsTab(): Promise<void> {
-        await this.actesTabButton.first().click();
-        await expect(this.actesTabButton.first()).toHaveClass(/active/, { timeout: 10000 });
-    }
-
-    /** Étape Facturation : choisit la prise en charge de l'assureur indiqué. */
+    /** Choisit la prise en charge de l'assureur indiqué (aucune n'est choisie par défaut). */
     async chooseCover(insurer: string): Promise<void> {
-        await this.assuranceSelect.click();
+        await this.coverSelect.locator('.ng-select-container').click();
         const option = this.page.locator('.ng-dropdown-panel:visible .ng-option').filter({ hasText: insurer }).first();
         await expect(option, `Prise en charge "${insurer}" proposée`).toBeVisible({ timeout: 10000 });
         await option.click();
     }
 
-    /** Étape Facturation : taux, plafond et quote-parts affichés (montants convertis en nombres). */
-    async coverSummary(): Promise<{ rate: number; cap: number; garant: number; patient: number }> {
-        const read = async (id: string) => Number(((await this.page.locator(`#${id}`).inputValue()) || '0').replace(/[^\d,.-]/g, '').replace(',', '.')) || 0;
-        return { rate: await read('rate'), cap: await read('coverateMount'), garant: await read('mountGarant'), patient: await read('mountPatient') };
+    /** Choisit, s'il y en a une, la première prise en charge proposée. */
+    async tryApplyFirstAvailableInsurance(): Promise<void> {
+        if (!await this.coverSelect.isVisible().catch(() => false)) return;
+        await this.coverSelect.locator('.ng-select-container').click();
+        const option = this.page.locator('.ng-dropdown-panel:visible .ng-option:not(.ng-option-disabled)').first();
+        if (await option.isVisible().catch(() => false)) await option.click();
+        else await this.page.keyboard.press('Escape');
     }
 
-    // ======================== Flux complet ========================
+    /** Retire la prise en charge choisie (croix du sélecteur) : le patient règle la totalité. */
+    async clearCover(): Promise<void> {
+        await this.coverSelect.locator('.ng-clear-wrapper').click();
+        await expect(this.coverSelect.locator('.ng-value')).toHaveCount(0);
+    }
+
+    /** Taux et plafond de la prise en charge choisie, part garant et net patient (montants en nombres). */
+    async coverSummary(): Promise<{ rate: number; cap: number; garant: number; patient: number }> {
+        // Sans prise en charge le bloc "Taux / Plafond" n'existe pas : ne pas attendre un élément absent
+        const metaBlock = this.preview.locator('.cover-meta').first();
+        const meta = (await metaBlock.count() > 0 ? await metaBlock.innerText() : '').replace(/\s+/g, ' ');
+        const after = (label: string) => toNumber(meta.match(new RegExp(`${label}\\s*([\\d\\s\\u202f\\u00a0.,]+)`))?.[1] ?? '');
+        const value = async (label: string) => {
+            const input = this.preview.getByLabel(label);
+            return await input.isVisible().catch(() => false) ? toNumber(await input.inputValue()) : 0;
+        };
+        const covered = await this.coverSelect.locator('.ng-value').count() > 0;
+        return {
+            rate: covered ? after('Taux') : 0,
+            cap: covered ? after('Plafond') : 0,
+            garant: await value('Part prise en charge'),
+            patient: await value('Net à payer patient'),
+        };
+    }
+
+    /** Sans objet depuis la facture en une page : les actes chiffrés sont déjà cochés. */
+    async proceedToBilling(): Promise<void> {
+        await expect(this.preview.locator('.preview-line').first(), 'Au moins un acte dans la facture').toBeVisible({ timeout: 10000 });
+    }
+
+    /** Sans objet depuis la facture en une page (plus d'onglet "Facturation"). */
+    async openInvoiceTab(): Promise<void> {
+        await expect(this.cart).toBeVisible();
+    }
+
+    /** Sans objet depuis la facture en une page (plus d'onglet "Actes Médicaux"). */
+    async openActsTab(): Promise<void> {
+        await expect(this.cart).toBeVisible();
+    }
+
+    async expectGenerateButtonEnabled(): Promise<void> {
+        await expect(this.generateButton).toBeEnabled({ timeout: 10000 });
+    }
+
+    /** "Valider et émettre la facture", confirmation, puis liste des factures du patient. */
+    async generateInvoice(): Promise<void> {
+        await this.expectGenerateButtonEnabled();
+        await this.generateButton.click();
+        await expect(this.page.getByText(/Émettre la facture pour ces actes/i)).toBeVisible();
+        const created = this.page.waitForResponse(r => /\/invoices$/.test(r.url().split('?')[0]) && r.request().method() === 'POST', { timeout: 60000 });
+        await this.confirmerButton.click();
+        const res = await created;
+        expect(res.status(), 'Émission de la facture : réponse du serveur').toBeLessThan(400);
+        await this.page.waitForURL('**/billing/billings-patients**', { timeout: 30000 });
+    }
+
+    // ======================== Flux complets ========================
 
     /**
-     * Enchaîne l'ensemble du parcours de création de facture pour un patient identifié par
-     * `patientIdentifier` : recherche + sélection du patient, ajout d'un acte facturable de
-     * test (pour contourner le problème de données connu), saisie de son montant, passage à la
-     * facturation, tentative d'application d'une prise en charge puis génération de la facture.
-     */
-    /**
-     * Facture au patient (recherché par identifiant) l'acte par défaut (première catégorie,
-     * premier acte) réalisé par le praticien indiqué, puis génère la facture.
+     * Facture au patient (recherché par identifiant) un acte réalisé par le praticien indiqué :
+     * l'acte demandé, sinon le premier acte de la première catégorie, au montant donné.
      */
     async createInvoiceForPractitioner(
         patientIdentifier: string,
@@ -498,29 +445,18 @@ export class BillingInvoicePage {
         await this.searchPatientByIdentifier(patientIdentifier);
         expect(await this.getSearchResultsCount()).toBeGreaterThan(0);
         await this.selectFirstSearchResult();
-
-        await this.openAddActModal();
         if (act) {
-            await this.selectNgOptionByText(this.addActCategorySelect, act.category);
-            await this.selectNgOptionByText(this.addActBillableActsSelect, act.act);
+            await this.addAct(act, practitioner);
+            // Montant saisi sur SA ligne (le patient peut avoir d'autres actes à facturer)
+            await this.setActAmount(act.act, Number(amount));
         } else {
-            await this.selectFirstNgOption(this.addActCategorySelect);
-            await this.selectFirstNgOption(this.addActBillableActsSelect);
+            await this.openAddActModal();
+            await this.chooseCaregiver(practitioner);
+            await this.addActModal.locator('.ama-cats .ama-cat').first().click();
+            await this.addActModal.locator('.ama-acts .ama-act').first().click();
+            await this.submitAddActForm();
+            expect(await this.fillFirstAvailableActAmount(amount)).toBeTruthy();
         }
-        await this.addActCaregiverSelect.click();
-        const panel = this.page.locator('.ng-dropdown-panel:visible');
-        const option = panel.locator('.ng-option:not(.ng-option-disabled)')
-            .filter({ hasText: new RegExp(practitioner.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), 'i') }).first();
-        await expect(option, `Praticien "${practitioner}" proposé`).toBeVisible({ timeout: 10000 });
-        await option.click();
-        await this.submitAddActForm();
-
-        // Acte précis : montant saisi sur SA ligne (le patient peut avoir d'autres actes en attente,
-        // la première ligne venue serait facturée à sa place)
-        if (act) await this.setActAmount(act.act, Number(amount));
-        else expect(await this.fillFirstAvailableActAmount(amount)).toBeTruthy();
-        await this.proceedToBilling();
-        await this.tryApplyFirstAvailableInsurance();
         await this.generateInvoice();
     }
 
@@ -528,14 +464,9 @@ export class BillingInvoicePage {
         await this.searchPatientByIdentifier(patientIdentifier);
         expect(await this.getSearchResultsCount(), `Aucun patient trouvé pour l'identifiant "${patientIdentifier}"`).toBeGreaterThan(0);
         await this.selectFirstSearchResult();
-
         await this.seedBillableAct();
-
         const filled = await this.fillFirstAvailableActAmount(amount);
-        expect(filled, "Aucune ligne d'acte facturable exploitable trouvée dans l'onglet Actes Médicaux après l'ajout de l'acte de test.").toBeTruthy();
-
-        await this.proceedToBilling();
-        await this.tryApplyFirstAvailableInsurance();
+        expect(filled, "Aucune ligne d'acte à chiffrer dans le panier après l'ajout de l'acte de test").toBeTruthy();
         await this.generateInvoice();
     }
 }
@@ -549,4 +480,15 @@ export function dateTimeLocal(offsetDays: number, time: string): string {
 
 function escapeRegExp(value: string): string {
     return value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+}
+
+/** Libellé en expression : casse ignorée par l'appelant, espaces multiples tolérés. */
+function pattern(label: string): string {
+    return escapeRegExp(label.replace(/\s+/g, ' ').trim()).replace(/ /g, '\\s+');
+}
+
+/** "12 000", "12 000,00" ou "80 %" → nombre (séparateurs de milliers ignorés, virgule décimale). */
+function toNumber(value: string): number {
+    const cleaned = value.replace(/[\s  ]/g, '').replace(/[^\d,.-]/g, '').replace(',', '.');
+    return Number(cleaned) || 0;
 }
