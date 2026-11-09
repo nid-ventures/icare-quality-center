@@ -1,3 +1,4 @@
+import path from 'path';
 import { test as base, expect, type Page } from '@playwright/test';
 import { PortalPage } from '../pages/structure/portal/portal.page';
 import { ensureFreshAdminSession } from './admin-login';
@@ -19,6 +20,8 @@ type StructureFixtures = {
 // Page et bandeau du test en cours (un seul worker, une page par test) : utilisés par test.step.
 let currentPage: Page | null = null;
 let currentNote: VisualNote | null = null;
+// Dernier fichier de test annoncé dans la console (mode visuel)
+let currentFile = '';
 
 export const test = base.extend<StructureFixtures>({
   // Session administrateur refaite avant le contexte du test si son jeton expire bientôt (le front
@@ -41,9 +44,15 @@ export const test = base.extend<StructureFixtures>({
       return;
     }
     // titlePath : [fichier, "Module …", rubrique(s)…, titre du test]
-    const [, ...describes] = testInfo.titlePath.slice(0, -1);
+    const [file, ...describes] = testInfo.titlePath.slice(0, -1);
+    const fileName = path.basename(file);
+    // Fichier en cours annoncé aussi dans la console à chaque changement de fichier
+    if (fileName !== currentFile) {
+      currentFile = fileName;
+      console.log(`\n📄 Fichier en cours : ${fileName}\n`);
+    }
     currentPage = page;
-    currentNote = { context: describes.join(' › '), test: testInfo.title, steps: [] };
+    currentNote = { file: fileName, context: describes.join(' › '), test: testInfo.title, steps: [] };
     await installVisualNotes(page, currentNote);
     page.on('load', () => { if (currentNote) void showVisualNote(page, currentNote); });
     await use();

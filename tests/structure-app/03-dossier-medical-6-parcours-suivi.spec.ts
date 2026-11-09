@@ -458,7 +458,8 @@ test.describe('Module Dossier médical — Suivi des parcours de soins (homme, f
   // ---------------- Détail du parcours et navigation ----------------
   test('Détail du parcours : état, informations, actes prévus par étape', async ({ page }) => {
     await openPathway(page, woman, FEMMES.name);
-    await expect(page.locator('.pw-hero-status')).toHaveText(/Courant/);
+    // Badge d'état affiché seulement pour un parcours archivé (plus de « Courant(e) »)
+    await expect(page.locator('.pw-hero-status')).toHaveCount(0);
     await expect(page.locator('.pw-state')).toHaveText(/En cours/);
     await expect(page.locator('.pw-info-line').filter({ hasText: "Date d'enregistrement" })).not.toContainText(/^\s*-?\s*$/);
     const planned = page.locator('.pw-acts-item');
@@ -533,7 +534,7 @@ test.describe('Module Dossier médical — Suivi des parcours de soins (homme, f
 
   // ---------------- Clôture des étapes ----------------
   for (const step of FEMMES.steps.map((_, i) => i + 1)) {
-    test(`Clôturer l'étape ${step} (tous les actes réalisés) : étape terminée`, async ({ page }) => {
+    test(`Clôturer l'étape ${step} (tous les actes réalisés) : étape clôturée`, async ({ page }) => {
       await openPathway(page, woman, FEMMES.name);
       await goToStep(page, step);
       const close = activeStep(page).getByRole('button', { name: /Clôturer cette étape/ });
@@ -543,7 +544,9 @@ test.describe('Module Dossier médical — Suivi des parcours de soins (homme, f
         await confirm(page);
         await expect(page.getByText(/clôture de cet(te)? étape a\s+r[ée]ussi/i).first()).toBeVisible({ timeout: 20000 });
       }
-      await expect(stepButton(page, step)).toHaveClass(/pw-step-success/, { timeout: 20000 });
+      // Légende des étapes : Terminée (vert), Clôturée (bleu), Incomplète (orange), Manquée (rouge), À venir (gris)
+      await expect(stepButton(page, step), 'Étape clôturée (bleu)').toHaveClass(/pw-step-closed/, { timeout: 20000 });
+      await expect(page.locator('.pw-steps-legend'), 'Légende des étapes').toHaveText(/Terminée\s*Clôturée\s*Incomplète\s*Manquée\s*À venir/);
       await expect(activeStep(page).getByRole('button', { name: /Clôturer cette étape/ })).toHaveCount(0);
 
       // Étape clôturée : plus aucun bouton de modification dans ses actes, quel que soit le type

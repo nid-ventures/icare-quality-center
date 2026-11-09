@@ -366,6 +366,24 @@ test.describe('Module Facturation', () => {
       return invoicePage;
     }
 
+    test("Sans prise en charge : le raccourci « Ajouter une prise en charge » ouvre la fiche du patient et revient à sa facture", async ({ portal, page }) => {
+      const invoicePage = await openBilling(portal, page);
+      await expect(invoicePage.cart.getByText('Aucune prise en charge active : le patient règle la totalité.')).toBeVisible({ timeout: 15000 });
+      await test.step('Le raccourci ouvre la fiche, onglet Prise en charge, fenêtre d\'ajout ouverte', async () => {
+        await invoicePage.cart.getByRole('link', { name: /Ajouter une prise en charge/ }).click();
+        await page.waitForURL(/\/patient\/patient-info-administration\/.+onglet=prise-en-charge/);
+        await expect(page.locator('#pills-prise-en-charge-fill'), 'Onglet Prise en charge affiché').toBeVisible({ timeout: 15000 });
+        await expect(page.getByRole('heading', { name: 'Ajouter prise en charge' }), "Fenêtre d'ajout ouverte").toBeVisible({ timeout: 15000 });
+        await new PatientCarePage(page).closeModal();
+      });
+      await test.step('« Retour » revient à la facture du même patient', async () => {
+        await page.locator('.patient-header').getByRole('button', { name: /Retour/ }).click();
+        await page.waitForURL(url => url.pathname.endsWith('/billing/billings-create') && url.searchParams.get('patientIdentifier') === patient.identifier);
+        await expect(invoicePage.cart, 'Panier du patient affiché').toBeVisible({ timeout: 15000 });
+        await expect(page.locator('.patient-card .patient-name'), 'Même patient').toContainText(patient.identifier);
+      });
+    });
+
     test('Préparer le patient : prise en charge avec un acte exclu et un cas spécifique', async ({ portal, page }) => {
       await portal.enterModule('Base patients');
       const patientPage = new PatientPage(page);
@@ -492,6 +510,22 @@ test.describe('Module Facturation', () => {
       const invoicePage = await openBilling(portal, page);
       await invoicePage.addAct(ACTS.pharmacie);
       await expect.poll(() => invoicePage.counters(), { message: 'Un acte de plus à facturer, coché d\'office' }).toEqual({ toBill: 4, inInvoice: 1 });
+    });
+
+    test('Ajouter des actes : chaque acte reprend le praticien commun et suit son changement', async ({ portal, page }) => {
+      const invoicePage = await openBilling(portal, page);
+      const before = await invoicePage.counters();
+      await invoicePage.openAddActModal();
+      const caregivers = await invoicePage.caregiverOptions();
+      test.skip(caregivers.length < 2, 'Un seul praticien dans la structure : changement de praticien non testable');
+      const [first, second] = caregivers;
+      await invoicePage.setCommonCaregiver(first);
+      await invoicePage.pickActs([ACTS.visite, ACTS.glycemie]);
+      await expect.poll(() => invoicePage.lineCaregivers(), { message: 'Praticien commun repris par chaque acte' }).toEqual([first, first]);
+      await invoicePage.setCommonCaregiver(second);
+      await expect.poll(() => invoicePage.lineCaregivers(), { message: 'Changement du praticien commun suivi par les actes' }).toEqual([second, second]);
+      await invoicePage.closeAddActModal();
+      await expect.poll(() => invoicePage.counters(), { message: 'Fenêtre fermée sans enregistrer : rien ajouté' }).toEqual(before);
     });
 
     test('Émettre la facture : les actes facturés ne sont plus proposés', async ({ portal, page }) => {

@@ -7,8 +7,9 @@ import { type Page, type Locator, expect } from '@playwright/test';
  *   2. Panier (`app-billing-cart`) : actes non facturés du patient, une ligne par acte, cochée dès
  *      qu'un prix est saisi ; à droite, le récapitulatif (prise en charge, part garant, net patient)
  *      et "Valider et émettre la facture" (confirmation, puis liste des factures du patient).
- *   "Ajouter un acte" ouvre la fenêtre "Ajouter des actes" : praticien et date communs, actes
- *   choisis par catégorie / recherche, chambres avec entrée, sortie et nombre de jours.
+ *   "Ajouter un acte" ouvre la fenêtre "Ajouter des actes" : praticien et date communs (praticien
+ *   repris par chaque acte, modifiable par acte), actes trouvés par la recherche (toutes catégories,
+ *   catégorie affichée en petit), chambres avec entrée, sortie et nombre de jours.
  * Les anciennes étapes "Actes Médicaux" puis "Facturation" n'existent plus : les méthodes qui les
  * représentaient (proceedToBilling, openInvoiceTab…) sont gardées sans effet pour les specs.
  */
@@ -111,31 +112,84 @@ export class BillingInvoicePage {
         await option.click();
     }
 
-    /** Pastille d'une catégorie ("ACTE DE CHAMBRE" → "Acte de chambre 3"). */
-    private categoryPill(category: string): Locator {
-        return this.addActModal.locator('.ama-cats .ama-cat').filter({ hasText: new RegExp(`^\\s*${pattern(category)}\\s*\\d*\\s*$`, 'i') });
+    /**
+     * Actes proposés par la recherche (toutes catégories : plus de pastilles de catégorie), d'une
+     * catégorie donnée : chaque résultat affiche sa catégorie en petit, en forme courte pour certaines
+     * ("ACTE DE CONSULTATION" → "Consultation", "ACTE D'IMAGERIE" → "Acte d'imagerie").
+     */
+    private resultsOf(category: string): Locator {
+        const short = category.replace(/^\s*ACTE\s+(DE\s+|D['’])/i, '');
+        const acts = this.addActModal.locator('.ama-acts .ama-act');
+        return acts.filter({
+            has: this.page.locator('small', { hasText: new RegExp(`^\\s*(acte\\s+(de\\s+|d['’]))?${pattern(short)}\\s*$`, 'i') }),
+        // Une seule catégorie dans la structure (catégorie active d'office) : pas de catégorie affichée
+        }).or(acts.filter({ hasNot: this.page.locator('small') }));
     }
 
     /**
-     * Bouton d'un acte proposé. Le libellé peut porter ou non le préfixe de domaine ("Consultation
-     * cardiologique" / "Cardiologique") : les deux formes sont acceptées.
+     * Bouton d'un acte proposé, d'après son nom (`.ama-act-name`). Le libellé peut porter ou non le
+     * préfixe de domaine ("Consultation cardiologique" / "Cardiologique") : les deux formes sont acceptées.
      */
-    private actButton(act: string): Locator {
+    private actButton(act: string, category?: string): Locator {
         const rest = act.replace(/^\s*(consultation|visite)\s+/i, '');
-        return this.addActModal.locator('.ama-acts .ama-act')
-            .filter({ hasText: new RegExp(`^\\s*((consultation|visite)\\s+)?${pattern(rest)}\\s*$`, 'i') });
+        const buttons = category ? this.resultsOf(category) : this.addActModal.locator('.ama-acts .ama-act');
+        return buttons.filter({
+            has: this.page.locator('.ama-act-name', { hasText: new RegExp(`^\\s*((consultation|visite)\\s+)?${pattern(rest)}\\s*$`, 'i') }),
+        });
     }
 
-    /** Choisit un acte (catégorie puis recherche sur son nom, la liste d'une catégorie est limitée). */
+    /** Recherche des actes (nom ou catégorie, accents ignorés) ; la recherche est limitée à 80 résultats. */
+    private async searchActs(term: string): Promise<void> {
+        await this.addActSearch.fill(term.replace(/\s+/g, ' ').trim());
+    }
+
+    /** Choisit un acte : recherche sur son nom, puis le résultat de la bonne catégorie. */
     private async pickAct(category: string, act: string): Promise<void> {
-        const pill = this.categoryPill(category);
-        await expect(pill, `Catégorie "${category}" proposée`).toHaveCount(1);
-        if (!(await pill.getAttribute('class'))?.includes('active')) await pill.click();
-        await this.addActSearch.fill(act.replace(/^\s*(consultation|visite)\s+/i, '').replace(/\s+/g, ' ').trim());
-        const button = this.actButton(act).first();
-        await expect(button, `Acte "${act}" proposé`).toBeVisible({ timeout: 10000 });
+        await this.searchActs(act.replace(/^\s*(consultation|visite)\s+/i, ''));
+        const button = this.actButton(act, category).first();
+        await expect(button, `Acte "${act}" (${category}) proposé`).toBeVisible({ timeout: 10000 });
         await button.click();
         await this.addActSearch.fill('');
+    }
+
+    /** Choisit le premier acte proposé (toutes catégories, par ordre alphabétique). */
+    private async pickFirstAct(): Promise<void> {
+        // Toutes les catégories s'appellent « Acte … » : la recherche « acte » propose tous les actes
+        await this.searchActs('acte');
+        const first = this.addActModal.locator('.ama-acts .ama-act').first();
+        await expect(first, 'Un acte proposé').toBeVisible({ timeout: 10000 });
+        await first.click();
+        await this.addActSearch.fill('');
+    }
+
+    /** Choisit des actes dans la fenêtre ouverte, sans enregistrer. */
+    async pickActs(acts: { category: string; act: string }[]): Promise<void> {
+        for (const act of acts) await this.pickAct(act.category, act.act);
+    }
+
+    /** Praticiens proposés dans le sélecteur du praticien commun (liste refermée). */
+    async caregiverOptions(): Promise<string[]> {
+        await this.addActCaregiverSelect.locator('.ng-select-container').click();
+        const options = this.page.locator('.ng-dropdown-panel:visible .ng-option:not(.ng-option-disabled)');
+        await expect(options.first(), 'Praticiens proposés').toBeVisible({ timeout: 10000 });
+        const names = (await options.allInnerTexts()).map(s => s.replace(/\s+/g, ' ').trim()).filter(Boolean);
+        // Pas d'Échap : la fenêtre "Ajouter des actes" se fermerait avec la liste
+        await this.addActHeading.click();
+        await expect(options.first()).toBeHidden();
+        return names;
+    }
+
+    /** Choisit le praticien commun (nom exact proposé). */
+    async setCommonCaregiver(name: string): Promise<void> {
+        await this.chooseCaregiver(name);
+        await expect(this.addActCaregiverSelect.locator('.ng-value'), `Praticien commun "${name}"`).toContainText(name);
+    }
+
+    /** Praticien affiché sur chaque acte choisi (plusieurs actes : un sélecteur par acte). */
+    async lineCaregivers(): Promise<string[]> {
+        const values = this.addActModal.locator('.ama-picked .ama-line-select');
+        return (await values.evaluateAll(els => els.map(e => e.querySelector('.ng-value-label')?.textContent ?? '')))
+            .map(s => s.replace(/\s+/g, ' ').trim());
     }
 
     /** "Ajouter" : l'acte est enregistré pour le patient (il arrive coché dans le panier) et la fenêtre se ferme. */
@@ -148,12 +202,11 @@ export class BillingInvoicePage {
         await this.waitCartLoaded();
     }
 
-    /** Ajoute au patient courant le premier acte de la première catégorie (premier praticien). */
+    /** Ajoute au patient courant le premier acte proposé (premier praticien). */
     async seedBillableAct(): Promise<void> {
         await this.openAddActModal();
         await this.chooseCaregiver();
-        await this.addActModal.locator('.ama-cats .ama-cat').first().click();
-        await this.addActModal.locator('.ama-acts .ama-act').first().click();
+        await this.pickFirstAct();
         await this.submitAddActForm();
     }
 
@@ -173,19 +226,18 @@ export class BillingInvoicePage {
         await this.submitAddActForm();
     }
 
-    /** Actes proposés pour une catégorie dans "Ajouter des actes" (fenêtre refermée sans enregistrer). */
-    async proposedActs(category: string): Promise<string[]> {
+    /**
+     * Noms des actes d'une catégorie proposés dans "Ajouter des actes" pour la recherche `search`
+     * (par défaut le nom de la catégorie ; la recherche est limitée à 80 résultats : chercher l'acte
+     * voulu par son nom pour une catégorie très fournie). Fenêtre refermée sans enregistrer.
+     */
+    async proposedActs(category: string, search: string = category): Promise<string[]> {
         await this.openAddActModal();
-        const pill = this.categoryPill(category);
-        // Catégorie absente (ses actes sont tous désactivés, par exemple) : aucun acte proposé
-        if (await pill.count() === 0) {
-            await this.closeAddActModal();
-            return [];
-        }
-        await pill.click();
-        const buttons = this.addActModal.locator('.ama-acts .ama-act');
-        await buttons.first().waitFor({ state: 'visible', timeout: 10000 }).catch(() => { });
-        const names = (await buttons.allInnerTexts()).map(s => s.replace(/\s+/g, ' ').trim()).filter(Boolean);
+        await this.searchActs(search);
+        // Résultats affichés, ou « Aucun acte ne correspond » (catégorie ou acte désactivé, par exemple)
+        await expect(this.addActModal.locator('.ama-acts .ama-act, .ama-acts .ama-hint').first()).toBeVisible({ timeout: 10000 });
+        const names = (await this.resultsOf(category).locator('.ama-act-name').allInnerTexts())
+            .map(s => s.replace(/\s+/g, ' ').trim()).filter(Boolean);
         await this.closeAddActModal();
         return names;
     }
@@ -452,8 +504,7 @@ export class BillingInvoicePage {
         } else {
             await this.openAddActModal();
             await this.chooseCaregiver(practitioner);
-            await this.addActModal.locator('.ama-cats .ama-cat').first().click();
-            await this.addActModal.locator('.ama-acts .ama-act').first().click();
+            await this.pickFirstAct();
             await this.submitAddActForm();
             expect(await this.fillFirstAvailableActAmount(amount)).toBeTruthy();
         }

@@ -117,6 +117,11 @@ test.describe('Module Dossier médical', () => {
       await openDossier(page);
       await antecedentPage.checkAntecedentFormulaire();
       await antecedentPage.updateAntecedantGeneraux();
+      await test.step('Le dashboard affiche tous les antécédents et allergies saisis', async () => {
+        await expect(page.getByRole('button', { name: 'Confirmer' }), 'Enregistrement confirmé').toBeHidden({ timeout: 15000 });
+        await openDossierAgain(page);
+        await antecedentPage.expectDashboardShowsSavedAntecedents();
+      });
     });
   });
 

@@ -740,9 +740,12 @@ test.describe('Module Administration', () => {
       return acts;
     }
 
-    /** Actes proposés en facturation pour la catégorie donnée (fenêtre "Ajouter un acte", sans enregistrer). */
-    async function billingActs(page: Page, category: string): Promise<string[]> {
-      return (await openBilling(page).then(invoice => invoice.proposedActs(category))).map(a => a.toUpperCase());
+    /**
+     * Actes de la catégorie donnée proposés en facturation quand on cherche `act` par son nom
+     * (fenêtre "Ajouter des actes", sans enregistrer ; la recherche couvre toutes les catégories).
+     */
+    async function billingActs(page: Page, category: string, act: string): Promise<string[]> {
+      return (await openBilling(page).then(invoice => invoice.proposedActs(category, act))).map(a => a.toUpperCase());
     }
 
     /** Facturation du patient dédié, référentiels de session rechargés (actes de la structure). */
@@ -869,7 +872,7 @@ test.describe('Module Administration', () => {
 
     test("L'acte ajouté est proposé en facturation", async ({ page }) => {
       test.skip(!hasModule('Facturation'), withoutModuleReason('Facturation'));
-      expect(await billingActs(page, listed.type)).toContain(listed.nom);
+      expect(await billingActs(page, listed.type, listed.nom)).toContain(listed.nom);
     });
 
     test("Désactiver un acte non utilisé : il n'est plus proposé en facturation, puis le réactiver", async ({ page }) => {
@@ -879,7 +882,7 @@ test.describe('Module Administration', () => {
       expect(await acts.toggle(listed.nom)).toMatch(/réussi/i);
       await acts.search({ nom: listed.nom, etat: 'Inactif' });
       expect((await acts.rows())[0]?.statut, 'Acte désactivé').toBe('Inactif');
-      expect(await billingActs(page, listed.type), 'Plus proposé en facturation').not.toContain(listed.nom);
+      expect(await billingActs(page, listed.type, listed.nom), 'Plus proposé en facturation').not.toContain(listed.nom);
 
       await new PortalPage(page).enterModule('Administration');
       acts = await openActs(page);
@@ -887,7 +890,7 @@ test.describe('Module Administration', () => {
       expect(await acts.toggle(listed.nom)).toMatch(/réussi/i);
       await acts.search({ nom: listed.nom, etat: 'Actif' });
       expect((await acts.rows())[0]?.statut, 'Acte réactivé').toBe('Actif');
-      expect(await billingActs(page, listed.type), 'De nouveau proposé').toContain(listed.nom);
+      expect(await billingActs(page, listed.type, listed.nom), 'De nouveau proposé').toContain(listed.nom);
     });
 
     /** Bascule l'état de l'acte depuis Administration › Actes ; renvoie le message et le statut affiché ensuite. */

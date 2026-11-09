@@ -1,8 +1,8 @@
 import { type Page } from '@playwright/test';
 
 /**
- * Bandeau affiché en bas de l'écran pendant les tests visuels (SLOWMO > 0, cf. "npm run test:visuel")
- * pour savoir quelle fonctionnalité est en cours : module › rubrique, test, étape.
+ * Bandeau affiché en haut de l'écran pendant les tests visuels (SLOWMO > 0, cf. "npm run test:visuel")
+ * pour savoir quelle fonctionnalité est en cours : fichier de test, module › rubrique, test, étape.
  *
  * Il est rendu dans un shadow DOM *fermé*, marqué aria-hidden et sans événements de pointeur :
  * les sélecteurs Playwright (getByText, getByRole…) ne le voient pas et il n'intercepte aucun clic.
@@ -11,7 +11,7 @@ import { type Page } from '@playwright/test';
  * Les dernières étapes restent affichées (la plus récente en vert) pour pouvoir être lues même
  * quand elles s'enchaînent vite.
  */
-export type VisualNote = { context: string; test: string; steps?: string[] };
+export type VisualNote = { file?: string; context: string; test: string; steps?: string[] };
 
 export const visualNotesEnabled = () => Number(process.env.SLOWMO) > 0;
 
@@ -35,11 +35,11 @@ function initScript([storageKey, initial]: [string, string]) {
     if (!root) {
       const host = document.createElement('qa-visual-note');
       host.setAttribute('aria-hidden', 'true');
-      host.style.cssText = 'position:fixed;left:50%;bottom:16px;transform:translateX(-50%);z-index:2147483647;pointer-events:none;';
+      host.style.cssText = 'position:fixed;left:50%;top:12px;transform:translateX(-50%);z-index:2147483647;pointer-events:none;';
       root = host.attachShadow({ mode: 'closed' });
       document.documentElement.appendChild(host);
     }
-    const note = JSON.parse(raw) as { context: string; test: string; steps?: string[] };
+    const note = JSON.parse(raw) as { file?: string; context: string; test: string; steps?: string[] };
     const escape = (value: string) => value.replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c] as string));
     const steps = note.steps ?? [];
     root.innerHTML = `
@@ -47,12 +47,14 @@ function initScript([storageKey, initial]: [string, string]) {
         .box { background: rgba(17, 24, 39, .92); color: #fff; padding: 12px 20px; border-radius: 10px;
                font: 15px/1.5 system-ui, "Segoe UI", sans-serif; max-width: 75vw; text-align: center;
                box-shadow: 0 6px 20px rgba(0, 0, 0, .35); border-left: 4px solid #22c55e; }
+        .file { font: 12px/1.5 Consolas, "Courier New", monospace; color: #93c5fd; }
         .ctx { font-size: 12px; opacity: .75; text-transform: uppercase; letter-spacing: .04em; }
         .test { font-weight: 600; font-size: 16px; }
         .step { color: #86efac; font-weight: 600; }
         .done { color: #9ca3af; font-size: 13px; }
       </style>
       <div class="box">
+        ${note.file ? `<div class="file">📄 ${escape(note.file)}</div>` : ''}
         <div class="ctx">${escape(note.context)}</div>
         <div class="test">${escape(note.test)}</div>
         ${steps.map((s, i) => i === steps.length - 1

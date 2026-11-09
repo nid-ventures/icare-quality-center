@@ -14,6 +14,9 @@ export interface CarePathwayTemplate {
   name: string;
   description: string;
   targetSex: 'Tous les sexes' | 'Femmes uniquement' | 'Hommes uniquement';
+  /** Âge cible en années, bornes incluses (absent = pas de restriction de ce côté). */
+  targetMinAge?: number;
+  targetMaxAge?: number;
   startDateLabel?: string;
   steps: TemplateStep[];
 }
@@ -23,7 +26,8 @@ export type SelectedActs = string[][];
 
 /**
  * Administration > Paramètres > "Parcours de soins" : modèles de parcours (nom, description,
- * sexe ciblé, libellé de date de début, étapes avec types d'actes et actes médicaux prévus).
+ * sexe ciblé, tranche d'âge cible, libellé de date de début, étapes avec types d'actes et actes
+ * médicaux prévus).
  */
 export class CarePathwayTemplatePage {
   private readonly config: MyConfigurationPage;
@@ -83,6 +87,8 @@ export class CarePathwayTemplatePage {
     await this.modal.locator('[formcontrolname="careplanType"]').fill(template.name);
     await this.modal.locator('[formcontrolname="description"]').fill(template.description);
     await this.pickSingle(this.modal.locator('ng-select[formcontrolname="targetSex"]'), template.targetSex);
+    if (template.targetMinAge !== undefined) await this.modal.locator('[formcontrolname="targetMinAge"]').fill(String(template.targetMinAge));
+    if (template.targetMaxAge !== undefined) await this.modal.locator('[formcontrolname="targetMaxAge"]').fill(String(template.targetMaxAge));
     if (template.startDateLabel !== undefined) {
       await this.modal.locator('[formcontrolname="startDateLabel"]').fill(template.startDateLabel);
     }
@@ -193,6 +199,11 @@ export class CarePathwayTemplatePage {
     }
     await searched;
     await expect(this.section.locator('.cpt-row').or(this.section.locator('.cpt-empty')).first()).toBeVisible({ timeout: 15000 });
+  }
+
+  /** Ligne de tranche d'âge cible ("18 - 65 ans", "À partir de 60 ans", "Jusqu'à 5 ans") ; absente sans restriction. */
+  ageRange(name: string): Locator {
+    return this.row(name).locator('.cpt-row-meta').filter({ has: this.page.locator('.ri-user-line') });
   }
 
   /** Ligne d'utilisation : "Jamais utilisé" ou "Utilisé par N parcours (dont M en cours | archivés)". */

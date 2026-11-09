@@ -14,7 +14,7 @@ const MODULE_MENUS: { name: ModuleName; url: string; menu: string[] }[] = [
   { name: 'Dossier médical', url: '**/patient/patients', menu: ['Dossiers patients'] },
   { name: 'Facturation', url: '**/billing/billings-create', menu: ['Nouvelle facture', 'Factures patients', 'Factures garants'] },
   { name: 'Honoraires', url: '**/honoraire/honoraires', menu: ["Relevés d'honoraires", 'Nouveau relevé'] },
-  { name: 'Reporting', url: '**/my-space/reporting/prestations', menu: ['Prestations', 'Liste des actes'] },
+  { name: 'Reporting', url: '**/my-space/reporting/prestations', menu: ['Prestations', 'Liste des actes', 'Parcours de soins'] },
   { name: 'Administration', url: '**/my-space/configuration', menu: ['Utilisateurs', 'Paramètres'] },
 ];
 

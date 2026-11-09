@@ -186,7 +186,23 @@ export class AntecedentPage {
   await expect(this.confirmerLabel).toBeVisible();
   await expect(this.buttonFermer).toBeVisible();
   await expect(this.buttonConfirmer).toBeVisible();
-  await this.buttonConfirmer.click();  
+  await this.buttonConfirmer.click();
+  }
+
+  /**
+   * Dashboard médical, après updateAntecedantGeneraux() : tous les antécédents saisis sont affichés
+   * (pathologies cochées, autres pathologies, tabac, toxicomanie) ainsi que les allergies des listes
+   * et la précision « Autres ».
+   */
+  async expectDashboardShowsSavedAntecedents() {
+    const tags = this.page.locator('.tag-list .tag.active');
+    for (const tag of ['Drépanocytose', 'Cardiopathie', 'rhume', 'Fumeur régulier', 'reduire le sucre']) {
+      await expect(tags.filter({ hasText: new RegExp(`^\\s*${tag}\\s*$`) }), `Antécédent "${tag}" affiché`).toHaveCount(1);
+    }
+    await expect(this.aucunAntecedentText).toHaveCount(0);
+    const allergy = (label: string) => this.page.locator('.allergies-chip .combined-row').filter({ has: this.page.locator('.combined-label', { hasText: label }) });
+    await expect(allergy('Médicamenteuses').locator('.combined-value'), 'Allergie médicamenteuse affichée').toContainText('Céphalosporines');
+    await expect(allergy('Autres').locator('.combined-value'), 'Autre allergie affichée').toHaveText(/^\s*tete\s*$/);
   }
 
 }

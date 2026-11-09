@@ -502,3 +502,62 @@ export class PrestationsReportingPage {
 function normalize(value: string): string {
   return value.normalize('NFD').replace(/[\u0300-\u036f]/g, '').replace(/\s+/g, ' ').trim().toUpperCase();
 }
+
+/**
+ * Reporting > Parcours de soins (`/my-space/reporting/parcours`, `CarePathwaysReportingComponent`) :
+ * période (sur la date de début du parcours), filtres type / praticien (relus sur le serveur), statut /
+ * suivi / patient (appliqués à l'écran), indicateurs, statistiques et liste paginée des parcours.
+ * Données de `GET /careplans/reporting`.
+ */
+export class CarePathwaysReportingPage {
+  readonly heading: Locator;
+  readonly exportButton: Locator;
+  readonly loadingState: Locator;
+  readonly errorState: Locator;
+  readonly emptyState: Locator;
+  readonly listCount: Locator;
+
+  constructor(private readonly page: Page) {
+    this.heading = page.getByRole('heading', { name: 'Parcours de soins', level: 1 });
+    this.exportButton = page.locator('.cpr-header').getByRole('button', { name: /Exporter/ });
+    this.loadingState = page.locator('.cpr-state').filter({ hasText: 'Chargement des parcours' });
+    this.errorState = page.locator('.cpr-state.cpr-error');
+    this.emptyState = page.locator('.cpr-state').filter({ hasText: 'Aucun parcours pour ces critères.' });
+    this.listCount = page.locator('.cpr h2').filter({ hasText: /^\s*Parcours\b/ }).locator('.cpr-count');
+  }
+
+  /** Bouton de période ("Ce mois", "3 mois", "12 mois", "Cette année", "Tout", "Dates"). */
+  period(label: string): Locator {
+    return this.page.locator('.cpr-periods').getByRole('button', { name: label, exact: true });
+  }
+
+  /** Champ de filtre d'après son libellé (Type de parcours, Praticien, Statut, Suivi, Patient). */
+  filter(label: string): Locator {
+    return this.page.locator('.cpr-filters div').filter({ has: this.page.locator('.cpr-label', { hasText: new RegExp(`^\\s*${label}\\s*$`) }) })
+      .last().locator('ng-select, select, input').first();
+  }
+
+  /** Attend la fin du chargement : données, liste vide ou erreur. */
+  async waitLoaded() {
+    await expect(this.loadingState).toBeHidden({ timeout: 30000 });
+    await expect(this.errorState.or(this.emptyState).or(this.page.locator('.cpr-kpis')).first()).toBeVisible({ timeout: 15000 });
+  }
+
+  /** Choisit une période et attend le rechargement. */
+  async choosePeriod(label: string) {
+    await this.period(label).click();
+    await expect(this.period(label)).toHaveClass(/active/);
+    await this.waitLoaded();
+  }
+
+  /** Valeur d'un indicateur ("Parcours", "En cours", "Étapes manquées"…). */
+  async kpi(label: string): Promise<number> {
+    const card = this.page.locator('.cpr-kpi').filter({ has: this.page.locator('.cpr-kpi-label', { hasText: new RegExp(`^\\s*${label}\\s*$`) }) });
+    return Number(((await card.locator('strong').textContent()) ?? '').replace(/[^\d]/g, '')) || 0;
+  }
+
+  /** Nombre de parcours de la liste (badge du titre "Parcours"). */
+  async listTotal(): Promise<number> {
+    return Number(((await this.listCount.textContent()) ?? '').trim()) || 0;
+  }
+}

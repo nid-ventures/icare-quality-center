@@ -1,6 +1,6 @@
 import { test, expect } from '../../fixtures/structure.fixture';
 import { type Page } from '@playwright/test';
-import { MedicalActsReportingPage, BillableBillingReportingPage, PrestationsReportingPage, type ReportingActRow, type PrestationsTab } from '../../pages/structure/my-space/reporting.page';
+import { MedicalActsReportingPage, BillableBillingReportingPage, PrestationsReportingPage, CarePathwaysReportingPage, type ReportingActRow, type PrestationsTab } from '../../pages/structure/my-space/reporting.page';
 import { openDossier } from '../../fixtures/dossier-patient';
 import { ConsultationPage } from '../../pages/structure/consultation/consultation.page';
 import { ConsultationStandardDataGenerator } from '../../pages/structure/generator/consultation-standard-data-generator';
@@ -433,6 +433,70 @@ test.describe('Module Reporting', () => {
   });
 
   // ======================================================================
+  // Parcours de soins (statistiques des parcours, GET /careplans/reporting)
+  // ======================================================================
+  test.describe('Parcours de soins', () => {
+    async function openCarePathwaysReporting(portal: PortalPage, page: Page) {
+      const reporting = new CarePathwaysReportingPage(page);
+      await test.step('Ouvrir "Parcours de soins" depuis le menu', async () => {
+        await portal.openMenu('Parcours de soins', '**/my-space/reporting/parcours');
+        await expect(reporting.heading).toBeVisible();
+        await reporting.waitLoaded();
+      });
+      return reporting;
+    }
+
+    test('Afficher la page : périodes, filtres et export', async ({ portal, page }) => {
+      const reporting = await openCarePathwaysReporting(portal, page);
+      for (const label of ['Ce mois', '3 mois', '12 mois', 'Cette année', 'Tout', 'Dates']) {
+        await expect(reporting.period(label), `Période "${label}"`).toBeVisible();
+      }
+      await expect(reporting.period('12 mois'), 'Période par défaut : 12 mois').toHaveClass(/active/);
+      for (const label of ['Type de parcours', 'Praticien', 'Statut', 'Suivi', 'Patient']) {
+        await expect(reporting.filter(label), `Filtre "${label}"`).toBeVisible();
+      }
+      await expect(reporting.exportButton).toBeVisible();
+      await test.step('Période "Dates" : champs Du / Au', async () => {
+        await reporting.period('Dates').click();
+        await expect(page.getByLabel('Du', { exact: true })).toBeVisible();
+        await expect(page.getByLabel('Au', { exact: true })).toBeVisible();
+      });
+    });
+
+    test('Les parcours de la structure sont chargés : indicateurs et liste', async ({ portal, page }) => {
+      const reporting = await openCarePathwaysReporting(portal, page);
+      await reporting.choosePeriod('Tout');
+      // Sans l'API côté serveur, la page affiche « … (API /careplans/reporting à déployer) »
+      await expect(reporting.errorState, 'Données des parcours chargées (API /careplans/reporting)').toHaveCount(0);
+      // Les specs Dossier médical démarrent des parcours dans la structure
+      await expect(page.locator('.cpr-kpis'), 'Indicateurs affichés').toBeVisible();
+      const total = await reporting.kpi('Parcours');
+      expect(total, 'Au moins un parcours').toBeGreaterThan(0);
+      expect(await reporting.listTotal(), 'Liste : autant de parcours que l\'indicateur').toBe(total);
+      for (const title of ['État des étapes', 'Nouveaux parcours par mois', 'Par type de parcours', 'Réalisation par étape', 'Par praticien', 'Âge des patients']) {
+        await expect(page.getByRole('heading', { name: title, level: 2 }), `Statistique "${title}"`).toBeVisible();
+      }
+      await expect(reporting.exportButton, 'Export possible avec des parcours').toBeEnabled();
+      await test.step('Statut "En cours" : la liste suit l\'indicateur', async () => {
+        const inProgress = await reporting.kpi('En cours');
+        await reporting.filter('Statut').selectOption('IN_PROGRESS');
+        await expect.poll(() => reporting.listTotal()).toBe(inProgress);
+      });
+    });
+
+    test('Patient inexistant : aucun parcours, puis « Réinitialiser »', async ({ portal, page }) => {
+      const reporting = await openCarePathwaysReporting(portal, page);
+      await reporting.choosePeriod('Tout');
+      test.skip(await reporting.errorState.count() > 0, 'API /careplans/reporting indisponible (voir le test de chargement)');
+      await reporting.filter('Patient').fill('QA-PATIENT-INEXISTANT-999999');
+      await expect(reporting.emptyState).toBeVisible();
+      await page.locator('.cpr-filters').getByRole('button', { name: /Réinitialiser/ }).click();
+      await expect(reporting.filter('Patient')).toHaveValue('');
+      await reporting.waitLoaded();
+    });
+  });
+
+  // ======================================================================
   // Liste des actes : statuts et N° de factures d'un patient dédié
   // ======================================================================
   test.describe('Liste des actes : statut et factures de chaque acte', () => {
@@ -525,9 +589,22 @@ test.describe('Module Reporting', () => {
 
     test('Rechercher les actes par chaque critère', async ({ portal, page }) => {
       const actsPage = await openActsList(portal, page);
+      const acts = (act: string) => [BILLED.act, NOT_BILLED.act].find(a => act.toUpperCase().includes(a.toUpperCase())) ?? act;
+      // N° de facture : recherche « contient » (le n° …12 retrouve aussi …120, …121…) : chaque ligne
+      // contient le n° cherché, et seule la facture exacte porte l'acte facturé du patient
+      for (const [label, criteria, field, order] of [
+        ['N° de facture patient', { invoicePatientOrder: orders.patient }, 'invoicePatient', orders.patient],
+        ['N° de facture garant', { invoiceGarantOrder: orders.garant }, 'invoiceGarant', orders.garant],
+      ] as const) {
+        await test.step(label, async () => {
+          expect(order, `${label} relevé à la facturation`).not.toBe('');
+          const rows = await actsPage.searchActs(criteria);
+          expect.soft(rows.filter(r => !r[field].includes(order)).map(r => `${r.act} (${r[field]})`), `${label} : chaque ligne contient "${order}"`).toEqual([]);
+          const exact = rows.filter(r => r[field].trim() === order);
+          expect.soft(exact.map(r => acts(r.act)), `${label} : actes de la facture ${order}`).toEqual([BILLED.act]);
+        });
+      }
       const checks: [string, Parameters<BillableBillingReportingPage['searchActs']>[0], string[]][] = [
-        ['N° de facture patient', { invoicePatientOrder: orders.patient }, [BILLED.act]],
-        ['N° de facture garant', { invoiceGarantOrder: orders.garant }, [BILLED.act]],
         ['Statut "Facturé"', { patientIdentifier: patient.identifier, status: 'Facturé' }, [BILLED.act]],
         ['Statut "Non Facturé"', { patientIdentifier: patient.identifier, status: 'Non Facturé' }, [NOT_BILLED.act]],
       ];

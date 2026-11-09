@@ -44,6 +44,35 @@ const OTHER_SESSION: CarePathwayTemplate = {
   steps: [{ plannedPeriod: '0', groups: [{ domain: 'Vaccination', acts: 1 }] }],
 };
 
+// Tranche d'âge cible (bornes incluses) : les patients de test ont entre 18 et 90 ans
+// (PatientDataGenerator). Modèles jamais démarrés, supprimés à la fin.
+const AGE_IN: CarePathwayTemplate = {
+  name: `QA-AGE-IN-${stamp}`,
+  description: 'Proposé de 0 à 120 ans',
+  targetSex: 'Tous les sexes',
+  targetMinAge: 0,
+  targetMaxAge: 120,
+  steps: [{ plannedPeriod: '0', groups: [{ domain: 'Vaccination', acts: 1 }] }],
+};
+
+const AGE_MIN_OUT: CarePathwayTemplate = {
+  name: `QA-AGE-MIN-${stamp}`,
+  description: 'Proposé à partir de 100 ans',
+  targetSex: 'Tous les sexes',
+  targetMinAge: 100,
+  steps: [{ plannedPeriod: '0', groups: [{ domain: 'Vaccination', acts: 1 }] }],
+};
+
+const AGE_MAX_OUT: CarePathwayTemplate = {
+  name: `QA-AGE-MAX-${stamp}`,
+  description: "Proposé jusqu'à 10 ans",
+  targetSex: 'Tous les sexes',
+  targetMaxAge: 10,
+  steps: [{ plannedPeriod: '0', groups: [{ domain: 'Vaccination', acts: 1 }] }],
+};
+
+const AGE_TEMPLATES = [AGE_IN, AGE_MIN_OUT, AGE_MAX_OUT];
+
 // Parcours de vaccination du bloc « vaccinal et archives » : créé par le test (aucun modèle de
 // référence supposé en base), archivé puis désactivé à la fin
 const VACCINAL: CarePathwayTemplate = {
@@ -246,6 +275,44 @@ test.describe('Module Dossier médical — Parcours de soins paramétrés', () =
     await expect(carePathway.startLink(ALL_ACTS.name)).toHaveCount(1, { timeout: 30000 });
   });
 
+  // ---------------- Tranche d'âge cible du modèle ----------------
+  test("Paramétrer des parcours avec une tranche d'âge : affichée dans la liste", async ({ page }) => {
+    const templates = await openTemplates(page);
+    for (const template of AGE_TEMPLATES) {
+      await test.step(`Parcours ${template.name} (${template.description})`, async () => templates.create(template));
+    }
+    await expect(templates.ageRange(AGE_IN.name)).toHaveText(/^\s*0 - 120 ans\s*$/);
+    await expect(templates.ageRange(AGE_MIN_OUT.name)).toHaveText(/^\s*À partir de 100 ans\s*$/);
+    await expect(templates.ageRange(AGE_MAX_OUT.name)).toHaveText(/^\s*Jusqu'à 10 ans\s*$/);
+    // Sans restriction d'âge : pas de ligne de tranche d'âge
+    await expect(templates.ageRange(ALL_ACTS.name)).toHaveCount(0);
+  });
+
+  test("Un parcours n'est proposé qu'aux patients de sa tranche d'âge", async ({ page }) => {
+    const carePathway = new CarePathwayPage(page);
+    await openTemplates(page);
+    for (const who of [patient, man]) {
+      await test.step(`Dossier de ${who.firstName} ${who.lastName}`, async () => {
+        await openPatientFile(page, who);
+        await expect(carePathway.startLink(AGE_IN.name), 'Dans la tranche (bornes incluses) : proposé').toHaveCount(1, { timeout: 30000 });
+        // Hors tranche : caché, pas seulement grisé (comme le sexe cible)
+        for (const template of [AGE_MIN_OUT, AGE_MAX_OUT]) {
+          await expect(pathwayButton(page, template.name), `${template.description} : non proposé`).toHaveCount(0);
+        }
+      });
+    }
+  });
+
+  test("Un âge maximum inférieur à l'âge minimum est refusé", async ({ page }) => {
+    const templates = await openTemplates(page);
+    await templates.openNew();
+    await templates.modal.locator('[formcontrolname="targetMinAge"]').fill('50');
+    await templates.modal.locator('[formcontrolname="targetMaxAge"]').fill('40');
+    await expect(templates.modal.getByText("L'âge maximum doit être supérieur ou égal à l'âge minimum")).toBeVisible();
+    await expect(templates.modal.locator('[formcontrolname="targetMaxAge"]')).toHaveClass(/is-invalid/);
+    await templates.modal.getByRole('button', { name: /Fermer/ }).click();
+  });
+
   test('Modifier un parcours non utilisé : ajouter une étape et changer la description', async ({ page }) => {
     const templates = await openTemplates(page);
     await templates.openEdit(MEN_ONLY.name);
@@ -374,7 +441,7 @@ test.describe('Module Dossier médical — Parcours de soins paramétrés', () =
 
   test('Supprimer les parcours non utilisés', async ({ page }) => {
     const templates = await openTemplates(page);
-    for (const template of [MEN_ONLY, OTHER_SESSION]) {
+    for (const template of [MEN_ONLY, OTHER_SESSION, ...AGE_TEMPLATES]) {
       if (await templates.row(template.name).count() > 0) {
         await test.step(`Supprimer ${template.name}`, async () => templates.remove(template.name));
       }
@@ -383,7 +450,7 @@ test.describe('Module Dossier médical — Parcours de soins paramétrés', () =
     const leftovers = templates.section.locator('.cpt-row')
       .filter({ has: page.locator('button.cpt-btn--danger') })
       .locator('.cpt-row-title')
-      .filter({ hasText: /^\s*QA-(HOMMES|AUTRE-SESSION)-\d{6}/ });
+      .filter({ hasText: /^\s*QA-(HOMMES|AUTRE-SESSION|AGE-IN|AGE-MIN|AGE-MAX)-\d{6}/ });
     for (const title of await leftovers.allTextContents()) {
       const name = title.trim().split(/\s+/)[0];
       await test.step(`Supprimer le reliquat ${name}`, async () => templates.remove(name));

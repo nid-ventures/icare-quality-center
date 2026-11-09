@@ -260,6 +260,8 @@ test.describe('Module Dossier médical — Imagerie', () => {
         .fill(foetusFields(1).map(f => (f.kind === 'text' || f.kind === 'textarea') ? { ...f, value: `${f.value} (modifié)` } : f));
       await item.locator('button.btn-success').last().click();
       await confirmUpdate(page);
+      // Échographie relue sur le serveur après l'enregistrement : pas de fiche foetus en double
+      await expect(item.locator('app-echographie-simple-foetus'), 'Toujours 2 fiches foetus après enregistrement').toHaveCount(2, { timeout: 15000 });
     });
 
     test("Rouvrir l'échographie : modifications des champs généraux conservées", async ({ page }) => {
@@ -273,6 +275,36 @@ test.describe('Module Dossier médical — Imagerie', () => {
       const item = await openHistoryItem(page, 'echographie');
       await new ConsultationFormPage(page, await foetusSheet(item, 1))
         .expectValues(foetusFields(1), foetus1);
+    });
+
+    test("Retirer un foetus enregistré : seul ce foetus disparaît, une fiche ajoutée non enregistrée reste", async ({ page }) => {
+      test.fail(true, "Anomalie : après le retrait d'un foetus enregistré, l'échographie est rechargée en entier (resfreshEvent → historique relu) : la fiche ajoutée non enregistrée est perdue, contrairement au commit 4d74d969 du 08/11.");
+      const item = await openHistoryItem(page, 'echographie');
+      const sheets = item.locator('app-echographie-simple-foetus');
+      await expect(sheets).toHaveCount(2);
+      await new ConsultationFormPage(page, item).activate('date');
+      await test.step('Ajouter une fiche foetus, sans enregistrer', async () => {
+        // En modification, le bouton d'ajout s'intitule « Foetus » (« Ajouter un foetus » à la création)
+        await item.getByRole('button', { name: /^\W*Foetus\s*$/ }).click();
+        await expect(sheets).toHaveCount(3);
+      });
+      await test.step('Retirer le foetus 2 (enregistré) et confirmer', async () => {
+        await (await foetusSheet(item, 2)).getByRole('button', { name: /Retirer/ }).click();
+        await expect(page.getByText('voulez-vous retirer ce foetus ?'), 'Confirmation affichée').toBeVisible();
+        await confirm(page);
+        await expect(page.getByText(/Le retrait du fœtus a réussi/).first()).toBeVisible({ timeout: 20000 });
+      });
+      await test.step('Le foetus 1 et la fiche non enregistrée restent', async () => {
+        await expect(sheets, 'Foetus 2 retiré, les 2 autres fiches gardées').toHaveCount(2);
+        await new ConsultationFormPage(page, await foetusSheet(item, 1)).expectValues(foetusFields(1), foetus1);
+        await expect(foetusSheet(item, 2), 'Foetus 2 retiré').rejects.toThrow(/introuvable/);
+      });
+      await test.step('Réouverture : seul le foetus 1 est enregistré', async () => {
+        await page.reload();
+        const reopened = await openHistoryItem(page, 'echographie');
+        await expect(reopened.locator('app-echographie-simple-foetus')).toHaveCount(1, { timeout: 15000 });
+        await foetusSheet(reopened, 1);
+      });
     });
 
     test('Supprimer les échographies', async ({ page }) => {
