@@ -13,6 +13,12 @@ test.setTimeout(300000);
 /** Fichier joint de test (PDF minimal généré en mémoire). */
 const attachment = (name: string) => ({ name, mimeType: 'application/pdf', buffer: Buffer.from('%PDF-1.4\n%QA iCare\n1 0 obj<<>>endobj\ntrailer<<>>\n%%EOF\n') });
 
+/** Compte rendu Word (.docx) : seul le type MIME compte pour l'application. */
+const wordAttachment = (name: string) => ({ name, mimeType: 'application/vnd.openxmlformats-officedocument.wordprocessingml.document', buffer: Buffer.from('PK\u0003\u0004 QA iCare compte rendu') });
+
+/** PDF de `mb` Mo (taille seule vérifiée par l'application). */
+const pdfOfSize = (name: string, mb: number) => ({ name, mimeType: 'application/pdf', buffer: Buffer.alloc(Math.round(mb * 1024 * 1024), 0x20) });
+
 // Champs généraux, communs aux 4 types et modifiables après création (app-imaging-item / echographie-simple-item)
 const generalFields = (v: 1 | 2, withExamDate = true): FieldSpec[] => [
   { name: 'caregiverId', kind: 'select', index: v === 1 ? 0 : 1 },
@@ -204,9 +210,35 @@ test.describe('Module Dossier médical — Imagerie', () => {
         { name: 'notice', kind: 'textarea', value: 'Foie, rate et reins sans particularité QA' },
         { name: 'billableActs', kind: 'multiselect', count: 1 },
       ]);
+      await test.step('Joindre le compte rendu en Word (.docx)', async () => {
+        await root.locator('input[type="file"]').first().setInputFiles(wordAttachment('compte-rendu-echo.docx'));
+        await expect(root.locator('.selected-files:not(.invalid-files) .file-name'), 'Word accepté').toHaveText(['compte-rendu-echo.docx']);
+      });
       await root.getByRole('button', { name: /Enregistrer l'échographie/ }).click();
       await confirm(page);
-      await expect(page.locator('.imaging-item.imaging-item--echographie').first()).toBeVisible({ timeout: 20000 });
+      const saved = page.locator('.imaging-item.imaging-item--echographie').first();
+      await expect(saved).toBeVisible({ timeout: 20000 });
+      await expect(saved.locator('.imaging-item-attachments'), 'Compte rendu Word enregistré').toContainText('1');
+    });
+
+    test('Pièces jointes : Word accepté, autre format refusé, 10 Mo maximum', async ({ page }) => {
+      const root = await startActe(page, 'ECHOGRAPHIE', 'app-echographie-simple-static');
+      await new ConsultationFormPage(page, root).fill([{ name: 'type', kind: 'select', option: 'Standard' }]);
+      await expect(root.getByText(/Formats acceptés: PDF, JPG, PNG, Word \(max\. 10MB\)/)).toBeVisible();
+      await root.locator('input[type="file"]').first().setInputFiles([
+        wordAttachment('compte-rendu.docx'),
+        pdfOfSize('examen-3mo.pdf', 3),
+        { name: 'notes.txt', mimeType: 'text/plain', buffer: Buffer.from('QA') },
+        pdfOfSize('examen-11mo.pdf', 11),
+      ]);
+      const valid = root.locator('.selected-files:not(.invalid-files) .selected-file-item');
+      const invalid = root.locator('.invalid-files .selected-file-item');
+      await expect(valid.locator('.file-name'), 'Fichiers acceptés : Word, PDF de 3 Mo (plus de 2 Mo autorisé)')
+        .toHaveText(['compte-rendu.docx', 'examen-3mo.pdf'], { timeout: 15000 });
+      await expect(valid.filter({ hasText: 'compte-rendu.docx' }).locator('.fa-file-word'), 'Icône Word').toHaveCount(1);
+      await expect(invalid.filter({ hasText: 'notes.txt' }).locator('.file-error')).toHaveText('Type de fichier non autorisé (accepté : PDF, JPG, PNG, Word)');
+      await expect(invalid.filter({ hasText: 'examen-11mo.pdf' }).locator('.file-error')).toHaveText('Fichier trop volumineux (max 10 Mo)');
+      await expect(root.getByText('2 fichier(s) invalide(s) - veuillez les supprimer')).toBeVisible();
     });
 
     test('Créer une échographie obstétricale avec 2 foetus (tous les champs)', async ({ page }) => {
