@@ -46,6 +46,31 @@ export async function loginAdminAndSave(page: Page) {
   await page.context().storageState({ path: ADMIN_STORAGE_STATE });
 }
 
+/** Fin de validité (ms) du jeton de la page, 0 si illisible. */
+async function pageTokenExpiry(page: Page): Promise<number> {
+  const token = await page.evaluate(() => localStorage.getItem('access_token')).catch(() => null);
+  try {
+    const payload = JSON.parse(Buffer.from(String(token).split('.')[1], 'base64url').toString('utf8'));
+    return Number(payload.exp) * 1000 || 0;
+  } catch {
+    return 0;
+  }
+}
+
+/**
+ * Pour les tests longs (mode visuel surtout) : si le jeton de la page expire dans moins de
+ * `marginMs`, reconnexion dans la page (une 401 renverrait sinon à la connexion par un rechargement
+ * complet, au milieu d'une saisie). Renvoie true si la session a été refaite : la page est alors
+ * sur le portail, à l'appelant de rouvrir son écran.
+ */
+export async function renewSessionIfExpiring(page: Page, marginMs = 8 * 60 * 1000): Promise<boolean> {
+  const onLogin = page.url().includes('/auth/login');
+  if (!onLogin && (await pageTokenExpiry(page)) - Date.now() > marginMs) return false;
+  await page.evaluate(() => localStorage.clear()).catch(() => {});
+  await loginAdminAndSave(page);
+  return true;
+}
+
 /** Marge avant expiration du jeton en dessous de laquelle la session est refaite. */
 const SESSION_MARGIN_MS = 10 * 60 * 1000;
 

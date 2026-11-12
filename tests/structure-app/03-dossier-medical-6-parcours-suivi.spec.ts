@@ -8,6 +8,7 @@ import { ConsultationFormPage } from '../../pages/structure/consultation/consult
 import { PrescriptionManagerPage } from '../../pages/structure/consultation/prescription-manager.page';
 import { fillAllFields, keptFieldsDiff, type FieldSnapshot } from '../../pages/structure/shared/fill-all-fields';
 import { isoDate } from '../../test-data/consultation-fields';
+import { renewSessionIfExpiring } from '../../fixtures/admin-login';
 
 test.setTimeout(300000);
 
@@ -184,6 +185,12 @@ async function realizeAllActs(page: Page, patient: DossierPatient, pathway: stri
   const total = await content.locator('.acc-item').count();
   expect(total, `Actes de la prestation ${domain}`).toBeGreaterThan(0);
   for (let i = 0; i < total; i++) {
+    // Réalisation de tous les actes : plus que la durée du jeton (30 min) en mode visuel ; session
+    // refaite avant chaque acte si elle expire bientôt, puis parcours rouvert sur l'étape
+    if (await renewSessionIfExpiring(page)) {
+      await openPathway(page, patient, pathway);
+      await goToStep(page, step);
+    }
     const current = await openDomain(page, domain);
     const item = current.locator('.acc-item').nth(i);
     const title = ((await item.locator('.acc-item-title').textContent()) ?? '').trim();
@@ -532,33 +539,16 @@ test.describe('Module Dossier médical — Suivi des parcours de soins (homme, f
     });
   }
 
-  // ---------------- Clôture des étapes ----------------
+  // ---------------- État des étapes (plus de clôture manuelle) ----------------
+  // Depuis le 10/11, le bouton « Clôturer cette étape » et l'état « Clôturée » sont masqués : l'état
+  // d'une étape suit les actes réalisés. Légende : Terminée, Incomplète, Manquée, À venir.
   for (const step of FEMMES.steps.map((_, i) => i + 1)) {
-    test(`Clôturer l'étape ${step} (tous les actes réalisés) : étape clôturée`, async ({ page }) => {
+    test(`Étape ${step}, tous les actes réalisés : étape terminée, sans bouton de clôture`, async ({ page }) => {
       await openPathway(page, woman, FEMMES.name);
       await goToStep(page, step);
-      const close = activeStep(page).getByRole('button', { name: /Clôturer cette étape/ });
-      // Patients réutilisés : étape déjà clôturée par un passage précédent, on vérifie seulement son état
-      if (!(REUSED_PATIENTS && await close.count() === 0)) {
-        await close.click();
-        await confirm(page);
-        await expect(page.getByText(/clôture de cet(te)? étape a\s+r[ée]ussi/i).first()).toBeVisible({ timeout: 20000 });
-      }
-      // Légende des étapes : Terminée (vert), Clôturée (bleu), Incomplète (orange), Manquée (rouge), À venir (gris)
-      await expect(stepButton(page, step), 'Étape clôturée (bleu)').toHaveClass(/pw-step-closed/, { timeout: 20000 });
-      await expect(page.locator('.pw-steps-legend'), 'Légende des étapes').toHaveText(/Terminée\s*Clôturée\s*Incomplète\s*Manquée\s*À venir/);
-      await expect(activeStep(page).getByRole('button', { name: /Clôturer cette étape/ })).toHaveCount(0);
-
-      // Étape clôturée : plus aucun bouton de modification dans ses actes, quel que soit le type
-      await page.reload();
-      await expect(page.locator('.pw-hero')).toBeVisible({ timeout: 20000 });
-      await goToStep(page, step);
-      const editButtons = /^\W*(Activer|Activer le formulaire|Verrouiller|Mettre à jour.*|Enregistrer.*|Modifier la vaccination|Nouvelle dose)\s*$/;
-      for (const domain of [/Consultation/i, /chographie/i, /Vaccination/i, /Bilan/i]) {
-        const body = await expandAct(await openDomain(page, domain), 0);
-        await page.waitForTimeout(2000); // chargement de l'acte depuis le serveur
-        await expect.soft(body.getByRole('button', { name: editButtons }), `Étape ${step} ${domain} : aucun bouton de modification, étape clôturée`).toHaveCount(0);
-      }
+      await expect(stepButton(page, step), 'Étape terminée (vert)').toHaveClass(/pw-step-success/, { timeout: 20000 });
+      await expect(activeStep(page).getByRole('button', { name: /Clôturer cette étape/ }), 'Plus de bouton de clôture').toHaveCount(0);
+      await expect(page.locator('.pw-steps-legend'), 'Légende sans « Clôturée »').toHaveText(/^\s*Terminée\s*Incomplète\s*Manquée\s*À venir\s*$/);
     });
   }
 
@@ -571,9 +561,9 @@ test.describe('Module Dossier médical — Suivi des parcours de soins (homme, f
     await expect(activeStep(page).getByRole('button', { name: /Clôturer cette étape/ })).toHaveCount(0);
   });
 
-  test("Clôturer une étape commencée mais incomplète : étape incomplète", async ({ page }) => {
+  test("Une étape commencée mais incomplète : étape incomplète, sans bouton de clôture", async ({ page }) => {
     test.setTimeout(1800000 * VISUAL);
-    // Étape 1 du parcours tous les sexes de la patiente : une seule consultation réalisée, puis clôture
+    // Étape 1 du parcours tous les sexes de la patiente : une seule consultation réalisée
     await openPathway(page, woman, TOUS.name);
     await expect(activeStep(page)).toContainText('Étape 1');
     const content = await openDomain(page, /Consultation/i);
@@ -583,14 +573,7 @@ test.describe('Module Dossier médical — Suivi des parcours de soins (homme, f
       await page.reload();
       await expect(page.locator('.pw-hero')).toBeVisible({ timeout: 20000 });
     }
-    const close = activeStep(page).getByRole('button', { name: /Clôturer cette étape/ });
-    // Patients réutilisés : étape déjà clôturée par un passage précédent, on vérifie seulement son état
-    if (!(REUSED_PATIENTS && await close.count() === 0)) {
-      await close.click();
-      await confirm(page);
-      await expect(page.getByText(/clôture de cet(te)? étape a\s+r[ée]ussi/i).first()).toBeVisible({ timeout: 20000 });
-    }
-    await expect(stepButton(page, 1)).toHaveClass(/pw-step-warning/, { timeout: 20000 });
+    await expect(stepButton(page, 1), 'Étape incomplète (orange)').toHaveClass(/pw-step-warning/, { timeout: 20000 });
     await expect(activeStep(page).getByRole('button', { name: /Clôturer cette étape/ })).toHaveCount(0);
   });
 

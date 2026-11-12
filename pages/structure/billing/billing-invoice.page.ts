@@ -172,7 +172,8 @@ export class BillingInvoicePage {
         await this.addActCaregiverSelect.locator('.ng-select-container').click();
         const options = this.page.locator('.ng-dropdown-panel:visible .ng-option:not(.ng-option-disabled)');
         await expect(options.first(), 'Praticiens proposés').toBeVisible({ timeout: 10000 });
-        const names = (await options.allInnerTexts()).map(s => s.replace(/\s+/g, ' ').trim()).filter(Boolean);
+        // Noms en majuscules (comme affichés), comparés à lineCaregivers()
+        const names = (await options.allInnerTexts()).map(s => s.replace(/\s+/g, ' ').trim().toUpperCase()).filter(Boolean);
         // Pas d'Échap : la fenêtre "Ajouter des actes" se fermerait avec la liste
         await this.addActHeading.click();
         await expect(options.first()).toBeHidden();
@@ -182,14 +183,15 @@ export class BillingInvoicePage {
     /** Choisit le praticien commun (nom exact proposé). */
     async setCommonCaregiver(name: string): Promise<void> {
         await this.chooseCaregiver(name);
-        await expect(this.addActCaregiverSelect.locator('.ng-value'), `Praticien commun "${name}"`).toContainText(name);
+        // Casse ignorée : la liste affiche les noms en majuscules (CSS), le champ tel quel
+        await expect(this.addActCaregiverSelect.locator('.ng-value'), `Praticien commun "${name}"`).toContainText(name, { ignoreCase: true });
     }
 
     /** Praticien affiché sur chaque acte choisi (plusieurs actes : un sélecteur par acte). */
     async lineCaregivers(): Promise<string[]> {
         const values = this.addActModal.locator('.ama-picked .ama-line-select');
         return (await values.evaluateAll(els => els.map(e => e.querySelector('.ng-value-label')?.textContent ?? '')))
-            .map(s => s.replace(/\s+/g, ' ').trim());
+            .map(s => s.replace(/\s+/g, ' ').trim().toUpperCase());
     }
 
     /** "Ajouter" : l'acte est enregistré pour le patient (il arrive coché dans le panier) et la fenêtre se ferme. */
@@ -374,9 +376,12 @@ export class BillingInvoicePage {
         return false;
     }
 
-    /** Coche ou décoche une ligne (clic sur la ligne, hors du prix). */
+    /**
+     * Coche ou décoche une ligne (clic sur sa case). Pas sur la date : sur un acte coché, date et
+     * praticien sont des champs modifiables qui n'agissent pas sur la sélection.
+     */
     async toggleLine(line: Locator): Promise<void> {
-        await line.locator('.col-date').click();
+        await line.locator('.box').click();
     }
 
     /** Actes du panier (toBill) et actes cochés pour la facture (inInvoice). */

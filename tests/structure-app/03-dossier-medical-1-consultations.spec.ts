@@ -213,7 +213,6 @@ test.describe('Module Dossier médical — Consultations', () => {
 
       if (key === 'dental') {
         test('Le récapitulatif des prescriptions de la conclusion reprend le nom des médicaments', async ({ page }) => {
-          test.fail(true, "Anomalie : updateConsultationReportWithPrescriptions() lit med.name / med.dosage alors que les médicaments sont saisis dans med.nom / med.posologie : le récapitulatif écrit \"undefined\".");
           const root = await openExistingConsultation(page, patient, def);
           const conclusion = root.locator('[formcontrolname="conclusion"]');
           await expect(conclusion).not.toHaveValue(/undefined/);
@@ -290,7 +289,6 @@ test.describe('Module Dossier médical — Consultations', () => {
 
       if (key === 'pediatric') {
         test("Le résumé automatique de l'ordonnance reprend le nom des médicaments", async ({ page }) => {
-          test.fail(true, "Anomalie : en modification, updateDescriptionWithPrescriptions() lit med.name / med.dosage alors que les médicaments sont saisis dans med.nom / med.posologie : le résumé écrit \"undefined\" (et écrase le texte saisi dans \"Ordonnance de la consultation\").");
           const root = await openExistingConsultation(page, patient, def);
           const form = new ConsultationFormPage(page, root);
           await form.activate(def.probe);
@@ -398,7 +396,6 @@ test.describe('Module Dossier médical — Consultations', () => {
     });
 
     test('Afficher le quadrant des arcades inférieures (3 et 4) selon la numérotation FDI', async () => {
-      test.fail(true, 'Anomalie : constants/adult_teeth.ts range les dents 41-48 en quadrant 3 et 31-38 en quadrant 4 (inversé par rapport à la numérotation FDI ; idem 71-75 / 81-85 chez l\'enfant).');
       await chart.selectPatientType('adult');
       for (const tooth of ['31', '38', '41', '48']) {
         await test.step(`Dent ${tooth} : quadrant ${tooth[0]}`, async () => expectToothInfo(tooth, null, tooth[0]));
@@ -505,7 +502,6 @@ test.describe('Module Dossier médical — Consultations', () => {
     });
 
     test('Une avulsion est comptée dans les extractions', async () => {
-      test.fail(true, "Anomalie : l'état 'extracted' n'est jamais calculé (getToothState) — une \"Alvulsion dentaire\" est comptée comme traitement, le compteur Extractions reste à 0.");
       await chart.selectPatientType('adult');
       await chart.recordTooth({ number: '48', diagnostic: 'Dent incluse', treatment: 'Alvulsion dentaire' });
       await chart.expectStats({ examined: 1, extractions: 1, treatments: 0 });

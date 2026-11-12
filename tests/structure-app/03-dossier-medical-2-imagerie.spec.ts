@@ -94,8 +94,11 @@ async function openHistoryItem(page: Page, kind: string): Promise<Locator> {
   const item = page.locator(`.imaging-item.imaging-item--${kind}`).first();
   await expect(item, `Acte "${kind}" dans l'historique`).toBeVisible({ timeout: 15000 });
   const body = item.locator('.imaging-item-body');
-  if (!(await body.isVisible().catch(() => false))) await item.locator('.imaging-item-header').click();
-  await expect(body).toBeVisible();
+  // Juste après un rechargement, le clic peut être perdu (dépliage Bootstrap pas encore prêt) : on reclique
+  await expect(async () => {
+    if (!(await body.isVisible().catch(() => false))) await item.locator('.imaging-item-header').click();
+    await expect(body).toBeVisible({ timeout: 3000 });
+  }).toPass({ timeout: 20000 });
   return body.locator(kind === 'echographie' ? 'app-echographie-simple-item' : 'app-imaging-item');
 }
 
@@ -278,7 +281,6 @@ test.describe('Module Dossier médical — Imagerie', () => {
     });
 
     test("Retirer un foetus enregistré : seul ce foetus disparaît, une fiche ajoutée non enregistrée reste", async ({ page }) => {
-      test.fail(true, "Anomalie : après le retrait d'un foetus enregistré, l'échographie est rechargée en entier (resfreshEvent → historique relu) : la fiche ajoutée non enregistrée est perdue, contrairement au commit 4d74d969 du 08/11.");
       const item = await openHistoryItem(page, 'echographie');
       const sheets = item.locator('app-echographie-simple-foetus');
       await expect(sheets).toHaveCount(2);
@@ -302,8 +304,11 @@ test.describe('Module Dossier médical — Imagerie', () => {
       await test.step('Réouverture : seul le foetus 1 est enregistré', async () => {
         await page.reload();
         const reopened = await openHistoryItem(page, 'echographie');
-        await expect(reopened.locator('app-echographie-simple-foetus')).toHaveCount(1, { timeout: 15000 });
-        await foetusSheet(reopened, 1);
+        // Fiches redessinées au chargement (0 puis 1) : on attend que le foetus 1 soit affiché
+        await expect(async () => {
+          await expect(reopened.locator('app-echographie-simple-foetus')).toHaveCount(1, { timeout: 3000 });
+          await foetusSheet(reopened, 1);
+        }).toPass({ timeout: 20000 });
       });
     });
 

@@ -221,7 +221,6 @@ test.describe('Module Dossier médical', () => {
     });
 
     test("Ouvrir le dossier d'un patient inexistant affiche une erreur", async ({ page }) => {
-      test.fail(true, "Anomalie : /patient/patient-dashboard/<id inconnu> affiche un dashboard vide (nom vide), sans message d'erreur ni redirection.");
       await page.goto('/patient/patient-dashboard/00000000-0000-0000-0000-000000000000');
       await expect(page.getByText(/introuvable|n'existe pas|inexistant|erreur/i).first()).toBeVisible({ timeout: 10000 });
     });

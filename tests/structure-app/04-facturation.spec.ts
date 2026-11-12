@@ -613,7 +613,8 @@ test.describe('Module Facturation', () => {
       for (const line of LINES) {
         const row = await invoicePage.showPendingAct(line.act);
         expect(row, `"${line.act}" de nouveau à facturer`).not.toBeNull();
-        await expect(row!.locator('input[type="text"]'), 'Sans montant').toHaveValue('');
+        // Champ du prix seulement : une ligne cochée a aussi la recherche du sélecteur de praticien
+        await expect(invoicePage.priceInput(row!), 'Sans montant').toHaveValue('');
       }
     }
 
