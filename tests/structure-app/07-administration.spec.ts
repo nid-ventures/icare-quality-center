@@ -1384,6 +1384,16 @@ test.describe('Module Administration', () => {
       return new StructureSettingsPage(page);
     }
 
+    /**
+     * Administration relance le chargement des configurations 2 s après son ouverture
+     * (my-space.component) et réécrit alors le cache `refdatahi` lu par l'impression des factures.
+     * Un enregistrement fait avant cette réponse est écrasé par l'ancienne valeur : on attend ce
+     * rafraîchissement avant d'enregistrer. À appeler avant (ou juste après) l'entrée dans le module.
+     */
+    function configRefresh(page: Page) {
+      return page.waitForResponse(r => /\/modules\/loadconfigs/.test(r.url()), { timeout: 10000 }).catch(() => null);
+    }
+
     /** Imprime la première facture patient et renvoie son texte et son HTML. */
     async function printFirstInvoice(page: Page) {
       const portal = new PortalPage(page);
@@ -1540,8 +1550,11 @@ test.describe('Module Administration', () => {
     test('Enregistrer la configuration de facture : sans déconnexion, appliquée aux factures imprimées', async ({ page }) => {
       test.skip(!hasModule('Facturation'), withoutModuleReason('Facturation'));
       test.setTimeout(Math.max(test.info().timeout, 600000));
+      // Le module vient d'être ouvert (beforeEach) : son rafraîchissement des configurations est en attente
+      const refreshed = configRefresh(page);
       let settings = await openSettings(page);
       await settings.openInvoice();
+      await refreshed;
       // La police enregistrée n'est pas réaffichée par le formulaire : elle est lue dans la session
       const saved = await page.evaluate(() => JSON.parse(localStorage.getItem('refdatahi') ?? '{}'));
       const original = { ...(await settings.readInvoice()), policy: saved.policy || 'Calibri' };
@@ -1570,19 +1583,18 @@ test.describe('Module Administration', () => {
         });
       } finally {
         await test.step("Remettre les valeurs d'origine", async () => {
+          const refreshedAgain = configRefresh(page);
           await new PortalPage(page).enterModule('Administration').catch(() => {});
           await page.waitForURL('**/my-space/configuration').catch(() => {});
           settings = await openSettings(page);
           await settings.openInvoice();
-          const now = await page.evaluate(() => JSON.parse(localStorage.getItem('refdatahi') ?? '{}'));
-          const current = { ...(await settings.readInvoice()), policy: now.policy || 'Calibri' };
-          if (JSON.stringify(current) !== JSON.stringify(original)) {
-            await settings.enableInvoice();
-            await settings.fillInvoice(original);
-            await settings.save(settings.invoiceSave);
-            settings = await openSettings(page);
-            await settings.openInvoice();
-          }
+          await refreshedAgain;
+          // Toujours réenregistrer : le formulaire est rempli depuis le cache, qui a pu être périmé
+          await settings.enableInvoice();
+          await settings.fillInvoice(original);
+          await settings.save(settings.invoiceSave);
+          settings = await openSettings(page);
+          await settings.openInvoice();
           const restored = await settings.readInvoice();
           expect({ header: restored.header, footer: restored.footer, color: restored.color }, "Valeurs d'origine")
             .toEqual({ header: original.header, footer: original.footer, color: original.color });
