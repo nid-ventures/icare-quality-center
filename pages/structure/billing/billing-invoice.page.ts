@@ -167,6 +167,25 @@ export class BillingInvoicePage {
         for (const act of acts) await this.pickAct(act.category, act.act);
     }
 
+    /** Choisit un acte dans la fenêtre ouverte (praticien commun : le premier proposé si aucun). */
+    async pickActWithCaregiver(act: { category: string; act: string }): Promise<void> {
+        await this.chooseCaregiver();
+        await this.pickAct(act.category, act.act);
+    }
+
+    /** Prix d'un acte choisi dans la fenêtre (repris dans la facture, mémorisé sur le poste). */
+    pickedPrice(act: string): Locator {
+        const rest = act.replace(/^\s*(consultation|visite)\s+/i, '');
+        return this.addActModal.locator('.ama-picked')
+            .filter({ has: this.page.locator('.ama-picked-name', { hasText: new RegExp(`^\\s*((consultation|visite)\\s+)?${pattern(rest)}\\s*$`, 'i') }) })
+            .locator('.ama-price input');
+    }
+
+    /** Bouton « Effacer les prix mémorisés » (affiché quand des prix sont mémorisés sur le poste). */
+    get clearRememberedPricesButton(): Locator {
+        return this.addActModal.getByRole('button', { name: /Effacer les prix mémorisés/ });
+    }
+
     /** Praticiens proposés dans le sélecteur du praticien commun (liste refermée). */
     async caregiverOptions(): Promise<string[]> {
         await this.addActCaregiverSelect.locator('.ng-select-container').click();
@@ -308,6 +327,64 @@ export class BillingInvoicePage {
         return line.locator('.col-price input');
     }
 
+    /**
+     * Date modifiable d'une ligne : seulement pour un acte ajouté depuis la facture (« Ajouter des
+     * actes »), coché ou non ; un acte venu d'un module (consultation, examen…) est en lecture seule.
+     */
+    lineDateInput(line: Locator): Locator {
+        return line.locator('.col-date input[type="date"]');
+    }
+
+    /** Praticien modifiable d'une ligne (mêmes conditions que la date ; colonne Praticien du grand écran). */
+    lineCaregiverSelect(line: Locator): Locator {
+        return line.locator('.col-caregiver ng-select');
+    }
+
+    /** Bouton « Enregistrer la date et le praticien » d'une ligne, affiché après une modification. */
+    lineSaveButton(line: Locator): Locator {
+        return line.locator('.col-caregiver .line-save');
+    }
+
+    /** Praticien affiché sur une ligne (sélecteur ou texte), en majuscules comme caregiverOptions(). */
+    async lineCaregiver(line: Locator): Promise<string> {
+        const select = this.lineCaregiverSelect(line);
+        const text = await select.count() > 0
+            ? await select.locator('.ng-value-label').first().textContent() ?? ''
+            : await line.locator('.col-caregiver').innerText();
+        return text.replace(/\s+/g, ' ').trim().toUpperCase();
+    }
+
+    /** Change la date d'une ligne ("AAAA-MM-JJ"). */
+    async setLineDate(line: Locator, isoDay: string): Promise<void> {
+        await this.lineDateInput(line).fill(isoDay);
+        await expect(this.lineDateInput(line)).toHaveValue(isoDay);
+    }
+
+    /** Change le praticien d'une ligne (nom proposé, casse ignorée). */
+    async setLineCaregiver(line: Locator, name: string): Promise<void> {
+        await this.lineCaregiverSelect(line).locator('.ng-select-container').click();
+        const option = this.page.locator('.ng-dropdown-panel:visible .ng-option').filter({ hasText: new RegExp(`^\\s*${pattern(name)}\\s*$`, 'i') }).first();
+        await expect(option, `Praticien "${name}" proposé sur la ligne`).toBeVisible({ timeout: 10000 });
+        await option.click();
+        await expect.poll(() => this.lineCaregiver(line)).toBe(name.toUpperCase());
+    }
+
+    /** Enregistre la date / le praticien modifiés d'une ligne, sans émettre la facture. */
+    async saveLineEdits(line: Locator): Promise<void> {
+        const saved = this.page.waitForResponse(r => r.url().includes('/billableacts') && r.request().method() === 'PUT', { timeout: 30000 });
+        await this.lineSaveButton(line).click();
+        const res = await saved;
+        expect(res.status(), "Enregistrement de l'acte : réponse du serveur").toBeLessThan(400);
+        const body = await res.text().catch(() => '');
+        expect([200, 201], `Enregistrement de l'acte : code de la réponse (${body.slice(0, 300)})`).toContain(Number(JSON.parse(body || '{}')?.code));
+        await expect(this.lineSaveButton(line), 'Bouton masqué une fois enregistré').toHaveCount(0);
+    }
+
+    /** Message de succès de l'enregistrement de la date / du praticien d'une ligne. */
+    get lineSavedMessage(): Locator {
+        return this.page.getByText("La date et le praticien de l'acte ont été enregistrés").first();
+    }
+
     /** Une ligne du panier est-elle cochée ? */
     async isSelected(line: Locator): Promise<boolean> {
         return (await line.getAttribute('class'))?.includes('selected') ?? false;
@@ -377,8 +454,8 @@ export class BillingInvoicePage {
     }
 
     /**
-     * Coche ou décoche une ligne (clic sur sa case). Pas sur la date : sur un acte coché, date et
-     * praticien sont des champs modifiables qui n'agissent pas sur la sélection.
+     * Coche ou décoche une ligne (clic sur sa case). Pas sur la date : pour un acte ajouté depuis la
+     * facture, date et praticien sont des champs modifiables qui n'agissent pas sur la sélection.
      */
     async toggleLine(line: Locator): Promise<void> {
         await line.locator('.box').click();

@@ -122,6 +122,12 @@ test.describe('Module Dossier médical', () => {
         await openDossierAgain(page);
         await antecedentPage.expectDashboardShowsSavedAntecedents();
       });
+      await test.step('Le résumé patient des consultations range « Autres pathologies » parmi les pathologies', async () => {
+        const consultationPage = new ConsultationPage(page);
+        await consultationPage.goToConsultationTab();
+        await consultationPage.expectConsultationsListLoaded();
+        await antecedentPage.expectSummaryShowsSavedAntecedents();
+      });
     });
   });
 

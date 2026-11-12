@@ -157,7 +157,12 @@ export class AntecedentPage {
 
   async updateAntecedantGeneraux(){   
 
-  await this.buttonActiver.click();
+  // Un clic avant la fin du chargement de la fiche est sans effet : recliquer jusqu'à ce que le
+  // formulaire soit modifiable
+  await expect(async () => {
+    if (await this.buttonActiver.isVisible().catch(() => false)) await this.buttonActiver.click();
+    await expect(this.autresPathologiesTextBox).toBeEnabled({ timeout: 3000 });
+  }).toPass({ timeout: 30000 });
   await this.pathologiesTextBox.click();
   await this.drepanocytoseOption.click();
   await this.cardiopathieOption.click();
@@ -203,6 +208,23 @@ export class AntecedentPage {
     const allergy = (label: string) => this.page.locator('.allergies-chip .combined-row').filter({ has: this.page.locator('.combined-label', { hasText: label }) });
     await expect(allergy('Médicamenteuses').locator('.combined-value'), 'Allergie médicamenteuse affichée').toContainText('Céphalosporines');
     await expect(allergy('Autres').locator('.combined-value'), 'Autre allergie affichée').toHaveText(/^\s*tete\s*$/);
+  }
+
+  /**
+   * Résumé patient (en-tête des pages Consultations, Imagerie, Vaccination, Bilans), après
+   * updateAntecedantGeneraux() : « Autres pathologies » (rhume) figure parmi les pathologies et
+   * plus parmi les allergies.
+   */
+  async expectSummaryShowsSavedAntecedents() {
+    const summary = this.page.locator('.patient-summary');
+    const pathologies = summary.locator('.patho-chip .chip-value');
+    for (const name of ['Drépanocytose', 'Cardiopathie', 'rhume']) {
+      await expect(pathologies, `Pathologie "${name}" dans le résumé`).toContainText(name, { timeout: 15000 });
+    }
+    const allergies = summary.locator('.allergies-chip');
+    await expect(allergies.first(), 'Allergie médicamenteuse dans le résumé').toContainText('Céphalosporines');
+    await expect(allergies.locator('.combined-label', { hasText: /Allergies\s+Autres/ }), 'Plus de ligne « Allergies Autres »').toHaveCount(0);
+    await expect(allergies.first(), 'Autres pathologies absentes des allergies').not.toContainText('rhume');
   }
 
 }

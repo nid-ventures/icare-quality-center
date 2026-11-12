@@ -102,6 +102,11 @@ test.describe('Module Facturation — Actes à facturer depuis le dossier médic
     test('Facturer le premier acte seulement', async ({ portal, page }) => {
       const invoicePage = await openBilling(portal, page);
       await invoicePage.setActAmount(BILLED, 3000);
+      await test.step('Acte venu de la consultation : date et praticien en lecture seule, même coché', async () => {
+        const line = invoicePage.lineOf(BILLED).first();
+        await expect(invoicePage.lineDateInput(line), 'Date non modifiable').toHaveCount(0);
+        await expect(invoicePage.lineCaregiverSelect(line), 'Praticien non modifiable').toHaveCount(0);
+      });
       await invoicePage.proceedToBilling();
       await invoicePage.generateInvoice();
       const invoices = await new BillingListPatientPage(page).invoicesOf(patient.identifier);

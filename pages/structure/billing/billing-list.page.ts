@@ -273,6 +273,27 @@ abstract class BillingListPage {
         return this.cell(this.rows.first(), this.col.order);
     }
 
+    /**
+     * Exporte les factures affichées (bouton Excel ou CSV) et renvoie le fichier téléchargé. Les parts
+     * patient / garant sont lues au clic dans le détail de chaque facture affichée.
+     */
+    async exportFile(format: 'Excel' | 'CSV'): Promise<{ name: string; content: Buffer }> {
+        const download = this.page.waitForEvent('download', { timeout: 60000 });
+        // Nom accessible précédé du caractère de l'icône (« CSV »)
+        await this.page.locator('app-export').getByRole('button', { name: new RegExp(`(^|\\W)${format}\\s*$`) }).click();
+        const file = await download;
+        const fs = await import('fs');
+        return { name: file.suggestedFilename(), content: fs.readFileSync(await file.path()) };
+    }
+
+    /** Export CSV : une ligne par facture affichée, colonnes nommées d'après l'en-tête. */
+    async exportCsvRows(): Promise<Record<string, string>[]> {
+        const { name, content } = await this.exportFile('CSV');
+        expect(name, 'Fichier CSV').toMatch(/\.csv$/);
+        const [header, ...lines] = content.toString('utf8').replace(/^﻿/, '').split(/\r?\n/).filter(l => l.trim()).map(parseCsvLine);
+        return lines.map(cells => Object.fromEntries(header.map((h, i) => [h.trim(), (cells[i] ?? '').trim()])));
+    }
+
     /** HTML de la dernière impression interceptée (styles compris : police, couleur). */
     async lastPrintedHtml(): Promise<string> {
         return this.page.evaluate(() => (window as any).__qaPrintedHtml ?? '');
@@ -322,6 +343,25 @@ export class BillingListGarantPage extends BillingListPage {
             });
         }
     }
+}
+
+/** Ligne CSV (virgules, champs éventuellement entre guillemets, "" pour un guillemet). */
+function parseCsvLine(line: string): string[] {
+    const cells: string[] = [];
+    let cell = '';
+    let quoted = false;
+    for (let i = 0; i < line.length; i++) {
+        const c = line[i];
+        if (quoted) {
+            if (c === '"' && line[i + 1] === '"') { cell += '"'; i++; }
+            else if (c === '"') quoted = false;
+            else cell += c;
+        } else if (c === '"') quoted = true;
+        else if (c === ',') { cells.push(cell); cell = ''; }
+        else cell += c;
+    }
+    cells.push(cell);
+    return cells;
 }
 
 export type InvoiceSummary = { order: string; amount: number };

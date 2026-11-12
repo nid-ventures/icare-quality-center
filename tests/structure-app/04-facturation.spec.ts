@@ -512,6 +512,54 @@ test.describe('Module Facturation', () => {
       await expect.poll(() => invoicePage.counters(), { message: 'Un acte de plus à facturer, coché d\'office' }).toEqual({ toBill: 4, inInvoice: 1 });
     });
 
+    test("Acte ajouté depuis la facture : date et praticien modifiés puis enregistrés sans émettre la facture", async ({ portal, page }) => {
+      const invoicePage = await openBilling(portal, page);
+      const line = (await invoicePage.showPendingAct(ACTS.pharmacie.act, true))!;
+      expect(line, `"${ACTS.pharmacie.act}" à facturer`).not.toBeNull();
+      const day = dateTimeLocal(-1, '00:00').slice(0, 10);
+      let caregiver = '';
+      await test.step('Date et praticien modifiables, même sans cocher la ligne', async () => {
+        if (await invoicePage.isSelected(line)) await invoicePage.toggleLine(line);
+        await expect(invoicePage.lineDateInput(line), 'Date modifiable').toBeVisible();
+        await expect(invoicePage.lineCaregiverSelect(line), 'Praticien modifiable').toBeVisible();
+        await expect(invoicePage.lineSaveButton(line), 'Rien à enregistrer tant que rien ne change').toHaveCount(0);
+      });
+      await test.step('Changer la date (veille) et le praticien', async () => {
+        await invoicePage.setLineDate(line, day);
+        const current = await invoicePage.lineCaregiver(line);
+        await invoicePage.openAddActModal();
+        const others = (await invoicePage.caregiverOptions()).filter(c => c !== current);
+        await invoicePage.closeAddActModal();
+        if (others.length) {
+          caregiver = others[0];
+          await invoicePage.setLineCaregiver(line, caregiver);
+        }
+        await expect(invoicePage.lineSaveButton(line), 'Bouton « Enregistrer » affiché après modification').toBeVisible();
+      });
+      await test.step('Enregistrer la ligne : enregistrée, toujours à facturer et non cochée', async () => {
+        await invoicePage.saveLineEdits(line);
+        expect(await invoicePage.isSelected(line), 'Ligne toujours non cochée').toBe(false);
+      });
+      await test.step('Revenir sur le patient : date et praticien enregistrés', async () => {
+        const again = await openBilling(portal, page);
+        const saved = (await again.showPendingAct(ACTS.pharmacie.act, true))!;
+        await expect(again.lineDateInput(saved), 'Date enregistrée').toHaveValue(day);
+        if (caregiver) await expect.poll(() => again.lineCaregiver(saved), { message: 'Praticien enregistré' }).toBe(caregiver);
+        await expect.poll(() => again.counters(), { message: 'Toujours 4 actes à facturer' }).toEqual(expect.objectContaining({ toBill: 4 }));
+      });
+    });
+
+    test("Enregistrer la date d'un acte du panier affiche un message de confirmation", async ({ portal, page }) => {
+      // ModalService.messageSuccess / messageError n'affichent rien tant qu'aucune fenêtre de
+      // confirmation n'a été ouverte (componentRef absent) : l'enregistrement aboutit sans aucun retour.
+      test.fail(true, "Anomalie : aucun message après l'enregistrement de la date / du praticien d'une ligne du panier (ni succès, ni erreur)");
+      const invoicePage = await openBilling(portal, page);
+      const line = (await invoicePage.showPendingAct(ACTS.pharmacie.act, true))!;
+      await invoicePage.setLineDate(line, dateTimeLocal(-2, '00:00').slice(0, 10));
+      await invoicePage.saveLineEdits(line);
+      await expect(invoicePage.lineSavedMessage, 'Message « La date et le praticien de l\'acte ont été enregistrés »').toBeVisible({ timeout: 10000 });
+    });
+
     test('Ajouter des actes : chaque acte reprend le praticien commun et suit son changement', async ({ portal, page }) => {
       const invoicePage = await openBilling(portal, page);
       const before = await invoicePage.counters();
@@ -539,6 +587,37 @@ test.describe('Module Facturation', () => {
         expect(await again.showPendingAct(act, true), `"${act}" facturé : plus proposé`).toBeNull();
       }
       expect(await again.showPendingAct(ACTS.uro.act), 'Consultation non cochée : toujours à facturer').not.toBeNull();
+    });
+
+    test('Prix saisi dans « Ajouter des actes » : mémorisé sur le poste, puis effacé', async ({ portal, page }) => {
+      const invoicePage = await openBilling(portal, page);
+      await test.step(`Ajouter ${ACTS.visite.act} au prix de 7 000`, async () => {
+        await invoicePage.openAddActModal();
+        await invoicePage.pickActWithCaregiver(ACTS.visite);
+        await invoicePage.pickedPrice(ACTS.visite.act).fill('7000');
+        await invoicePage.submitAddActForm();
+        const line = invoicePage.lineOf(ACTS.visite.act).first();
+        await expect(invoicePage.priceInput(line), 'Prix repris dans la facture').toHaveValue(/7\s?000/);
+        expect(await invoicePage.isSelected(line), 'Acte chiffré : coché').toBe(true);
+      });
+      await test.step('Rechoisir le même acte : prix mémorisé proposé', async () => {
+        await invoicePage.openAddActModal();
+        await invoicePage.pickActWithCaregiver(ACTS.visite);
+        await expect(invoicePage.pickedPrice(ACTS.visite.act), 'Dernier prix saisi proposé').toHaveValue(/7\s?000/);
+        await expect(invoicePage.clearRememberedPricesButton).toBeVisible();
+      });
+      await test.step('« Effacer les prix mémorisés » : prix vidé, plus rien de mémorisé', async () => {
+        await invoicePage.clearRememberedPricesButton.click();
+        await expect(invoicePage.pickedPrice(ACTS.visite.act), 'Prix proposé vidé').toHaveValue('');
+        await expect(invoicePage.clearRememberedPricesButton, 'Bouton masqué').toHaveCount(0);
+        await invoicePage.closeAddActModal();
+      });
+      await test.step('Rechoisir l\'acte : plus de prix proposé', async () => {
+        await invoicePage.openAddActModal();
+        await invoicePage.pickActWithCaregiver(ACTS.visite);
+        await expect(invoicePage.pickedPrice(ACTS.visite.act)).toHaveValue('');
+        await invoicePage.closeAddActModal();
+      });
     });
   });
 
@@ -664,6 +743,27 @@ test.describe('Module Facturation', () => {
         expect.soft(printed, 'Total imprimé').toContain(String(computed.total));
         expect.soft(printed, 'Part garant imprimée').toContain(String(computed.garant));
       });
+    });
+
+    test('Exports Excel et CSV des factures patients et garants : parts patient, garant et total', async ({ portal, page }) => {
+      const amount = (value: string | undefined) => Number((value ?? '').replace(/[^\d.-]/g, '')) || 0;
+      for (const side of ['patient', 'garant'] as const) {
+        await test.step(`Factures ${side}s : export CSV puis Excel`, async () => {
+          const list = side === 'patient' ? new BillingListPatientPage(page) : new BillingListGarantPage(page);
+          await openList(portal, side === 'patient' ? 'Factures patients' : 'Factures garants', side === 'patient' ? '**/billing/billings-patients' : '**/billing/billings-garants');
+          await list.invoicesOf(patient.identifier);
+          const rows = await list.exportCsvRows();
+          const row = rows.find(r => r.Numero_Facture === last[side]);
+          expect(row, `Facture ${last[side]} dans l'export CSV`).toBeTruthy();
+          expect.soft(amount(row!.Montant), `Montant de la facture ${side}`).toBe(side === 'patient' ? computed.patient : computed.garant);
+          expect.soft(amount(row!.Montant_Patient), 'Part patient').toBe(computed.patient);
+          expect.soft(amount(row!.Montant_Garant), 'Part garant').toBe(computed.garant);
+          expect.soft(amount(row!.Total), 'Total').toBe(computed.total);
+          const excel = await list.exportFile('Excel');
+          expect(excel.name, 'Fichier Excel').toMatch(/\.xlsx$/);
+          expect(excel.content.subarray(0, 2).toString(), 'Fichier xlsx (zip)').toBe('PK');
+        });
+      }
     });
 
     test('Supprimer la facture patient supprime aussi la facture garant liée', async ({ portal, page }) => {

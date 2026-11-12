@@ -241,10 +241,43 @@ test.describe('Module Dossier médical — Imagerie', () => {
       await expect(root.getByText('2 fichier(s) invalide(s) - veuillez les supprimer')).toBeVisible();
     });
 
+    test("Types d'échographie : champs grossesse (région Bassin préremplie) pour l'obstétricale seulement, standard pour tous les autres", async ({ page }) => {
+      const root = await startActe(page, 'ECHOGRAPHIE', 'app-echographie-simple-static');
+      const typeSelect = root.locator('ng-select[formcontrolname="type"]');
+      const options = page.locator('.ng-dropdown-panel:visible .ng-option');
+      await typeSelect.locator('.ng-select-container').click();
+      await expect(options.first(), "Types d'échographie proposés").toBeVisible({ timeout: 10000 });
+      const types = (await options.allInnerTexts()).map(t => t.replace(/\s+/g, ' ').trim()).filter(Boolean);
+      await typeSelect.locator('.ng-select-container').click();
+      test.info().annotations.push({ type: "Types d'échographie", description: types.join(' ; ') });
+      expect(types.length, 'Plusieurs types (standard, obstétricale et types de suivi)').toBeGreaterThan(2);
+      // Même règle que l'application (isStandardEchoType) : obstétricale ou T1/T2/T3 -> grossesse
+      const obstetricLabel = (label: string) => /obst[ée]tricale|\bt[123]\b/i.test(label);
+      for (const [index, type] of types.entries()) {
+        await test.step(`${type} : ${obstetricLabel(type) ? 'champs grossesse' : 'gabarit standard'}`, async () => {
+          await typeSelect.locator('.ng-select-container').click();
+          await options.nth(index).click();
+          // Liste en majuscules (CSS), valeur choisie telle qu'enregistrée : casse ignorée
+          await expect(typeSelect.locator('.ng-value'), `Type "${type}" choisi`).toContainText(type, { ignoreCase: true });
+          const ddr = root.locator('[formcontrolname="ddr"]');
+          const notice = root.locator('[formcontrolname="notice"]');
+          if (obstetricLabel(type)) {
+            await expect(ddr, 'DDR demandée').toBeVisible();
+            await expect(notice, 'Pas de résultats standard').toHaveCount(0);
+            await expect(root.locator('ng-select[formcontrolname="region"] .ng-value'), 'Région « Bassin » préremplie').toContainText('Bassin');
+          } else {
+            await expect(notice, 'Résultats standard').toBeVisible();
+            await expect(ddr, 'Pas de champs grossesse').toHaveCount(0);
+          }
+        });
+      }
+    });
+
     test('Créer une échographie obstétricale avec 2 foetus (tous les champs)', async ({ page }) => {
       const root = await startActe(page, 'ECHOGRAPHIE', 'app-echographie-simple-static');
       const form = new ConsultationFormPage(page, root);
       await form.fill([{ name: 'type', kind: 'select', option: 'Obst' }]);
+      await expect(root.locator('ng-select[formcontrolname="region"] .ng-value'), 'Région « Bassin » préremplie (modifiable)').toContainText('Bassin');
       obstetric = await form.fill([
         ...generalFields(1, false),
         { name: 'ddr', kind: 'date', value: isoDate(-150) },
