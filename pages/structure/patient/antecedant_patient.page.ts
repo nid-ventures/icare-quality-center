@@ -159,10 +159,13 @@ export class AntecedentPage {
 
   // Un clic avant la fin du chargement de la fiche est sans effet : recliquer jusqu'à ce que le
   // formulaire soit modifiable
+  // La fiche se réinitialise (verrouillée) à chaque rechargement des antécédents par la page
+  // (ngOnChanges) : attendre la fin des chargements avant d'activer.
+  await this.page.waitForLoadState('networkidle', { timeout: 15000 }).catch(() => {});
   await expect(async () => {
     if (await this.buttonActiver.isVisible().catch(() => false)) await this.buttonActiver.click();
-    await expect(this.autresPathologiesTextBox).toBeEnabled({ timeout: 3000 });
-  }).toPass({ timeout: 30000 });
+    await expect(this.autresPathologiesTextBox).toBeEnabled({ timeout: 5000 });
+  }).toPass({ timeout: 60000 });
   await this.pathologiesTextBox.click();
   await this.drepanocytoseOption.click();
   await this.cardiopathieOption.click();

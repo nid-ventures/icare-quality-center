@@ -1492,8 +1492,12 @@ test.describe('Module Administration', () => {
     test('Enregistrer les détails : sans déconnexion, affichés et imprimés sur les factures', async ({ page }) => {
       test.skip(!hasModule('Facturation'), withoutModuleReason('Facturation'));
       test.setTimeout(Math.max(test.info().timeout, 600000));
+      // Le module vient d'être ouvert (beforeEach) : attendre son rafraîchissement des configurations,
+      // qui sinon peut remettre l'ancienne fiche en cache après l'enregistrement
+      const refreshed = configRefresh(page);
       let settings = await openSettings(page);
       await settings.openDetails();
+      await refreshed;
       // Fiche incomplète : l'enregistrer obligerait à écrire des valeurs de test dans des champs
       // que ce test ne remet pas (serveur partagé) ; le test est alors ignoré
       const missing = await settings.missingRequiredDetails();

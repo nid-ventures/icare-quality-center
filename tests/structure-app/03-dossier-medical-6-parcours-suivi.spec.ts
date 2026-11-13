@@ -684,7 +684,6 @@ test.describe('Module Dossier médical — Suivi des parcours de soins (homme, f
         // Patients réutilisés : parcours déjà archivé par un passage précédent (tuile de démarrage de nouveau active)
         if (REUSED_PATIENTS && await pathwayTile(page, template.name).first().isEnabled().catch(() => false)) return;
         await openPathway(page, patient, template.name);
-        await pathwayAction(page, 'Archiver').click();
         await confirmSimpleArchive(page, template.name);
         await page.waitForURL('**/patient/patient-care-pathway-list/**', { timeout: 30000 });
       });
