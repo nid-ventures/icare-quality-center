@@ -102,6 +102,8 @@ async function openPatientFile(page: Page, patient: DossierPatient) {
   // avant de chercher « Voir tous », puis on vérifie que la liste est bien dépliée.
   await page.waitForLoadState('networkidle', { timeout: 15000 }).catch(() => {});
   const showAll = page.getByRole('button', { name: /Voir tous les parcours/ });
+  // Le bouton peut apparaître après la fin des chargements réseau : courte attente
+  await showAll.waitFor({ state: 'visible', timeout: 5000 }).catch(() => {});
   if (await showAll.isVisible()) {
     await showAll.click();
     await expect(page.getByRole('button', { name: /^\s*Réduire\s*$/ }), 'Liste des parcours dépliée').toBeVisible();
@@ -143,12 +145,10 @@ async function archiveThenDeactivate(page: Page, patient: DossierPatient, name: 
     await page.waitForURL('**/patient/patient-care-pathway-detail/**');
     await expect(page.locator('.pw-hero')).toBeVisible({ timeout: 30000 });
     await page.locator('.pw-actions-bar').getByRole('button', { name: /^\W*Archiver\b/ }).click();
+    // Parcours paramétré (non prénatal) : archivage sur simple confirmation, sans issue de grossesse
     const modal = page.locator('#obstetrical');
     await expect(modal).toBeVisible();
-    await new ConsultationFormPage(page, modal).fill([
-      { name: 'annee', kind: 'number', value: String(new Date().getFullYear()) },
-      { name: 'sexe', kind: 'select' },
-    ]);
+    await expect(modal.getByText(/Confirmez-vous l'archivage du parcours/)).toBeVisible();
     await modal.getByRole('button', { name: /^\W*Enregistrer\s*$/ }).click();
     await page.waitForURL('**/patient/patient-care-pathway-list/**', { timeout: 30000 });
   });

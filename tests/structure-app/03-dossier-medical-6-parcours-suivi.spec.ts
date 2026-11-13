@@ -82,6 +82,8 @@ async function openPatientFile(page: Page, patient: DossierPatient) {
   // avant de chercher « Voir tous », puis on vérifie que la liste est bien dépliée.
   await page.waitForLoadState('networkidle', { timeout: 15000 }).catch(() => {});
   const showAll = page.getByRole('button', { name: /Voir tous les parcours/ });
+  // Le bouton peut apparaître après la fin des chargements réseau : courte attente
+  await showAll.waitFor({ state: 'visible', timeout: 5000 }).catch(() => {});
   if (await showAll.isVisible()) {
     await showAll.click();
     await expect(page.getByRole('button', { name: /^\s*Réduire\s*$/ }), 'Liste des parcours dépliée').toBeVisible();
@@ -126,12 +128,19 @@ async function goToStep(page: Page, n: number) {
 }
 
 /**
- * Bouton de la barre d'actions du parcours ("Modifier …", "Archiver …"). Le libellé prévu porte le
- * titre du parcours, mais ce titre vient du référentiel des parcours prédéfinis : il est vide pour
- * un parcours paramétré (bouton "Modifier" / "Archiver" seul).
+ * Bouton de la barre d'actions du parcours ("Modifier …", "Archiver …"), suivi du nom du parcours.
  */
 const pathwayAction = (page: Page, action: 'Modifier' | 'Archiver') =>
   page.locator('.pw-actions-bar').getByRole('button', { name: new RegExp(`^\\W*${action}\\b`) });
+
+/** « Archiver » un parcours non prénatal : simple confirmation (sans issue de grossesse), puis Enregistrer. */
+async function confirmSimpleArchive(page: Page, name: string) {
+  await pathwayAction(page, 'Archiver').click();
+  const modal = page.locator('#obstetrical');
+  await expect(modal).toBeVisible();
+  await expect(modal.getByText(`Confirmez-vous l'archivage du parcours ${name} ?`)).toBeVisible();
+  await modal.getByRole('button', { name: /^\W*Enregistrer\s*$/ }).click();
+}
 
 /** Contenu de l'étape affichée. */
 const activeStep = (page: Page) => page.locator('.pw-tab-pane--active');
@@ -579,7 +588,6 @@ test.describe('Module Dossier médical — Suivi des parcours de soins (homme, f
 
   // ---------------- Résumé et modification ----------------
   test('Les boutons du parcours portent le nom du parcours', async ({ page }) => {
-    test.fail(true, "Anomalie : les boutons \"Modifier …\", \"Archiver …\" et \"Voir les archives …\" affichent le titre du parcours lu dans le référentiel des parcours prédéfinis (careplantemplateTitle) : il est vide pour un parcours paramétré.");
     await openPathway(page, woman, FEMMES.name);
     await expect(pathwayAction(page, 'Modifier')).toContainText(FEMMES.name, { timeout: 5000 });
   });
@@ -609,45 +617,24 @@ test.describe('Module Dossier médical — Suivi des parcours de soins (homme, f
   });
 
   // ---------------- Archivage ----------------
-  test("Archiver sans renseigner l'année ni le sexe de l'enfant est refusé", async ({ page }) => {
-    await openPathway(page, woman, FEMMES.name);
-    await pathwayAction(page, 'Archiver').click();
-    const modal = page.locator('#obstetrical');
-    await expect(modal).toBeVisible();
-    await modal.getByRole('button', { name: /^\W*Enregistrer\s*$/ }).click();
-    await expect(modal.getByText("L'année est obligatoire")).toBeVisible();
-    await expect(modal.getByText("Le sexe de l'enfant 1 est obligatoire")).toBeVisible();
-    await expect(modal.getByText('Veuillez remplir tous les champs obligatoires')).toBeVisible();
-    await expect(page).toHaveURL(/patient-care-pathway-detail/);
-  });
-
+  // L'issue de grossesse n'est demandée que pour un parcours prénatal (voir le groupe « Archivage
+  // d'un parcours prénatal » plus bas) : les parcours paramétrés sont archivés sur simple confirmation.
   test("Archiver un parcours non prénatal ne demande pas d'antécédent obstétrical", async ({ page }) => {
-    test.fail(true, "Anomalie : l'archivage de tout parcours (vaccinal, pédiatrique, parcours d'un homme…) ouvre le formulaire d'issue de grossesse et crée un antécédent obstétrical (care-pathways-step openModalArchive / openModalAntecedentObstetrical).");
     await openPathway(page, man, HOMMES.name);
     await pathwayAction(page, 'Archiver').click();
     const modal = page.locator('#obstetrical');
     await expect(modal).toBeVisible();
-    await expect(modal.getByText('Issue de la grossesse'), 'Pas de question de grossesse').toHaveCount(0, { timeout: 3000 });
+    await expect(modal.getByText(`Confirmez-vous l'archivage du parcours ${HOMMES.name} ?`)).toBeVisible();
+    await expect(modal.getByText('Issue de la grossesse'), 'Pas de question de grossesse').toHaveCount(0);
+    await expect(modal.locator('input[formcontrolname="annee"]'), "Pas d'année de grossesse").toHaveCount(0);
+    await modal.getByRole('button', { name: 'Close' }).click();
+    await expect(modal).toBeHidden();
+    await expect(page, 'Toujours sur le parcours (pas archivé)').toHaveURL(/patient-care-pathway-detail/);
   });
 
-  test('Archiver le parcours de la patiente avec tous les champs', async ({ page }) => {
+  test('Archiver le parcours de la patiente sur simple confirmation', async ({ page }) => {
     await openPathway(page, woman, FEMMES.name);
-    await pathwayAction(page, 'Archiver').click();
-    const modal = page.locator('#obstetrical');
-    await expect(modal).toBeVisible();
-    await new ConsultationFormPage(page, modal).fill([
-      { name: 'annee', kind: 'number', value: String(new Date().getFullYear()) },
-      { name: 'issue', kind: 'select' },
-      { name: 'terme', kind: 'text', value: '39 SA + 2 jours' },
-      { name: 'complications', kind: 'multiselect', count: 1 },
-      { name: 'sexe', kind: 'select' },
-      { name: 'poids', kind: 'number', value: '3200' },
-      { name: 'accouchement_delivrance', kind: 'select' },
-      { name: 'allaitement', kind: 'select' },
-      { name: 'evolution_commentaire', kind: 'select' },
-      { name: 'precisions', kind: 'textarea', value: 'Archivage du parcours de suivi QA' },
-    ]);
-    await modal.getByRole('button', { name: /^\W*Enregistrer\s*$/ }).click();
+    await confirmSimpleArchive(page, FEMMES.name);
     await expect(page.getByText(/archivage a r[ée]ussie?/i).first()).toBeVisible({ timeout: 20000 });
     await page.waitForURL('**/patient/patient-care-pathway-list/**');
   });
@@ -698,13 +685,7 @@ test.describe('Module Dossier médical — Suivi des parcours de soins (homme, f
         if (REUSED_PATIENTS && await pathwayTile(page, template.name).first().isEnabled().catch(() => false)) return;
         await openPathway(page, patient, template.name);
         await pathwayAction(page, 'Archiver').click();
-        const modal = page.locator('#obstetrical');
-        await expect(modal).toBeVisible();
-        await new ConsultationFormPage(page, modal).fill([
-          { name: 'annee', kind: 'number', value: String(new Date().getFullYear()) },
-          { name: 'sexe', kind: 'select' },
-        ]);
-        await modal.getByRole('button', { name: /^\W*Enregistrer\s*$/ }).click();
+        await confirmSimpleArchive(page, template.name);
         await page.waitForURL('**/patient/patient-care-pathway-list/**', { timeout: 30000 });
       });
     }
@@ -799,5 +780,93 @@ test.describe('Module Dossier médical — Suivi des parcours de soins (homme, f
 
     // Nettoyage : de nouveau désactivé
     await (await openTemplates(page)).deactivate(HOMMES.name);
+  });
+});
+
+// ======================================================================
+// Archivage d'un parcours prénatal : seul type qui demande l'issue de la grossesse
+// (antécédent obstétrical créé à l'archivage)
+// ======================================================================
+test.describe("Module Dossier médical — Archivage d'un parcours prénatal", () => {
+  test.describe.configure({ mode: 'serial' });
+  const PRENATAL = 'PRENATAL';
+  let patient: DossierPatient;
+
+  test.beforeAll(async ({ browser }) => {
+    test.setTimeout(DOSSIER_SETUP_TIMEOUT);
+    // Le parcours prénatal peut être limité en âge (46 ans au plus dans la structure nest) : patiente de 28 ans
+    const dob = new Date();
+    dob.setFullYear(dob.getFullYear() - 28);
+    patient = await createDossierPatient(browser, 'FEMME', { dob: dob.toISOString().split('T')[0] });
+  });
+
+  test.beforeEach(async ({ portal }) => {
+    await portal.goto();
+  });
+
+  test('Démarrer un parcours prénatal chez la patiente', async ({ page }) => {
+    await openPatientFile(page, patient);
+    // Tuiles des parcours chargées après le dashboard
+    await expect(page.locator('.pathway-actions .qa-btn').first()).toBeVisible({ timeout: 20000 });
+    test.skip(await pathwayTile(page, PRENATAL).count() === 0, "Pas de modèle de parcours PRENATAL actif dans cette structure");
+    const carePathway = new CarePathwayPage(page);
+    await carePathway.openStartForm(PRENATAL);
+    // Formulaire prénatal : date des dernières règles, groupe sanguin, rhésus, praticien, gestité, parité.
+    // Le formulaire est repris du résumé de la patiente une fois chargé (champs remis à vide) : on
+    // attend la fin des chargements et on vérifie les valeurs avant de démarrer.
+    await page.waitForLoadState('networkidle', { timeout: 15000 }).catch(() => {});
+    await expect(async () => {
+      await page.locator('#dateDerniereRegle').fill(isoDate(-60));
+      await page.locator('#groupSanguin').selectOption('O');
+      await page.locator('#rhesus').selectOption('POSITIF');
+      await page.locator('#g').fill('1');
+      await page.locator('#p').fill('0');
+      await page.waitForTimeout(1000);
+      await expect(page.locator('#groupSanguin')).toHaveValue(/O/);
+      await expect(page.locator('#rhesus')).toHaveValue(/POSITIF/);
+      await expect(page.locator('#g')).toHaveValue('1');
+    }).toPass({ timeout: 30000 });
+    // Praticien toujours choisi : la valeur reprise peut ne correspondre à aucun praticien proposé
+    const caregiver = page.locator('ng-select[formcontrolname="caregiverId"]');
+    await caregiver.locator('.ng-select-container').click();
+    await page.locator('.ng-dropdown-panel .ng-option:not(.ng-option-disabled)').first().click();
+    await expect(caregiver.locator('.ng-value'), 'Praticien choisi').toHaveCount(1);
+    await carePathway.start();
+    await expect(pathwayAction(page, 'Archiver'), 'Bouton portant le nom du parcours').toContainText(PRENATAL);
+  });
+
+  test("Archiver sans renseigner l'année ni le sexe de l'enfant est refusé", async ({ page }) => {
+    await openPathway(page, patient, PRENATAL);
+    await pathwayAction(page, 'Archiver').click();
+    const modal = page.locator('#obstetrical');
+    await expect(modal).toBeVisible();
+    await expect(modal.getByText('Issue de la grossesse'), 'Issue de la grossesse demandée').toBeVisible();
+    await modal.getByRole('button', { name: /^\W*Enregistrer\s*$/ }).click();
+    await expect(modal.getByText("L'année est obligatoire")).toBeVisible();
+    await expect(modal.getByText("Le sexe de l'enfant 1 est obligatoire")).toBeVisible();
+    await expect(modal.getByText('Veuillez remplir tous les champs obligatoires')).toBeVisible();
+    await expect(page).toHaveURL(/patient-care-pathway-detail/);
+  });
+
+  test("Archiver le parcours prénatal avec l'issue de la grossesse (tous les champs)", async ({ page }) => {
+    await openPathway(page, patient, PRENATAL);
+    await pathwayAction(page, 'Archiver').click();
+    const modal = page.locator('#obstetrical');
+    await expect(modal).toBeVisible();
+    await new ConsultationFormPage(page, modal).fill([
+      { name: 'annee', kind: 'number', value: String(new Date().getFullYear()) },
+      { name: 'issue', kind: 'select' },
+      { name: 'terme', kind: 'text', value: '39 SA + 2 jours' },
+      { name: 'complications', kind: 'multiselect', count: 1 },
+      { name: 'sexe', kind: 'select' },
+      { name: 'poids', kind: 'number', value: '3200' },
+      { name: 'accouchement_delivrance', kind: 'select' },
+      { name: 'allaitement', kind: 'select' },
+      { name: 'evolution_commentaire', kind: 'select' },
+      { name: 'precisions', kind: 'textarea', value: 'Archivage du parcours prénatal QA' },
+    ]);
+    await modal.getByRole('button', { name: /^\W*Enregistrer\s*$/ }).click();
+    await expect(page.getByText(/archivage a r[ée]ussie?/i).first()).toBeVisible({ timeout: 20000 });
+    await page.waitForURL('**/patient/patient-care-pathway-list/**');
   });
 });

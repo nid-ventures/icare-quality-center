@@ -427,7 +427,6 @@ test.describe('Module Facturation', () => {
     });
 
     test('Émettre avec un acte coché sans prix affiche un message', async ({ portal, page }) => {
-      test.fail(true, "Anomalie : « Saisissez le prix de chaque acte coché » n'est jamais affiché (billing-cart generate → ModalService.messageError, qui n'affiche rien sans fenêtre ouverte).");
       const invoicePage = await openBilling(portal, page);
       const row = await invoicePage.showPendingAct(ACTS.cardio.act, true);
       expect(row, 'Consultation à facturer').not.toBeNull();
@@ -550,9 +549,6 @@ test.describe('Module Facturation', () => {
     });
 
     test("Enregistrer la date d'un acte du panier affiche un message de confirmation", async ({ portal, page }) => {
-      // ModalService.messageSuccess / messageError n'affichent rien tant qu'aucune fenêtre de
-      // confirmation n'a été ouverte (componentRef absent) : l'enregistrement aboutit sans aucun retour.
-      test.fail(true, "Anomalie : aucun message après l'enregistrement de la date / du praticien d'une ligne du panier (ni succès, ni erreur)");
       const invoicePage = await openBilling(portal, page);
       const line = (await invoicePage.showPendingAct(ACTS.pharmacie.act, true))!;
       await invoicePage.setLineDate(line, dateTimeLocal(-2, '00:00').slice(0, 10));
