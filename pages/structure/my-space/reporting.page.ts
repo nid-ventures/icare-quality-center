@@ -286,8 +286,20 @@ export class BillableBillingReportingPage {
     await this.page.waitForTimeout(300);
   }
 
+  /** Réponse de la recherche d'actes (POST /billableacts/search) dont le corps contient toutes les `values`. */
+  private searchResponse(values: string[] = []) {
+    return this.page.waitForResponse(r => /\/billableacts\/search/.test(r.url()) && r.request().method() === 'POST'
+      && values.every(v => (r.request().postData() ?? '').includes(v)), { timeout: 30000 });
+  }
+
+  /**
+   * Réinitialiser relance une recherche sans filtre, jamais annulée : attendre sa réponse, sinon elle
+   * peut arriver après la recherche suivante et réafficher tous les actes.
+   */
   async reset() {
+    const reloaded = this.searchResponse().catch(() => null);
     await this.reinitialiserButton.click();
+    await reloaded;
     await this.page.waitForTimeout(300);
   }
 
@@ -325,7 +337,10 @@ export class BillableBillingReportingPage {
       if (key !== 'status' && value) await inputs[key as keyof typeof inputs].fill(value);
     }
     if (criteria.status) await this.selectStatus(criteria.status);
+    const values = Object.entries(criteria).filter(([key, value]) => key !== 'status' && value).map(([, value]) => value as string);
+    const searched = this.searchResponse(values);
     await this.rechercherButton.click();
+    await searched;
     await expect(this.rows.first().or(this.emptyRow)).toBeVisible({ timeout: 15000 });
     await this.page.waitForTimeout(1000);
     return this.readRows();
