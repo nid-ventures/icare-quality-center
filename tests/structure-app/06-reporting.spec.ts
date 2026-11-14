@@ -588,6 +588,8 @@ test.describe('Module Reporting', () => {
     });
 
     test('Rechercher les actes par chaque critère', async ({ portal, page }) => {
+      // Six recherches, chacune attend la réponse de Réinitialiser puis celle de Rechercher : plus de 30 s
+      test.setTimeout(Number(process.env.SLOWMO) > 0 ? 900000 : 120000);
       const actsPage = await openActsList(portal, page);
       const acts = (act: string) => [BILLED.act, NOT_BILLED.act].find(a => act.toUpperCase().includes(a.toUpperCase())) ?? act;
       // N° de facture : recherche « contient » (le n° …12 retrouve aussi …120, …121…) : chaque ligne
