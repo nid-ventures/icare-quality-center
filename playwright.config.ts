@@ -43,10 +43,11 @@ const chrome = {
 export default defineConfig({
   testDir: './tests',
   testMatch: '**/*.ts',
-  fullyParallel: true,
+  // WORKERS=n : n fichiers en même temps (un fichier entier par worker, ses tests dans l'ordre)
+  fullyParallel: !process.env.WORKERS,
   forbidOnly: !!process.env.CI,
   retries: process.env.CI ? 2 : 0,
-  workers: 1,
+  workers: Number(process.env.WORKERS) || 1,
   reporter: [
     ['list'],
     // Structure testée affichée dans l'onglet « Environnement » du rapport

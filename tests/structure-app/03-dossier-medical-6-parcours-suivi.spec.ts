@@ -196,7 +196,8 @@ async function realizeAllActs(page: Page, patient: DossierPatient, pathway: stri
   for (let i = 0; i < total; i++) {
     // Réalisation de tous les actes : plus que la durée du jeton (30 min) en mode visuel ; session
     // refaite avant chaque acte si elle expire bientôt, puis parcours rouvert sur l'étape
-    if (await renewSessionIfExpiring(page)) {
+    // Marge élargie en visuel : un acte (consultation avec prescriptions) y dure plus de 8 min
+    if (await renewSessionIfExpiring(page, VISUAL > 1 ? 20 * 60 * 1000 : undefined)) {
       await openPathway(page, patient, pathway);
       await goToStep(page, step);
     }
@@ -229,6 +230,9 @@ async function realizeAllActs(page: Page, patient: DossierPatient, pathway: stri
       await test.step(`Réouverture : données de "${title}" conservées`, async () => {
         // Rechargement complet : les données viennent bien du serveur, pas du formulaire en mémoire
         await page.reload();
+        // Jeton expiré pendant l'acte : le rechargement mène à la connexion ; session refaite, parcours rouvert
+        await expect(page.locator('.pw-hero').or(page.getByRole('heading', { name: 'Connexion' }))).toBeVisible({ timeout: 20000 });
+        if (await renewSessionIfExpiring(page)) await openPathway(page, patient, pathway);
         await expect(page.locator('.pw-hero')).toBeVisible({ timeout: 20000 });
         await goToStep(page, step);
         await verify(await reopen());
