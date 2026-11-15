@@ -107,7 +107,9 @@ export class BillingInvoicePage {
         if (!practitioner && await this.addActCaregiverSelect.locator('.ng-value').count() > 0) return;
         await this.addActCaregiverSelect.locator('.ng-select-container').click();
         const options = this.page.locator('.ng-dropdown-panel:visible .ng-option:not(.ng-option-disabled)');
-        const option = practitioner ? options.filter({ hasText: new RegExp(escapeRegExp(practitioner), 'i') }).first() : options.first();
+        // Espaces souples : un nom peut être enregistré avec un espace double ("Médecin  Saré"), affiché simple
+        const pattern = practitioner && new RegExp(practitioner.trim().split(/\s+/).map(escapeRegExp).join('\\s+'), 'i');
+        const option = pattern ? options.filter({ hasText: pattern }).first() : options.first();
         await expect(option, practitioner ? `Praticien "${practitioner}" proposé` : 'Un praticien proposé').toBeVisible({ timeout: 10000 });
         await option.click();
     }
