@@ -233,8 +233,12 @@ export class MyConfigurationPage {
   // ===== app-invoice =====
 
   async enableInvoiceForm() {
-    await this.invoiceEditButton.click();
-    await expect(this.invoiceHeaderInput).toBeEditable();
+    // Le rechargement des configurations à l'ouverture du module peut remettre le formulaire en
+    // lecture seule juste après le clic : on reclique jusqu'à ce qu'il soit modifiable
+    await expect(async () => {
+      if (!await this.invoiceHeaderInput.isEditable()) await this.invoiceEditButton.click();
+      await expect(this.invoiceHeaderInput).toBeEditable({ timeout: 2000 });
+    }).toPass({ timeout: 30000 });
   }
 
   async getInvoiceFooter(): Promise<string> {

@@ -51,7 +51,8 @@ export default defineConfig({
   reporter: [
     ['list'],
     // Structure testée affichée dans l'onglet « Environnement » du rapport
-    ['allure-playwright', { outputFolder: 'allure-results', environmentInfo: { Structure: `${tenant.name} (${tenant.key})`, Environnement: testEnv ?? 'défaut (.env)' } }],
+    // ALLURE_RESULTS_DIR : dossier propre à un run (plusieurs structures lancées en même temps)
+    ['allure-playwright', { resultsDir: process.env.ALLURE_RESULTS_DIR || 'allure-results', environmentInfo: { Structure: `${tenant.name} (${tenant.key})`, Environnement: testEnv ?? 'défaut (.env)' } }],
     ['html', { open: 'never' }],
   ],
   use: {

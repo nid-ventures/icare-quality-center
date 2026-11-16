@@ -55,7 +55,8 @@ test.describe('Module Dossier médical', () => {
       await search.searchByIdentifier(patient.identifier);
       await search.expectResult(patient.identifier);
       await search.openDossier(patient.identifier);
-      await expect(page.getByRole('heading', { level: 1, name: `${patient.firstName} ${patient.lastName}` })).toBeVisible();
+      // Nom du patient chargé après l'ouverture du tableau de bord (titre d'abord vide)
+      await expect(page.getByRole('heading', { level: 1, name: `${patient.firstName} ${patient.lastName}` })).toBeVisible({ timeout: 15000 });
     });
 
     test('Afficher un message quand aucun patient ne correspond', async ({ page }) => {
