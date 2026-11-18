@@ -274,6 +274,35 @@ export class ConsultationPage {
   }
 
   /**
+   * Consultation rouverte : chaque valeur attendue est restituée (constantes, compte-rendu,
+   * synthèse) et chaque acte choisi figure parmi les actes sélectionnés.
+   */
+  async expectSavedValues(data: Partial<ConsultationData>) {
+    await expect(this.reportInput).toBeVisible({ timeout: 15000 });
+    const fields: [string, Locator, string | undefined][] = [
+      ['Poids', this.weightInput, data.weight],
+      ['Taille', this.heightInput, data.height],
+      ['Température', this.temperatureInput, data.temperature],
+      ['Tension', this.tensionInput, data.tension],
+      ['Pouls', this.pulseInput, data.pulse],
+      ['Compte-rendu', this.reportInput, data.report],
+      ['Synthèse', this.summaryInput, data.summary],
+    ];
+    for (const [label, input, value] of fields) {
+      if (value === undefined) continue;
+      // Nombres : 37 et 37.0 sont la même valeur
+      if (/^\d+([.,]\d+)?$/.test(value)) {
+        await expect.poll(async () => Number((await input.inputValue()).replace(',', '.')), label).toBe(Number(value.replace(',', '.')));
+      } else {
+        await expect(input, label).toHaveValue(value);
+      }
+    }
+    for (const act of data.acts ?? []) {
+      await expect(this.page.locator('.ng-value').filter({ hasText: act }).first(), `Acte "${act}" enregistré`).toBeVisible();
+    }
+  }
+
+  /**
    * Sauvegarde la modification (bouton "Mettre à jour")
    */
   async updateConsultation() {

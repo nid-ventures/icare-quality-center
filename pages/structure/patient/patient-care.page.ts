@@ -335,6 +335,36 @@ export class PatientCarePage {
         return chosen;
     }
     /**
+     * Valeurs de la ligne de prise en charge de l'assureur donné (ou de la première), lues par
+     * en-tête de colonne : Assureur, Début / Fin validité, Numéro assuré, Numéro carte, Taux, Plafond.
+     */
+    async coverRow(text?: string): Promise<Record<string, string>> {
+        const panel = this.page.locator('#pills-prise-en-charge-fill');
+        const headers = (await panel.locator('thead th').allInnerTexts()).map(h => h.replace(/\s+/g, ' ').trim());
+        const rows = panel.locator('tbody tr').filter({ has: this.page.getByRole('button', { name: 'Action' }) });
+        const row = text ? rows.filter({ hasText: text }).first() : rows.first();
+        await expect(row, `Prise en charge ${text ?? ''} listée`).toBeVisible({ timeout: 15000 });
+        const cells = (await row.locator('td').allInnerTexts()).map(c => c.replace(/\s+/g, ' ').trim());
+        return Object.fromEntries(headers.map((h, i) => [h, cells[i] ?? '']));
+    }
+
+    /** La ligne listée correspond aux valeurs saisies (dates acceptées en jj/mm/aaaa ou aaaa-mm-jj). */
+    async expectCoverRow(data: Pick<CareData, 'insurerName' | 'startingDate' | 'endingDate' | 'insuranceNumber' | 'cardNumber' | 'coverageRate' | 'paymentCap'>) {
+        // Ligne retrouvée par son numéro d'assuré, unique
+        const row = await this.coverRow(data.insuranceNumber);
+        const date = (iso: string) => new RegExp(`${iso}|${iso.split('-').reverse().join('/')}`);
+        // Chiffres sans décimales éventuelles (« 25 % », « 1 234 567,00 »)
+        const digits = (v: string) => v.replace(/[.,]\d{1,2}\s*(%|FCFA)?\s*$/, '').replace(/\D/g, '');
+        expect(row['Assureur'], 'Assureur').toContain(data.insurerName.replace(/\s*\(.*\)\s*$/, ''));
+        expect(row['Début validité'], 'Début de validité').toMatch(date(data.startingDate));
+        expect(row['Fin validité'], 'Fin de validité').toMatch(date(data.endingDate));
+        expect(row['Numéro assuré'], 'Numéro assuré').toBe(data.insuranceNumber);
+        expect(row['Numéro carte'], 'Numéro carte').toBe(data.cardNumber);
+        expect(digits(row['Taux']), 'Taux').toBe(digits(data.coverageRate));
+        expect(digits(row['Plafond (FCFA)']), 'Plafond').toBe(digits(data.paymentCap));
+    }
+
+/**
  * Ouvre les détails de la première prise en charge (Voir les détails)
  */
     async viewFirstCareDetails() {

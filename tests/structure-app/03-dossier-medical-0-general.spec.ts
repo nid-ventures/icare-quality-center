@@ -103,9 +103,14 @@ test.describe('Module Dossier médical', () => {
       await new RenseignementsGenerauxPage(page).checkRenseignementInfos();
     });
 
-    test('Modifier les renseignements généraux', async ({ page }) => {
+    test('Modifier les renseignements généraux : chaque valeur est conservée', async ({ page }) => {
+      const renseignements = new RenseignementsGenerauxPage(page);
       await openDossier(page);
-      await new RenseignementsGenerauxPage(page).updateRenseignementGenerauxForms();
+      await renseignements.updateRenseignementGenerauxForms();
+      await test.step('Rouvrir le dossier : tableau de bord et formulaire reprennent les valeurs', async () => {
+        await openDossierAgain(page);
+        await renseignements.expectSavedRenseignements();
+      });
     });
 
     test('Vérifier les informations des antécédents', async ({ page }) => {

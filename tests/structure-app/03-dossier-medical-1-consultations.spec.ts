@@ -7,7 +7,7 @@ import { ConsultationPage } from '../../pages/structure/consultation/consultatio
 import { ConsultationFormPage, type FieldSpec, type FilledValues } from '../../pages/structure/consultation/consultation-form.page';
 import { PrescriptionManagerPage } from '../../pages/structure/consultation/prescription-manager.page';
 import { DentalChartPage, ADULT_TEETH, CHILD_TEETH } from '../../pages/structure/consultation/dental-chart.page';
-import { ConsultationStandardDataGenerator } from '../../pages/structure/generator/consultation-standard-data-generator';
+import { ConsultationStandardDataGenerator, type ConsultationData } from '../../pages/structure/generator/consultation-standard-data-generator';
 import { prenatalFields, planificationFields, pediatricFields, dentalFields, isoDate } from '../../test-data/consultation-fields';
 import { clearPrefilledConsultant } from '../../pages/structure/shared/consultant';
 
@@ -335,6 +335,15 @@ test.describe('Module Dossier médical — Consultations', () => {
   test.describe('Consultation standard', () => {
     test.describe.configure({ mode: 'serial' });
     const TYPE = 'CONSULTATION ANESTHÉSIQUE';
+    // Valeurs saisies, revérifiées après réouverture (les actes, choisis selon le catalogue, à part)
+    let created: Partial<ConsultationData> = {};
+
+    async function reopen(page: Page) {
+      const consultationPage = await openConsultations(page, patient);
+      await consultationPage.filterByConsultationType(TYPE);
+      await consultationPage.selectFirstConsultation();
+      return consultationPage;
+    }
 
     test('Créer une consultation standard', async ({ page }) => {
       const data = ConsultationStandardDataGenerator.generate();
@@ -346,16 +355,29 @@ test.describe('Module Dossier médical — Consultations', () => {
       await consultationPage.saveConsultation();
       await consultationPage.filterByConsultationType(data.consultationType);
       await expect(page.locator('app-consultations').getByRole('button', { name: /Consultation/ }).first()).toBeVisible();
+      const { acts: _acts, prescription: _prescription, ...saved } = data;
+      created = saved;
     });
 
-    test('Modifier la consultation standard', async ({ page }) => {
-      const consultationPage = await openConsultations(page, patient);
-      await consultationPage.filterByConsultationType(TYPE);
-      await consultationPage.selectFirstConsultation();
-      await consultationPage.activateForm();
-      await consultationPage.fillUpdatedForm(ConsultationStandardDataGenerator.generateUpdatedData());
-      await consultationPage.updateConsultation();
-      await expect(consultationPage.confirmButton).not.toBeVisible();
+    test('Rouvrir la consultation standard : constantes, compte-rendu et synthèse enregistrés', async ({ page }) => {
+      const consultationPage = await reopen(page);
+      await consultationPage.expectSavedValues(created);
+    });
+
+    test('Modifier la consultation standard : modifications conservées, le reste inchangé', async ({ page }) => {
+      const updated = ConsultationStandardDataGenerator.generateUpdatedData();
+      await test.step('Modifier compte-rendu et synthèse', async () => {
+        const consultationPage = await reopen(page);
+        await consultationPage.activateForm();
+        await consultationPage.fillUpdatedForm(updated);
+        await consultationPage.updateConsultation();
+        await expect(consultationPage.confirmButton).not.toBeVisible();
+      });
+      await test.step('Rouvrir après rechargement : valeurs modifiées et constantes inchangées', async () => {
+        await page.reload();
+        const consultationPage = await reopen(page);
+        await consultationPage.expectSavedValues({ ...created, report: updated.report, summary: updated.summary });
+      });
     });
 
     test('Supprimer la consultation standard', async ({ page }) => {

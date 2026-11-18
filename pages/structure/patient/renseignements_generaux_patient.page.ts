@@ -128,6 +128,32 @@ export class RenseignementsGenerauxPage {
     await expect(this.buttonFermer).toBeVisible();
     await expect(this.buttonConfirmerLabel).toBeVisible();
     await this.buttonConfirmer.click();
+    await expect(this.buttonConfirmerLabel, 'Enregistrement confirmé').toBeHidden({ timeout: 20000 });
+  }
+
+  /**
+   * Après réouverture du dossier : constantes du tableau de bord puis chaque champ du formulaire
+   * « Voir + » reprennent les valeurs enregistrées par updateRenseignementGenerauxForms.
+   */
+  async expectSavedRenseignements() {
+    const vital = (label: string) => this.page.locator('.vital').filter({ has: this.page.locator('.label', { hasText: label }) }).first();
+    await expect(vital('Poids'), 'Poids au tableau de bord').toContainText('89', { timeout: 15000 });
+    await expect(vital('Taille'), 'Taille au tableau de bord').toContainText('179');
+    await expect(vital('G.Sanguin'), 'Groupe sanguin au tableau de bord').toContainText('AB');
+    await expect(vital('Rhésus'), 'Rhésus au tableau de bord').toContainText(/N[ÉE]GATIF|-/i);
+    await this.voirPlusHeading.first().click();
+    await expect(this.infoGeneralHeading).toBeVisible({ timeout: 20000 });
+    await expect(this.poidsFieldForm, 'Poids').toHaveValue(/^89(\.0+)?$/);
+    await expect(this.tailleFieldForm, 'Taille').toHaveValue(/^179(\.0+)?$/);
+    await expect(this.professionFieldForm, 'Profession').toHaveValue('informaticien');
+    await expect(this.situationMatrimonialLabelFieldForm.locator('option:checked'), 'Situation matrimoniale').toHaveText(/Célibataire/);
+    await expect(this.groupeSanguinLabelFieldForm.locator('option:checked'), 'Groupe sanguin').toHaveText(/^\s*AB\s*$/);
+    await expect(this.rhLabelFieldForm.locator('option:checked'), 'Rhésus').toHaveText(/N[ÉE]GATIF/i);
+    await expect(this.profConjointFieldForm, 'Profession du conjoint').toHaveValue('menagere');
+    await expect(this.nbreEpouseLabelFieldForm, "Nombre d'épouses").toHaveValue(/^0?1$/);
+    await expect(this.page.locator('#nationaliteConjoint .ng-value'), 'Nationalité du conjoint').toHaveText(/NIGERIEN\(NE\)/);
+    await expect(this.pereLabelFieldForm, 'Père').toHaveValue('moussa');
+    await expect(this.mereLabelFieldForm, 'Mère').toHaveValue('mariam');
   }
 
 

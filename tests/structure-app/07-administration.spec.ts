@@ -92,6 +92,19 @@ test.describe('Module Administration', () => {
         await expect(row).toContainText(updated.lastName);
         await expect(row).toContainText(updated.firstName);
       });
+
+      await test.step("Rouvrir l'utilisateur après rechargement : identité enregistrée, login inchangé", async () => {
+        await page.reload();
+        const again = new AccountListPage(page);
+        await again.searchByLogin(user.login);
+        await again.openUpdateModal(user.login);
+        const form = new AccountCreateUpdatePage(page, 'update');
+        await form.expectOpen();
+        await expect(form.form.locator('#firstName'), 'Prénom').toHaveValue(updated.firstName);
+        await expect(form.form.locator('#lastName'), 'Nom').toHaveValue(updated.lastName);
+        await expect(form.form.locator('#username'), 'Login inchangé').toHaveValue(user.login);
+        await form.close();
+      });
     });
 
     test("Changer le mot de passe d'un utilisateur", async ({ page }) => {

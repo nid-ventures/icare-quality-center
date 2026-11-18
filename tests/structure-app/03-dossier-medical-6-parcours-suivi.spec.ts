@@ -4,7 +4,7 @@ import { createDossierPatient, openDossier, DOSSIER_SETUP_TIMEOUT, type DossierP
 import { PortalPage } from '../../pages/structure/portal/portal.page';
 import { CarePathwayPage } from '../../pages/structure/patient/care-pathway.page';
 import { CarePathwayTemplatePage, ACT_DOMAINS, type CarePathwayTemplate, type SelectedActs } from '../../pages/structure/my-space/care-pathway-template.page';
-import { ConsultationFormPage } from '../../pages/structure/consultation/consultation-form.page';
+import { ConsultationFormPage, type FieldSpec } from '../../pages/structure/consultation/consultation-form.page';
 import { PrescriptionManagerPage } from '../../pages/structure/consultation/prescription-manager.page';
 import { fillAllFields, keptFieldsDiff, type FieldSnapshot } from '../../pages/structure/shared/fill-all-fields';
 import { isoDate } from '../../test-data/consultation-fields';
@@ -603,18 +603,28 @@ test.describe('Module Dossier médical — Suivi des parcours de soins (homme, f
     await expect(page.getByRole('button', { name: /Voir résumé/ })).toHaveCount(0);
   });
 
-  test('Modifier le parcours (praticien et date de début)', async ({ page }) => {
+  test('Modifier le parcours (praticien et date de début) : modifications conservées', async ({ page }) => {
+    const fields: FieldSpec[] = [
+      { name: 'startDate', kind: 'date', value: isoDate(-1) },
+      { name: 'caregiverId', kind: 'select', index: 1 },
+    ];
     await openPathway(page, woman, FEMMES.name);
     await pathwayAction(page, 'Modifier').click();
     const modal = page.locator('#bd-careplan');
     await expect(modal).toBeVisible();
-    await new ConsultationFormPage(page, modal).fill([
-      { name: 'startDate', kind: 'date', value: isoDate(-1) },
-      { name: 'caregiverId', kind: 'select', index: 1 },
-    ]);
+    const filled = await new ConsultationFormPage(page, modal).fill(fields);
     await modal.getByRole('button', { name: /^\W*Enregistrer\s*$/ }).click();
     await confirm(page);
     await expect(page.getByText(/modification de ce parcours .* a réussi/i).first()).toBeVisible({ timeout: 20000 });
+    await test.step('Rouvrir après rechargement : date de début et praticien enregistrés', async () => {
+      await page.reload();
+      await expect(page.locator('.pw-hero')).toBeVisible({ timeout: 20000 });
+      await pathwayAction(page, 'Modifier').click();
+      await expect(modal).toBeVisible();
+      await new ConsultationFormPage(page, modal).expectValues(fields, filled);
+      await modal.getByRole('button', { name: /Fermer|Annuler|Close|×/ }).first().click();
+      await expect(modal).toBeHidden();
+    });
   });
 
   // ---------------- Archivage ----------------
