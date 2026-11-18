@@ -151,8 +151,9 @@ export class DetailPatientPage {
     await expect(this.page.locator('input#email'), 'Email').toHaveValue(data.email);
     await expect(this.page.locator('input#address'), 'Quartier').toHaveValue(data.address);
     await expect(this.page.locator('input#street'), 'Rue').toHaveValue(data.street);
-    await expect(this.optionFirst.locator('.ng-value'), 'Ville').toHaveText(data.city, { ignoreCase: true });
-    await expect(this.optionState.locator('.ng-value'), 'Région').toHaveText(data.state, { ignoreCase: true });
+    // Libellé seul (.ng-value contient aussi la croix d'effacement « × »)
+    await expect(this.optionFirst.locator('.ng-value-label'), 'Ville').toHaveText(data.city, { ignoreCase: true });
+    await expect(this.optionState.locator('.ng-value-label'), 'Région').toHaveText(data.state, { ignoreCase: true });
   }
 
   /**

@@ -373,8 +373,9 @@ test.describe('Module Dossier médical — Consultations', () => {
         await consultationPage.updateConsultation();
         await expect(consultationPage.confirmButton).not.toBeVisible();
       });
-      await test.step('Rouvrir après rechargement : valeurs modifiées et constantes inchangées', async () => {
-        await page.reload();
+      await test.step('Rouvrir le dossier : valeurs modifiées et constantes inchangées', async () => {
+        // Retour à la recherche de dossiers (un rechargement resterait sur le dossier ouvert)
+        await new PortalPage(page).openMenu('Dossiers patients', '**/patient/patients');
         const consultationPage = await reopen(page);
         await consultationPage.expectSavedValues({ ...created, report: updated.report, summary: updated.summary });
       });

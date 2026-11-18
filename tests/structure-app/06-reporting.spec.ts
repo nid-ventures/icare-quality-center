@@ -475,7 +475,8 @@ test.describe('Module Reporting', () => {
       const total = await reporting.listTotal();
       expect(total, 'Au moins un parcours').toBeGreaterThan(0);
       for (const column of ['Patient', 'Type', 'Début', 'Étapes', 'Fin', 'Statut']) {
-        await expect(reporting.list.getByRole('columnheader', { name: column, exact: true }), `Colonne "${column}"`).toBeVisible();
+        // La colonne triée porte une icône de tri (glyphe de police d'icônes dans le nom accessible) : seuls lettres et chiffres comptent après le nom.
+        await expect(reporting.list.getByRole('columnheader', { name: new RegExp(`^\\s*${column}[^\\p{L}\\p{N}]*$`, 'u') }), `Colonne "${column}"`).toBeVisible();
       }
       await expect(reporting.exportButton, 'Export possible avec des parcours').toBeEnabled();
       await expect(reporting.filter('Statut').locator('option'), 'Statuts proposés')

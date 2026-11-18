@@ -339,9 +339,11 @@ export class PatientCarePage {
      * en-tête de colonne : Assureur, Début / Fin validité, Numéro assuré, Numéro carte, Taux, Plafond.
      */
     async coverRow(text?: string): Promise<Record<string, string>> {
-        const panel = this.page.locator('#pills-prise-en-charge-fill');
-        const headers = (await panel.locator('thead th').allInnerTexts()).map(h => h.replace(/\s+/g, ' ').trim());
-        const rows = panel.locator('tbody tr').filter({ has: this.page.getByRole('button', { name: 'Action' }) });
+        // Tableau de la liste (le panneau contient aussi le tableau des actes de la fenêtre d'ajout)
+        const table = this.page.locator('#pills-prise-en-charge-fill table')
+            .filter({ has: this.page.getByRole('columnheader', { name: 'Assureur', exact: true }) }).first();
+        const headers = (await table.locator('thead th').allTextContents()).map(h => h.replace(/\s+/g, ' ').trim()); // textContent : en-têtes affichés en majuscules par le style
+        const rows = table.locator('tbody tr').filter({ has: this.page.getByRole('button', { name: 'Action' }) });
         const row = text ? rows.filter({ hasText: text }).first() : rows.first();
         await expect(row, `Prise en charge ${text ?? ''} listée`).toBeVisible({ timeout: 15000 });
         const cells = (await row.locator('td').allInnerTexts()).map(c => c.replace(/\s+/g, ' ').trim());

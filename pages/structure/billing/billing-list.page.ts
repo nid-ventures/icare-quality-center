@@ -127,7 +127,7 @@ abstract class BillingListPage {
         const option = this.page.locator('ng-dropdown-panel .ng-option').filter({ hasText: pattern }).first();
         await expect(option, `Facturant "${name}" proposé`).toBeVisible({ timeout: 15000 });
         await option.click();
-        await expect(this.facturantInput.locator('.ng-value')).toHaveText(pattern);
+        await expect(this.facturantInput.locator('.ng-value-label')).toHaveText(pattern);
     }
 
     async getRowCount(): Promise<number> {
