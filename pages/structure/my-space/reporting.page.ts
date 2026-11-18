@@ -521,8 +521,9 @@ function normalize(value: string): string {
 /**
  * Reporting > Parcours de soins (`/my-space/reporting/parcours`, `CarePathwaysReportingComponent`) :
  * période (sur la date de début du parcours), filtres type / praticien (relus sur le serveur), statut /
- * suivi / patient (appliqués à l'écran), indicateurs, statistiques et liste paginée des parcours.
- * Données de `GET /careplans/reporting`.
+ * suivi / patient (appliqués à l'écran) et liste paginée des parcours, en cours ou archivés (colonne
+ * « Fin » : date de clôture, ou date prévue de la dernière étape). Les tableaux de bord (indicateurs,
+ * statistiques) ont été retirés de l'app le 2026-11-16. Données de `GET /careplans/reporting`.
  */
 export class CarePathwaysReportingPage {
   readonly heading: Locator;
@@ -531,6 +532,8 @@ export class CarePathwaysReportingPage {
   readonly errorState: Locator;
   readonly emptyState: Locator;
   readonly listCount: Locator;
+  readonly list: Locator;
+  readonly rows: Locator;
 
   constructor(private readonly page: Page) {
     this.heading = page.getByRole('heading', { name: 'Parcours de soins', level: 1 });
@@ -539,6 +542,8 @@ export class CarePathwaysReportingPage {
     this.errorState = page.locator('.cpr-state.cpr-error');
     this.emptyState = page.locator('.cpr-state').filter({ hasText: 'Aucun parcours pour ces critères.' });
     this.listCount = page.locator('.cpr h2').filter({ hasText: /^\s*Parcours\b/ }).locator('.cpr-count');
+    this.list = page.locator('#cpr-list');
+    this.rows = this.list.locator('table.cpr-list tbody tr');
   }
 
   /** Bouton de période ("Ce mois", "3 mois", "12 mois", "Cette année", "Tout", "Dates"). */
@@ -555,7 +560,7 @@ export class CarePathwaysReportingPage {
   /** Attend la fin du chargement : données, liste vide ou erreur. */
   async waitLoaded() {
     await expect(this.loadingState).toBeHidden({ timeout: 30000 });
-    await expect(this.errorState.or(this.emptyState).or(this.page.locator('.cpr-kpis')).first()).toBeVisible({ timeout: 15000 });
+    await expect(this.errorState.or(this.emptyState).or(this.list).first()).toBeVisible({ timeout: 15000 });
   }
 
   /** Choisit une période et attend le rechargement. */
@@ -565,14 +570,14 @@ export class CarePathwaysReportingPage {
     await this.waitLoaded();
   }
 
-  /** Valeur d'un indicateur ("Parcours", "En cours", "Étapes manquées"…). */
-  async kpi(label: string): Promise<number> {
-    const card = this.page.locator('.cpr-kpi').filter({ has: this.page.locator('.cpr-kpi-label', { hasText: new RegExp(`^\\s*${label}\\s*$`) }) });
-    return Number(((await card.locator('strong').textContent()) ?? '').replace(/[^\d]/g, '')) || 0;
+  /** Badges de statut ("En cours" / "Archivé") des lignes de la page affichée. */
+  statusBadges(): Locator {
+    return this.rows.locator('.cpr-badge');
   }
 
-  /** Nombre de parcours de la liste (badge du titre "Parcours"). */
+  /** Nombre de parcours de la liste (badge du titre "Parcours"), 0 si la liste est vide. */
   async listTotal(): Promise<number> {
+    if (await this.emptyState.isVisible()) return 0;
     return Number(((await this.listCount.textContent()) ?? '').trim()) || 0;
   }
 }

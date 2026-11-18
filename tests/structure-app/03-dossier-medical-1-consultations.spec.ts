@@ -159,7 +159,7 @@ test.describe('Module Dossier médical — Consultations', () => {
         }
 
         await test.step('Ajouter une ordonnance, une prescription d\'analyses et une d\'imagerie', async () => {
-          await prescriptions.addMedicationPrescription({ title: medication1, medicationName: 'Paracétamol', posologie: '1 cp matin et soir', recommandations: 'Hydratation' });
+          await prescriptions.addMedicationPrescription({ title: medication1, medicationName: 'Paracétamol', posologie: '1 cp matin et soir', recommandations: 'Hydratation', duree: { nombre: 10, unite: 'Jours' } });
           await prescriptions.addLaboratoryPrescription(`Bilan de contrôle ${key}`);
           await prescriptions.addImagingPrescription(`Imagerie de contrôle ${key}`, isoDate(7));
         });
@@ -208,6 +208,23 @@ test.describe('Module Dossier médical — Consultations', () => {
           await prescriptions.expectCount('Analyses', 1);
           await prescriptions.expectCount('Imagerie', 1);
           await prescriptions.expectPrescriptionText('Ordonnance', medication1);
+        });
+
+        await test.step('Détail des prescriptions : durée recomposée, analyses et examen prescrits', async () => {
+          // Durée = nombre + unité (« 10 jours ») ; plus de colonne Qté
+          const medication = await prescriptions.details('Ordonnance', medication1);
+          await expect(medication.getByRole('columnheader')).toHaveText(['Médicament', 'Posologie', 'Durée', 'Remarques']);
+          await expect(medication.locator('tbody tr').first()).toContainText('10 jours');
+          // Analyses et imagerie : résumé compact (plus le formulaire en lecture seule)
+          const analyses = await prescriptions.details('Analyses', '');
+          await expect(analyses.getByText('Analyses prescrites')).toBeVisible();
+          await expect(analyses.locator('ul li'), 'Les 2 analyses prescrites').toHaveCount(2);
+          await expect(analyses).toContainText(`Bilan de contrôle ${key}`);
+          await expect(analyses.locator('app-laboratory-prescription')).toHaveCount(0);
+          const imaging = await prescriptions.details('Imagerie', '');
+          await expect(imaging.getByText('Examen prescrit')).toBeVisible();
+          await expect(imaging).toContainText(`Imagerie de contrôle ${key}`);
+          await expect(imaging.locator('app-imaging-prescription')).toHaveCount(0);
         });
       });
 

@@ -69,7 +69,8 @@ abstract class BillingListPage {
         this.prenomPatientInput = this.form.locator('input[formcontrolname="lastName"]');
         this.identifiantPatientInput = this.form.locator('input[formcontrolname="patientIdentifier"]');
         this.dateNaissanceInput = this.form.locator('input[formcontrolname="dob"]');
-        this.facturantInput = this.form.locator('input[formcontrolname="billedBy"]');
+        // Liste des utilisateurs ayant accès à la facturation (secrétaires, administrateurs)
+        this.facturantInput = this.form.locator('ng-select[formcontrolname="billedBy"]');
         this.dateDebutInput = this.form.locator('input[formcontrolname="dateStart"]');
         this.dateFinInput = this.form.locator('input[formcontrolname="dateEnd"]');
         this.telephoneInput = this.form.getByPlaceholder('Entrez le numéro');
@@ -113,6 +114,20 @@ abstract class BillingListPage {
     protected async fillField(input: Locator, value: string): Promise<void> {
         if (!await input.isVisible().catch(() => false)) await this.showMoreCriteria();
         await input.fill(value);
+    }
+
+    /**
+     * « Facturé par » : choisit le facturant dans la liste (noms chargés à l'ouverture). Espaces
+     * souples : un nom enregistré avec un espace double s'affiche avec un seul dans le tableau.
+     */
+    async chooseBiller(name: string): Promise<void> {
+        if (!await this.facturantInput.isVisible().catch(() => false)) await this.showMoreCriteria();
+        await this.facturantInput.locator('.ng-select-container').click();
+        const pattern = new RegExp(`^\\s*${name.trim().split(/\s+/).map(w => w.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')).join('\\s+')}\\s*$`, 'i');
+        const option = this.page.locator('ng-dropdown-panel .ng-option').filter({ hasText: pattern }).first();
+        await expect(option, `Facturant "${name}" proposé`).toBeVisible({ timeout: 15000 });
+        await option.click();
+        await expect(this.facturantInput.locator('.ng-value')).toHaveText(pattern);
     }
 
     async getRowCount(): Promise<number> {
@@ -177,7 +192,7 @@ abstract class BillingListPage {
         if (has(reference.nomPatient)) fields.push({ name: 'Nom', fill: () => this.fillField(this.nomPatientInput, reference.nomPatient) });
         if (has(reference.prenomPatient)) fields.push({ name: 'Prénom', fill: () => this.fillField(this.prenomPatientInput, reference.prenomPatient) });
         if (has(reference.identifiantPatient)) fields.push({ name: 'Identifiant', fill: () => this.fillField(this.identifiantPatientInput, reference.identifiantPatient) });
-        if (has(reference.facturePar)) fields.push({ name: 'Facturé par', fill: () => this.fillField(this.facturantInput, reference.facturePar) });
+        if (has(reference.facturePar)) fields.push({ name: 'Facturé par', fill: () => this.chooseBiller(reference.facturePar) });
         if (has(reference.dateNaissance)) fields.push({ name: 'Date de naissance', fill: () => this.fillField(this.dateNaissanceInput, toIsoDate(reference.dateNaissance)) });
         if (has(reference.dateFacturation)) {
             fields.push({

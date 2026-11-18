@@ -230,7 +230,7 @@ test.describe('Module Base patients', () => {
     });
 
     test('Modifier une prise en charge', async ({ page }) => {
-      // L'application exige une date de fin strictement postérieure à aujourd'hui.
+      // Date de fin future (une date passée est aussi acceptée depuis le 2026-11-18 : prise en charge expirée saisie a posteriori)
       const newEndingDate = new Date(Date.now() + 60 * 24 * 60 * 60 * 1000).toISOString().split('T')[0];
       await new PatientCarePage(page).modifyFirstCare('AFRIC MANAGEMENT (IPM)', newEndingDate);
     });

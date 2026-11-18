@@ -6,6 +6,8 @@ export interface MedicationPrescriptionData {
   medicationName: string;
   posologie: string;
   recommandations?: string;
+  /** Durée libre : nombre + unité, recomposés par l'app (ex. 10 + Jours -> « 10 jours »). */
+  duree?: { nombre: number; unite: 'Jours' | 'Semaines' | 'Mois' | 'Ans' };
 }
 
 export type PrescriptionKind = 'Ordonnance' | 'Analyses' | 'Imagerie';
@@ -65,6 +67,12 @@ export class PrescriptionManagerPage {
     }
     await medicationName.first().fill(data.medicationName);
     await form.getByPlaceholder('Ex: 1 cp matin et soir').first().fill(data.posologie);
+    if (data.duree) {
+      // Plus de quantité : le pharmacien la déduit de la durée du traitement
+      const line = form.locator('tbody tr').first();
+      await line.getByPlaceholder('Nb').fill(String(data.duree.nombre));
+      await line.locator('select').first().selectOption({ label: data.duree.unite });
+    }
     if (data.recommandations) {
       await form.locator('textarea').last().fill(data.recommandations);
     }
@@ -159,6 +167,18 @@ export class PrescriptionManagerPage {
     if (!/\bexpanded\b/.test((await row.getAttribute('class')) ?? '')) {
       await row.locator('.rx-row-header').click();
     }
-    await expect(row).toContainText(detail);
+    await expect(row.locator('.rx-row-details')).toContainText(detail);
+  }
+
+  /** Déplie la ligne de la prescription (titre donné) et renvoie son détail. */
+  async details(kind: PrescriptionKind, title: string): Promise<Locator> {
+    const row = this.rows(kind).filter({ hasText: title }).first();
+    await expect(row).toBeVisible();
+    if (!/\bexpanded\b/.test((await row.getAttribute('class')) ?? '')) {
+      await row.locator('.rx-row-header').click();
+    }
+    const details = row.locator('.rx-row-details');
+    await expect(details).toBeVisible();
+    return details;
   }
 }

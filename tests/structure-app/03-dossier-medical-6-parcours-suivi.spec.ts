@@ -596,14 +596,11 @@ test.describe('Module Dossier médical — Suivi des parcours de soins (homme, f
     await expect(pathwayAction(page, 'Modifier')).toContainText(FEMMES.name, { timeout: 5000 });
   });
 
-  test('Ouvrir le résumé du parcours', async ({ page }) => {
+  test("Le résumé du parcours (fiche grossesse) n'est pas proposé pour un parcours non prénatal", async ({ page }) => {
+    // Résumé réservé au parcours prénatal : ouvert dans le groupe « Archivage d'un parcours prénatal »
     await openPathway(page, woman, FEMMES.name);
-    await page.getByRole('button', { name: /Voir résumé/ }).click();
-    const summary = page.locator('#bd-summary');
-    await expect(summary).toBeVisible();
-    await expect(summary.getByText('Résumé du parcours')).toBeVisible();
-    await summary.getByRole('button', { name: /Close|×/ }).first().click();
-    await expect(summary).toBeHidden();
+    await expect(pathwayAction(page, 'Modifier')).toBeVisible();
+    await expect(page.getByRole('button', { name: /Voir résumé/ })).toHaveCount(0);
   });
 
   test('Modifier le parcours (praticien et date de début)', async ({ page }) => {
@@ -836,6 +833,16 @@ test.describe("Module Dossier médical — Archivage d'un parcours prénatal", (
     await expect(caregiver.locator('.ng-value'), 'Praticien choisi').toHaveCount(1);
     await carePathway.start();
     await expect(pathwayAction(page, 'Archiver'), 'Bouton portant le nom du parcours').toContainText(PRENATAL);
+  });
+
+  test('Ouvrir le résumé du parcours prénatal', async ({ page }) => {
+    await openPathway(page, patient, PRENATAL);
+    await page.getByRole('button', { name: /Voir résumé/ }).click();
+    const summary = page.locator('#bd-summary');
+    await expect(summary).toBeVisible();
+    await expect(summary.getByText('Résumé du parcours')).toBeVisible();
+    await summary.getByRole('button', { name: /Close|×/ }).first().click();
+    await expect(summary).toBeHidden();
   });
 
   test("Archiver sans renseigner l'année ni le sexe de l'enfant est refusé", async ({ page }) => {

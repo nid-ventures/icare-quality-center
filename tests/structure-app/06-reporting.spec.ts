@@ -463,24 +463,40 @@ test.describe('Module Reporting', () => {
       });
     });
 
-    test('Les parcours de la structure sont chargés : indicateurs et liste', async ({ portal, page }) => {
+    test('Les parcours de la structure sont chargés : liste en cours et archivés', async ({ portal, page }) => {
       const reporting = await openCarePathwaysReporting(portal, page);
       await reporting.choosePeriod('Tout');
       // Sans l'API côté serveur, la page affiche « … (API /careplans/reporting à déployer) »
       await expect(reporting.errorState, 'Données des parcours chargées (API /careplans/reporting)').toHaveCount(0);
+      // Tableaux de bord retirés de l'app (2026-11-16) : seule la liste des parcours est affichée
+      await expect(page.locator('.cpr-kpis'), 'Plus d\'indicateurs').toHaveCount(0);
+      await expect(reporting.list, 'Liste des parcours').toBeVisible();
       // Les specs Dossier médical démarrent des parcours dans la structure
-      await expect(page.locator('.cpr-kpis'), 'Indicateurs affichés').toBeVisible();
-      const total = await reporting.kpi('Parcours');
+      const total = await reporting.listTotal();
       expect(total, 'Au moins un parcours').toBeGreaterThan(0);
-      expect(await reporting.listTotal(), 'Liste : autant de parcours que l\'indicateur').toBe(total);
-      for (const title of ['État des étapes', 'Nouveaux parcours par mois', 'Par type de parcours', 'Réalisation par étape', 'Par praticien', 'Âge des patients']) {
-        await expect(page.getByRole('heading', { name: title, level: 2 }), `Statistique "${title}"`).toBeVisible();
+      for (const column of ['Patient', 'Type', 'Début', 'Étapes', 'Fin', 'Statut']) {
+        await expect(reporting.list.getByRole('columnheader', { name: column, exact: true }), `Colonne "${column}"`).toBeVisible();
       }
       await expect(reporting.exportButton, 'Export possible avec des parcours').toBeEnabled();
-      await test.step('Statut "En cours" : la liste suit l\'indicateur', async () => {
-        const inProgress = await reporting.kpi('En cours');
+      await expect(reporting.filter('Statut').locator('option'), 'Statuts proposés')
+        .toHaveText(['Tous (en cours et archivés)', 'En cours', 'Archivés (clôturés)']);
+
+      let inProgress = 0;
+      await test.step('Statut "En cours" : uniquement des parcours en cours', async () => {
         await reporting.filter('Statut').selectOption('IN_PROGRESS');
-        await expect.poll(() => reporting.listTotal()).toBe(inProgress);
+        await expect.poll(() => reporting.listTotal()).toBeLessThanOrEqual(total);
+        inProgress = await reporting.listTotal();
+        if (inProgress) await expect(reporting.statusBadges().filter({ hasNotText: /^\s*En cours\s*$/ })).toHaveCount(0);
+      });
+      await test.step('Statut "Archivés" : uniquement des parcours archivés, avec leur date de fin', async () => {
+        await reporting.filter('Statut').selectOption('COMPLETED');
+        // Les specs parcours archivent leurs parcours à la fin : en cours + archivés = tous
+        await expect.poll(() => reporting.listTotal(), 'En cours + archivés = tous').toBe(total - inProgress);
+        if (total - inProgress) {
+          await expect(reporting.statusBadges().filter({ hasNotText: /^\s*Archivé\s*$/ })).toHaveCount(0);
+          // Colonne « Fin » (8e) : date de clôture d'un parcours archivé
+          await expect(reporting.rows.first().locator('td').nth(7)).toHaveText(/^\s*\d{2}\/\d{2}\/\d{4}\s*$/);
+        }
       });
     });
 

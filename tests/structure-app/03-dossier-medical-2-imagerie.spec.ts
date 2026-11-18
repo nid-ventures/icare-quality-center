@@ -27,7 +27,7 @@ const generalFields = (v: 1 | 2, withExamDate = true): FieldSpec[] => [
   { name: 'region', kind: 'select', index: v === 1 ? 0 : 1 },
 ];
 
-// Scanner, IRM et radiographie : à la création, l'application n'affiche que les champs généraux,
+// Scanner, IRM et radiographie : à la création, l'application n'affiche que les champs généraux, le compte-rendu,
 // les actes à facturer et les pièces jointes ; tous les paramètres techniques (protocole, contraste,
 // kV, séquences, incidence, résultats…) sont masqués dans les formulaires (attribut hidden).
 type ImagingType = {
@@ -42,6 +42,11 @@ const TYPES: ImagingType[] = [
   { kind: 'SCANNER', key: 'scanner', label: 'Scanner', createRoot: 'app-scanner-static', submit: /Enregistrer le scanner/ },
   { kind: 'IRM', key: 'irm', label: 'IRM', createRoot: 'app-irm-static', submit: /Enregistrer l'IRM|Enregistrer/ },
   { kind: 'RADIOGRAPHIE', key: 'radiographie', label: 'Radiographie', createRoot: 'app-radiographie-static', submit: /Enregistrer la radiographie|Enregistrer/ },
+];
+
+// Compte-rendu libre (scanner, IRM, radiographie), enregistré dans « conclusion » : à la création et à la modification
+const reportField = (v: 1 | 2, key: string): FieldSpec[] => [
+  { name: 'conclusion', kind: 'textarea', value: `Compte-rendu ${key} QA${v === 2 ? ' (modifié)' : ''}` },
 ];
 
 const billableActs: FieldSpec[] = [{ name: 'billableActs', kind: 'multiselect', count: 1 }];
@@ -145,7 +150,7 @@ test.describe('Module Dossier médical — Imagerie', () => {
       test(`Créer un acte "${type.label}" avec tous les champs affichés et une pièce jointe`, async ({ page }) => {
         const root = await startActe(page, type.kind, type.createRoot);
         const form = new ConsultationFormPage(page, root);
-        general1 = await form.fill(generalFields(1));
+        general1 = await form.fill([...generalFields(1), ...reportField(1, type.key)]);
         await form.fill(billableActs);
         await root.locator('input[type="file"]').first().setInputFiles(attachment(`compte-rendu-${type.key}.pdf`));
         await expect(root.getByText(`compte-rendu-${type.key}.pdf`)).toBeVisible();
@@ -156,7 +161,7 @@ test.describe('Module Dossier médical — Imagerie', () => {
 
       test(`Rouvrir l'acte "${type.label}" : champs généraux et pièce jointe conservés`, async ({ page }) => {
         const item = await openHistoryItem(page, type.key);
-        await new ConsultationFormPage(page, item).expectValues(generalFields(1), general1);
+        await new ConsultationFormPage(page, item).expectValues([...generalFields(1), ...reportField(1, type.key)], general1);
         await expect(page.locator(`.imaging-item.imaging-item--${type.key}`).first().locator('.imaging-item-attachments')).toContainText('1');
       });
 
@@ -166,7 +171,7 @@ test.describe('Module Dossier médical — Imagerie', () => {
         const item = await openHistoryItem(page, type.key);
         const form = new ConsultationFormPage(page, item);
         await form.activate('date');
-        general2 = await form.fill(generalFields(2));
+        general2 = await form.fill([...generalFields(2), ...reportField(2, type.key)]);
         await item.locator('input[type="file"]').first().setInputFiles(attachment(`complement-${type.key}.pdf`));
         await expect(item.getByText(`complement-${type.key}.pdf`)).toBeVisible();
         await item.locator('button.btn-success').last().click();
@@ -175,7 +180,7 @@ test.describe('Module Dossier médical — Imagerie', () => {
 
       test(`Rouvrir l'acte "${type.label}" : modifications et 2 pièces jointes conservées`, async ({ page }) => {
         const item = await openHistoryItem(page, type.key);
-        await new ConsultationFormPage(page, item).expectValues(generalFields(2), general2);
+        await new ConsultationFormPage(page, item).expectValues([...generalFields(2), ...reportField(2, type.key)], general2);
         await expect(page.locator(`.imaging-item.imaging-item--${type.key}`).first().locator('.imaging-item-attachments')).toContainText('2');
       });
 
