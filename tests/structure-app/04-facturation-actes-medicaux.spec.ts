@@ -458,6 +458,8 @@ test.describe('Module Facturation — Actes à facturer depuis le dossier médic
         }
         expect(acts.length, 'Actes à facturer présélectionnés par le type').toBeGreaterThan(0);
       });
+      // Diagnostic obligatoire depuis le 2026-11-18
+      await form.fill([{ name: 'diagnostic', kind: 'textarea', value: 'Bilan facturé QA' }]);
       await list.saveBilan();
       await expect(async () => {
         bilanOrder = (await list.getBilanOrderNumbers()).find(o => o && !before.includes(o)) ?? '';

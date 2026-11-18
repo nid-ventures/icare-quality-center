@@ -522,7 +522,7 @@ function normalize(value: string): string {
  * Reporting > Parcours de soins (`/my-space/reporting/parcours`, `CarePathwaysReportingComponent`) :
  * période (sur la date de début du parcours), filtres type / praticien (relus sur le serveur), statut /
  * suivi / patient (appliqués à l'écran) et liste paginée des parcours, en cours ou archivés (colonne
- * « Fin » : date de clôture, ou date prévue de la dernière étape). Les tableaux de bord (indicateurs,
+ * « Date de fin prévue » : date de clôture, ou date prévue de la dernière étape). Les tableaux de bord (indicateurs,
  * statistiques) ont été retirés de l'app le 2026-11-16. Données de `GET /careplans/reporting`.
  */
 export class CarePathwaysReportingPage {

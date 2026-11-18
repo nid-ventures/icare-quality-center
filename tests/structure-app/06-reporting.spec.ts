@@ -291,6 +291,8 @@ test.describe('Module Reporting', () => {
         const values = await form.fill([
           { name: 'caregiverId', kind: 'select' },
           { name: 'type', kind: 'select', option: formLabel(type) },
+          // Diagnostic obligatoire depuis le 2026-11-18
+          { name: 'diagnostic', kind: 'textarea', value: 'Bilan reporting QA' },
         ]);
         await list.saveBilan();
         return values.caregiverId as string;
@@ -474,7 +476,7 @@ test.describe('Module Reporting', () => {
       // Les specs Dossier médical démarrent des parcours dans la structure
       const total = await reporting.listTotal();
       expect(total, 'Au moins un parcours').toBeGreaterThan(0);
-      for (const column of ['Patient', 'Type', 'Début', 'Étapes', 'Fin', 'Statut']) {
+      for (const column of ['Patient', 'Type', 'Début', 'Étapes', 'Date de fin prévue', 'Statut']) {
         // La colonne triée porte une icône de tri (glyphe de police d'icônes dans le nom accessible) : seuls lettres et chiffres comptent après le nom.
         await expect(reporting.list.getByRole('columnheader', { name: new RegExp(`^\\s*${column}[^\\p{L}\\p{N}]*$`, 'u') }), `Colonne "${column}"`).toBeVisible();
       }
@@ -487,7 +489,12 @@ test.describe('Module Reporting', () => {
         await reporting.filter('Statut').selectOption('IN_PROGRESS');
         await expect.poll(() => reporting.listTotal()).toBeLessThanOrEqual(total);
         inProgress = await reporting.listTotal();
-        if (inProgress) await expect(reporting.statusBadges().filter({ hasNotText: /^\s*En cours\s*$/ })).toHaveCount(0);
+        if (inProgress) {
+          await expect(reporting.statusBadges().filter({ hasNotText: /^\s*En cours\s*$/ })).toHaveCount(0);
+          // Date prévue de la dernière étape, sans la mention « prévue » (retirée le 2026-11-18)
+          await expect(reporting.rows.first().locator('td').nth(7), 'Date de fin prévue d\'un parcours en cours')
+            .toHaveText(/^\s*(\d{2}\/\d{2}\/\d{4}|—)\s*$/);
+        }
       });
       await test.step('Statut "Archivés" : uniquement des parcours archivés, avec leur date de fin', async () => {
         await reporting.filter('Statut').selectOption('COMPLETED');
@@ -495,7 +502,7 @@ test.describe('Module Reporting', () => {
         await expect.poll(() => reporting.listTotal(), 'En cours + archivés = tous').toBe(total - inProgress);
         if (total - inProgress) {
           await expect(reporting.statusBadges().filter({ hasNotText: /^\s*Archivé\s*$/ })).toHaveCount(0);
-          // Colonne « Fin » (8e) : date de clôture d'un parcours archivé
+          // Colonne « Date de fin prévue » (8e) : date de clôture d'un parcours archivé
           await expect(reporting.rows.first().locator('td').nth(7)).toHaveText(/^\s*\d{2}\/\d{2}\/\d{4}\s*$/);
         }
       });

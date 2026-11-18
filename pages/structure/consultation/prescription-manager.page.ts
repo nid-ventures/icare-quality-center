@@ -111,6 +111,53 @@ export class PrescriptionManagerPage {
     return filled;
   }
 
+  /**
+   * Prescription d'analyses (2026-11-18) : prescripteur présaisi à l'ouverture ; refusée sans
+   * diagnostic (vide ou espaces seuls), le reste étant rempli. Le formulaire est ensuite annulé.
+   */
+  async expectLaboratoryRequiresDiagnostic(diagnostic: string) {
+    const before = Number(await this.panelCount('Analyses').innerText());
+    await this.openCreator('Analyses');
+    const form = this.root.locator('app-laboratory-prescription');
+    await expect(form).toBeVisible();
+    await expect(form.locator('ng-select[formcontrolname="caregiverId"] .ng-value-label'), 'Prescripteur présaisi').toHaveCount(1);
+    await new ConsultationFormPage(this.page, form).fill([
+      { name: 'typeBilan', kind: 'select' },
+      { name: 'analyses', kind: 'multiselect', count: 2 },
+      { name: 'diagnostic', kind: 'textarea', value: diagnostic },
+    ]);
+    await form.getByRole('button', { name: /^\W*Enregistrer$/ }).click();
+    await expect(form.getByText('Le diagnostic est obligatoire').first(), 'Diagnostic signalé obligatoire').toBeVisible();
+    await expect(form, 'Le formulaire reste ouvert').toBeVisible();
+    await form.getByRole('button', { name: /Annuler/ }).click();
+    await this.expectCount('Analyses', before);
+  }
+
+  /**
+   * Prescription d'imagerie (2026-11-18) : prescripteur présaisi à l'ouverture ; refusée sans
+   * diagnostic (vide ou espaces seuls), le reste étant rempli. Le formulaire est ensuite annulé.
+   */
+  async expectImagingRequiresDiagnostic(notice: string, date: string) {
+    const before = Number(await this.panelCount('Imagerie').innerText());
+    await this.openCreator('Imagerie');
+    const form = this.root.locator('app-imaging-prescription');
+    await expect(form).toBeVisible();
+    await form.locator('ng-select').first().locator('.ng-select-container').click();
+    await this.page.locator('.ng-dropdown-panel .ng-option:not(.ng-option-disabled)').first().click();
+    await expect(form.locator('ng-select[formcontrolname="caregiverId"] .ng-value-label'), 'Prescripteur présaisi').toHaveCount(1);
+    await new ConsultationFormPage(this.page, form).fill([
+      { name: 'type', kind: 'select' },
+      { name: 'date', kind: 'date', value: date },
+      { name: 'region', kind: 'select' },
+      { name: 'notice', kind: 'textarea', value: notice },
+    ]);
+    await form.getByRole('button', { name: /Enregistrer la prescription/ }).click();
+    await expect(form.getByText('Le diagnostic est obligatoire').first(), 'Diagnostic signalé obligatoire').toBeVisible();
+    await expect(form, 'Le formulaire reste ouvert').toBeVisible();
+    await form.getByRole('button', { name: /Annuler/ }).click();
+    await this.expectCount('Imagerie', before);
+  }
+
   /** Ajoute une prescription d'imagerie (type d'imagerie, examen, docteur, date, région, diagnostic). */
   async addImagingPrescription(notice: string, date: string): Promise<FilledValues> {
     const before = Number(await this.panelCount('Imagerie').innerText());

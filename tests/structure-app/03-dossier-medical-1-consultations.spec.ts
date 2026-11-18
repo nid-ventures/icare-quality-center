@@ -582,6 +582,19 @@ test.describe('Module Dossier médical — Consultations', () => {
       await prescriptions.expectCount('Analyses', 0);
     });
 
+    // Diagnostic obligatoire depuis le 2026-11-18 (espaces seuls refusés) ; prescripteur présaisi
+    for (const [label, value] of [['vide', ''], ['fait d\'espaces', '   ']] as const) {
+      test(`Une prescription d'analyses au diagnostic ${label} n'est pas ajoutée (prescripteur présaisi)`, async ({ page }) => {
+        await startConsultation(page, patient, TYPES.pediatric);
+        await new PrescriptionManagerPage(page).expectLaboratoryRequiresDiagnostic(value);
+      });
+
+      test(`Une prescription d'imagerie au diagnostic ${label} n'est pas ajoutée (prescripteur présaisi)`, async ({ page }) => {
+        await startConsultation(page, patient, TYPES.pediatric);
+        await new PrescriptionManagerPage(page).expectImagingRequiresDiagnostic(value, isoDate(7));
+      });
+    }
+
     test('Annuler après le choix d\'un type ferme le formulaire sans rien créer', async ({ page }) => {
       const consultationPage = await openConsultations(page, patient);
       const def = TYPES.prenatal;

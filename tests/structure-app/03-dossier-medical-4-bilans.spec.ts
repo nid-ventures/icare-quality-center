@@ -188,6 +188,8 @@ test.describe("Module Dossier médical — Bilans d'analyses", () => {
     await form.fill([{ name: 'caregiverId', kind: 'select' }, { name: 'type', kind: 'select' }]);
     const preselected = await chosenLabels(modal(page).locator('ng-select[formcontrolname="analyses"]'));
     const added = await form.fill([{ name: 'analyses', kind: 'multiselect', count: 2 }]);
+    // Diagnostic obligatoire depuis le 2026-11-18
+    await form.fill([{ name: 'diagnostic', kind: 'textarea', value: 'Analyses ajoutées QA' }]);
     await list.saveBilan();
     await list.openBilanByOrderNumber(await newOrderNumber(list, before));
     await detail.expectDetailLoaded();
@@ -319,6 +321,7 @@ test.describe("Module Dossier médical — Bilans d'analyses", () => {
     await modal(page).getByRole('button', { name: /Enregistrer/ }).click();
     await expect(modal(page).getByText('Le prescripteur est obligatoire')).toBeVisible();
     await expect(modal(page).getByText('Le type de bilan est obligatoire')).toBeVisible();
+    await expect(modal(page).getByText('Le diagnostic est obligatoire')).toBeVisible();
     await expect(modal(page), 'La fenêtre reste ouverte').toBeVisible();
     await modal(page).getByRole('button', { name: /Annuler/ }).click();
     expect(await list.getBilanOrderNumbers()).toEqual(before);
@@ -333,6 +336,44 @@ test.describe("Module Dossier médical — Bilans d'analyses", () => {
     await expect(modal(page).getByText('Le prescripteur est obligatoire')).toBeVisible();
     await expect(modal(page).getByText('Le type de bilan est obligatoire')).toHaveCount(0);
     await expect(modal(page)).toBeVisible();
+  });
+
+  // Diagnostic obligatoire depuis le 2026-11-18 ; des espaces seuls ne comptent pas
+  for (const [label, value] of [['vide', ''], ['fait d\'espaces', '   ']] as const) {
+    test(`Un bilan au diagnostic ${label} n'est pas enregistré`, async ({ page }) => {
+      const list = new HealthChecksListPage(page);
+      const before = await list.getBilanOrderNumbers();
+      await list.openNewBilanModal();
+      await new ConsultationFormPage(page, modal(page)).fill([
+        { name: 'caregiverId', kind: 'select' },
+        { name: 'type', kind: 'select' },
+        { name: 'diagnostic', kind: 'textarea', value },
+      ]);
+      await modal(page).getByRole('button', { name: /Enregistrer/ }).click();
+      await expect(modal(page).getByText('Le diagnostic est obligatoire')).toBeVisible();
+      await expect(modal(page).getByText('Le prescripteur est obligatoire')).toHaveCount(0);
+      await expect(modal(page).getByText('Le type de bilan est obligatoire')).toHaveCount(0);
+      await expect(modal(page), 'La fenêtre reste ouverte').toBeVisible();
+      await modal(page).getByRole('button', { name: /Annuler/ }).click();
+      expect(await list.getBilanOrderNumbers(), 'Aucun bilan créé').toEqual(before);
+    });
+  }
+
+  test("Un résultat sans diagnostic n'est pas enregistré", async ({ page }) => {
+    await page.goto(bilanUrl);
+    const pane = await openResultTab(page);
+    await activateResult(page, pane);
+    const diagnostic = pane.locator('textarea[formcontrolname="diagnostic"]');
+    const saved = await diagnostic.inputValue();
+    await diagnostic.fill('  ');
+    await pane.locator('button.btn-submit').click();
+    await expect(pane.getByText('Le diagnostic est obligatoire')).toBeVisible();
+    await expect(page.getByRole('button', { name: /^\W*Confirmer$/ }), 'Pas de confirmation d\'enregistrement').toHaveCount(0);
+    await test.step('Le diagnostic enregistré est inchangé après rechargement', async () => {
+      await page.reload();
+      const reloaded = await openResultTab(page);
+      await expect(reloaded.locator('textarea[formcontrolname="diagnostic"]')).toHaveValue(saved);
+    });
   });
 
   test("Un résultat sans prescripteur n'est pas enregistré", async ({ page }) => {
