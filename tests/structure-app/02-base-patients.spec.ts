@@ -189,7 +189,8 @@ test.describe('Module Base patients', () => {
 
     test.beforeEach(async ({ page }) => {
       const detailPatientPage = new DetailPatientPage(page);
-      contact = ContactPersonGenerator.generate();
+      // Test d'anomalie : personne née avant 1970 ; sinon date aléatoire après 1970
+      contact = ContactPersonGenerator.generate(/avant 1970/.test(test.info().title) ? { dob: '1958-03-14' } : {});
       await createTestPatient(page, true);
       await test.step('Ajouter une personne à contacter', async () => {
         await detailPatientPage.goToPersonContactTab();
@@ -229,6 +230,15 @@ test.describe('Module Base patients', () => {
       await expect(panel.getByText('Aucun enregistrement'), 'Liste vide').toBeVisible({ timeout: 15000 });
       await reloadContacts(page);
       expect(await detail.contactCount(), 'Toujours supprimée après rechargement').toBe(0);
+    });
+
+    test("Une personne à contacter née avant 1970 : sa date de naissance est affichée", async ({ page }) => {
+      // patients-contact-person.component.ts (voirPersonneContacter) : date affichée seulement si
+      // doB > 0 (secondes depuis 1970) ; une date antérieure est enregistrée mais affichée vide, et
+      // une modification de la personne renverrait alors une date vide (1970-01-01).
+      test.fail(true, "Anomalie : date de naissance antérieure à 1970 d'une personne à contacter affichée vide");
+      const detail = await reloadContacts(page);
+      await detail.expectContactDetails(contact);
     });
   });
 

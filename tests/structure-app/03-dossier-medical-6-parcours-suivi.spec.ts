@@ -609,6 +609,18 @@ test.describe('Module Dossier médical — Suivi des parcours de soins (homme, f
       { name: 'caregiverId', kind: 'select', index: 1 },
     ];
     await openPathway(page, woman, FEMMES.name);
+    // Non-régression (même famille que le bug backend des analyses / doses vidées à la mise à jour,
+    // corrigé le 2026-11-19) : nombre d'étapes et actes prévus de chaque étape relevés avant la
+    // modification (dates et état des étapes peuvent suivre la nouvelle date de début : non comparés).
+    const steps = page.locator('.pw-steps-track button.pw-step');
+    const planned = page.locator('.pw-acts-item');
+    await expect(planned, 'Actes prévus : une ligne par étape').toHaveCount(2, { timeout: 20000 });
+    const snapshot = async () => ({
+      steps: await steps.count(),
+      acts: await planned.evaluateAll(els => els.map(e => [...e.querySelectorAll('.pw-act-badge')].map(b => b.textContent?.replace(/\s+/g, ' ').trim()).sort())),
+    });
+    const before = await snapshot();
+    expect(before.acts.flat().length, 'Actes prévus relevés').toBeGreaterThan(0);
     await pathwayAction(page, 'Modifier').click();
     const modal = page.locator('#bd-careplan');
     await expect(modal).toBeVisible();
@@ -624,6 +636,9 @@ test.describe('Module Dossier médical — Suivi des parcours de soins (homme, f
       await new ConsultationFormPage(page, modal).expectValues(fields, filled);
       await modal.getByRole('button', { name: /Fermer|Annuler|Close|×/ }).first().click();
       await expect(modal).toBeHidden();
+    });
+    await test.step('Étapes et actes prévus inchangés', async () => {
+      await expect.poll(snapshot, { timeout: 20000 }).toEqual(before);
     });
   });
 

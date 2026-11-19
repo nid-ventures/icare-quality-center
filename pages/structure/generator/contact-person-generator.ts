@@ -10,7 +10,11 @@ function generateSenegalesePhoneNumber(): string {
 }
 
 export class ContactPersonGenerator {
-    static generate(): ContactPersonData {
+    /**
+     * Personne à contacter aléatoire, née après 1970 (18 à 55 ans) : l'app n'affiche pas une date de
+     * naissance antérieure à 1970 (anomalie gardée en test.fail dans 02-base-patients).
+     */
+    static generate(overrides: Partial<ContactPersonData> = {}): ContactPersonData {
         return {
             firstName: faker.person.firstName(),
             lastName: faker.person.lastName(),
@@ -18,13 +22,14 @@ export class ContactPersonGenerator {
             phoneSecondary: generateSenegalesePhoneNumber(),
             linkType: '17',       // À ajuster selon vos besoins
             sex: faker.helpers.arrayElement(['1', '2']),
-            dob: faker.date.birthdate({ min: 18, max: 80, mode: 'age' }).toISOString().split('T')[0],
+            dob: faker.date.birthdate({ min: 18, max: 55, mode: 'age' }).toISOString().split('T')[0],
             relation: faker.helpers.arrayElement(RELATIONS),
             address: faker.location.streetAddress(),
             city: '71',           // Code Dakar (exemple)
             region: '52',         // Code région (exemple)
             country: '109',       // Code Sénégal (exemple)
             nationality: '35',    // Code Sénégalais (exemple)
+            ...overrides,
         };
     }
 }

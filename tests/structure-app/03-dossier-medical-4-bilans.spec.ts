@@ -82,6 +82,19 @@ test.describe("Module Dossier médical — Bilans d'analyses", () => {
     return order!;
   }
 
+  /**
+   * Non-régression (bug backend corrigé le 2026-11-19 : mettre à jour un bilan vidait ses analyses
+   * en base) : après rechargement, le bulletin liste toujours chacune des analyses du bilan.
+   */
+  async function expectAnalysesKept(page: Page) {
+    const detail = new HealthCheckDetailPage(page);
+    await detail.expectDetailLoaded();
+    await detail.expectAnalyseRowCount(bilanAnalyses.length, 20000);
+    for (const analyse of bilanAnalyses) {
+      await expect(page.locator('.analyses-modern table'), `Analyse "${analyse}" toujours au bulletin`).toContainText(analyse, { ignoreCase: true });
+    }
+  }
+
   /** Ouvre l'onglet "Résultat" du bilan et renvoie son panneau. */
   async function openResultTab(page: Page): Promise<Locator> {
     await page.getByRole('tab', { name: /Résultat/ }).or(page.locator('a.nav-link', { hasText: 'Résultat' })).first().click();
@@ -221,8 +234,9 @@ test.describe("Module Dossier médical — Bilans d'analyses", () => {
     await expect(page.getByText(/enregistrement de ce\(s\) résultat\(s\) a réussi/).first()).toBeVisible({ timeout: 20000 });
   });
 
-  test('Rouvrir le résultat : champs, résultats et pièce jointe conservés', async ({ page }) => {
+  test('Rouvrir le résultat : champs, résultats et pièce jointe conservés, analyses toujours au bulletin', async ({ page }) => {
     await page.goto(bilanUrl);
+    await expectAnalysesKept(page);
     const pane = await openResultTab(page);
     await new ConsultationFormPage(page, pane).expectValues(resultFields(), results);
     for (const [analyse, text] of Object.entries(resultTexts)) {
@@ -257,9 +271,13 @@ test.describe("Module Dossier médical — Bilans d'analyses", () => {
     await expect(page.getByText(/enregistrement de ce\(s\) résultat\(s\) a réussi/).first()).toBeVisible({ timeout: 20000 });
 
     await page.reload();
+    await expectAnalysesKept(page);
     const reloaded = await openResultTab(page);
     await expect(reloaded.locator('textarea[formcontrolname="diagnostic"]')).toHaveValue(diagnostic);
-    await expect(await resultInput(reloaded, first)).toHaveValue(resultTexts[first]);
+    // Résultat modifié pour la première analyse, inchangé pour les autres
+    for (const [analyse, text] of Object.entries(resultTexts)) {
+      await expect(await resultInput(reloaded, analyse), `Résultat de "${analyse}"`).toHaveValue(text);
+    }
   });
 
   // ======================================================================

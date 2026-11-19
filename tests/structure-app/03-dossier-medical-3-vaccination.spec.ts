@@ -111,9 +111,14 @@ test.describe('Module Dossier médical — Vaccination', () => {
     await expect(page.getByText('Vaccination mise à jour avec succès').first()).toBeVisible({ timeout: 15000 });
   });
 
-  test('Rouvrir la vaccination : les modifications sont conservées', async ({ page }) => {
+  test('Rouvrir la vaccination : les modifications sont conservées, la dose initiale toujours listée', async ({ page }) => {
     const item = await openVaccination(page);
     await new ConsultationFormPage(page, item).expectValues(editFields(), edited);
+    // Non-régression (bug backend corrigé le 2026-11-19 : mettre à jour une vaccination vidait ses
+    // doses en base) : la dose initiale, et elle seule, est toujours là avec son lot.
+    await expect(item.locator('.card[id^="accordionItemV_"]'), 'Dose initiale conservée').toHaveCount(1, { timeout: 15000 });
+    const initialDose = await openDose(item, created.date as string);
+    await expect(initialDose.locator('[formcontrolname="lot"]')).toHaveValue(created.lot as string);
   });
 
   test('Ajouter une dose avec tous les champs', async ({ page }) => {
@@ -153,6 +158,8 @@ test.describe('Module Dossier médical — Vaccination', () => {
     const item = await openVaccination(page);
     const dose = await openDose(item, dose2.date as string);
     await new ConsultationFormPage(page, dose).expectValues(doseFields(2), dose2);
+    // Non-régression : modifier une dose ne retire pas l'autre (dose initiale + dose ajoutée)
+    await expect(item.locator('.card[id^="accordionItemV_"]'), 'Les deux doses conservées').toHaveCount(2, { timeout: 15000 });
   });
 
   test('Une dose sans date ni dose est refusée', async ({ page }) => {
