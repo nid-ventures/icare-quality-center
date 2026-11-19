@@ -200,12 +200,13 @@ export class ConsultationFormPage {
   /**
    * Relevé de toutes les valeurs du formulaire (hors gestionnaire de prescriptions) : champ texte /
    * date / nombre, case cochée, option de liste, libellés d'un ng-select. Comparé avant / après un
-   * enregistrement pour prouver qu'aucune donnée n'a été perdue ni modifiée.
+   * enregistrement pour prouver qu'aucune donnée n'a été perdue ni modifiée. `exclude` : sélecteur des
+   * zones vérifiées à part (ex. fiches foetus, dont l'ordre d'affichage n'est pas stable).
    */
-  async snapshot(): Promise<Record<string, string>> {
+  async snapshot(exclude = ''): Promise<Record<string, string>> {
     await expect(this.root.locator('[formcontrolname]').first()).toBeAttached({ timeout: 15000 });
-    const entries = await this.root.locator('[formcontrolname]').evaluateAll(els => els
-      .filter(e => !e.closest('app-prescription-manager'))
+    const entries = await this.root.locator('[formcontrolname]').evaluateAll((els, excluded) => els
+      .filter(e => !e.closest('app-prescription-manager') && !(excluded && e.closest(excluded)))
       .map(e => {
         const name = e.getAttribute('formcontrolname') ?? '';
         const text = (s: string | null | undefined) => (s ?? '').replace(/\s+/g, ' ').trim();
@@ -218,7 +219,7 @@ export class ConsultationFormPage {
         }
         if (e instanceof HTMLSelectElement) return [name, text(e.selectedOptions[0]?.textContent)];
         return [name, (e as HTMLInputElement).value ?? text(e.textContent)];
-      }));
+      }), exclude);
     const values: Record<string, string> = {};
     for (const [key, value] of entries) {
       let k = key; let n = 2;
