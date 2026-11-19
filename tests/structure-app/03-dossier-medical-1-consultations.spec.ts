@@ -131,9 +131,28 @@ test.describe('Module Dossier médical — Consultations', () => {
       const v2 = def.fields(2);
       let filled1: FilledValues = {};
       let filled2: FilledValues = {};
+      // Prescriptions saisies (valeurs choisies), revérifiées après chaque enregistrement
+      let lab1: FilledValues = {};
+      let img1: FilledValues = {};
       const stamp = Date.now();
       const medication1 = `Ordonnance ${key} ${stamp}`;
       const medication2 = `Ordonnance 2 ${key} ${stamp}`;
+      const med1 = { title: medication1, medicationName: 'Paracétamol', posologie: '1 cp matin et soir', recommandations: 'Hydratation', duree: { nombre: 10, unite: 'Jours' as const } };
+      const med1Updated = { ...med1, posologie: '2 cp trois fois par jour' };
+      const med2 = { title: medication2, medicationName: 'Amoxicilline', posologie: '1 gélule matin et soir' };
+      // Champs saisis à la création et non touchés à la modification : doivent rester identiques
+      const unchanged = v1.filter(f => !v2.some(g => g.name === f.name));
+      // Après modification : valeurs modifiées ; une liste multiple complétée (actes à facturer)
+      // garde ses valeurs d'origine plus celles ajoutées
+      const afterUpdate = (): FilledValues => {
+        const merged: FilledValues = { ...filled2 };
+        for (const f of v2) {
+          if (f.kind === 'multiselect' && Array.isArray(filled1[f.name])) {
+            merged[f.name] = [...(filled1[f.name] as string[]), ...(filled2[f.name] as string[])];
+          }
+        }
+        return merged;
+      };
 
       test(`Créer une ${def.label.toLowerCase()} avec tous les champs et des prescriptions`, async ({ page }) => {
         const root = await startConsultation(page, patient, def);
@@ -159,9 +178,9 @@ test.describe('Module Dossier médical — Consultations', () => {
         }
 
         await test.step('Ajouter une ordonnance, une prescription d\'analyses et une d\'imagerie', async () => {
-          await prescriptions.addMedicationPrescription({ title: medication1, medicationName: 'Paracétamol', posologie: '1 cp matin et soir', recommandations: 'Hydratation', duree: { nombre: 10, unite: 'Jours' } });
-          await prescriptions.addLaboratoryPrescription(`Bilan de contrôle ${key}`);
-          await prescriptions.addImagingPrescription(`Imagerie de contrôle ${key}`, isoDate(7));
+          await prescriptions.addMedicationPrescription(med1);
+          lab1 = await prescriptions.addLaboratoryPrescription(`Bilan de contrôle ${key}`);
+          img1 = await prescriptions.addImagingPrescription(`Imagerie de contrôle ${key}`, isoDate(7));
         });
 
         await test.step('Enregistrer la consultation', async () => {
@@ -179,12 +198,12 @@ test.describe('Module Dossier médical — Consultations', () => {
           // ("Autres" coché + texte dans "Précisez les autres symptômes").
           if (key === 'dental') {
             // En dentaire, l'ajout de prescriptions ajoute un récapitulatif à la fin de la conclusion.
-            await form.expectValues(v1.filter(f => f.name !== 'conclusion'), filled1);
+            await form.expectValues(v1.filter(f => f.name !== 'conclusion'), filled1, { exact: true });
             const conclusion = root.locator('[formcontrolname="conclusion"]');
             await expect(conclusion).toHaveValue(new RegExp('^' + escapeRegExp(filled1.conclusion as string)));
             await expect(conclusion).toHaveValue(/=== PRESCRIPTIONS DENTAIRES ===/);
           } else {
-            await form.expectValues(v1, filled1);
+            await form.expectValues(v1, filled1, { exact: true });
           }
           if (key === 'prenatal') await expectDynamicResults(root, '');
         });
@@ -226,6 +245,22 @@ test.describe('Module Dossier médical — Consultations', () => {
           await expect(imaging).toContainText(`Imagerie de contrôle ${key}`);
           await expect(imaging.locator('app-imaging-prescription')).toHaveCount(0);
         });
+
+        await test.step('Contenu de chaque prescription : médicament, analyses choisies, examen et diagnostics', async () => {
+          await prescriptions.expectMedicationRow(medication1, { nom: med1.medicationName, posologie: med1.posologie, duree: '10 jours', recommandations: med1.recommandations });
+          await prescriptions.expectLaboratorySummary(lab1);
+          await prescriptions.expectImagingSummary(img1);
+        });
+      });
+
+      test(`Rouvrir chaque prescription de la ${def.label.toLowerCase()} en modification : tous ses champs sont restitués`, async ({ page }) => {
+        const root = await openExistingConsultation(page, patient, def);
+        await new ConsultationFormPage(page, root).activate(def.probe);
+        const prescriptions = new PrescriptionManagerPage(page);
+        // Formulaires refermés par « Annuler » : rien n'est enregistré
+        await test.step('Ordonnance', () => prescriptions.expectMedicationForm(med1));
+        await test.step("Bulletin d'analyses", () => prescriptions.expectLaboratoryForm(lab1));
+        await test.step("Bulletin d'imagerie", () => prescriptions.expectImagingForm(img1));
       });
 
       if (key === 'dental') {
@@ -248,9 +283,9 @@ test.describe('Module Dossier médical — Consultations', () => {
         // Les prescriptions sont modifiées avant les champs : en pédiatrie (et en standard), toute
         // modification de prescription réécrit le champ "Ordonnance de la consultation".
         await test.step('Modifier, supprimer et ajouter des prescriptions', async () => {
-          await prescriptions.editFirstMedication('2 cp trois fois par jour');
+          await prescriptions.editFirstMedication(med1Updated.posologie);
           await prescriptions.removeFirst('Imagerie');
-          await prescriptions.addMedicationPrescription({ title: medication2, medicationName: 'Amoxicilline', posologie: '1 gélule matin et soir' });
+          await prescriptions.addMedicationPrescription(med2);
         });
 
         await test.step('Modifier tous les champs', async () => {
@@ -281,8 +316,12 @@ test.describe('Module Dossier médical — Consultations', () => {
         const prescriptions = new PrescriptionManagerPage(page);
 
         await test.step('Vérifier chaque champ modifié', async () => {
-          await form.expectValues(v2, filled2);
+          await form.expectValues(v2, afterUpdate(), { exact: true });
           if (key === 'prenatal') await expectDynamicResults(root, ' (modifié)');
+        });
+
+        await test.step('Champs non modifiés : valeurs de la création conservées', async () => {
+          await form.expectValues(unchanged, filled1, { exact: true });
         });
 
         if (key === 'dental') {
@@ -300,8 +339,43 @@ test.describe('Module Dossier médical — Consultations', () => {
           await prescriptions.expectCount('Analyses', 1);
           await prescriptions.expectCount('Imagerie', 0);
           await prescriptions.expectPrescriptionText('Ordonnance', medication2);
-          await prescriptions.expectPrescriptionDetail('Ordonnance', medication1, '2 cp trois fois par jour');
+          await prescriptions.expectPrescriptionDetail('Ordonnance', medication1, med1Updated.posologie);
         });
+
+        await test.step('Contenu des prescriptions : seule la posologie modifiée change, nouvelle ordonnance complète, analyses inchangées', async () => {
+          await prescriptions.expectMedicationRow(medication1, { nom: med1.medicationName, posologie: med1Updated.posologie, duree: '10 jours', recommandations: med1.recommandations });
+          await prescriptions.expectMedicationRow(medication2, { nom: med2.medicationName, posologie: med2.posologie });
+          await prescriptions.expectLaboratorySummary(lab1);
+        });
+      });
+
+      test(`Rouvrir les prescriptions modifiées de la ${def.label.toLowerCase()} : tous leurs champs sont restitués`, async ({ page }) => {
+        const root = await openExistingConsultation(page, patient, def);
+        await new ConsultationFormPage(page, root).activate(def.probe);
+        const prescriptions = new PrescriptionManagerPage(page);
+        await test.step('Ordonnance modifiée (seule la posologie change)', () => prescriptions.expectMedicationForm(med1Updated));
+        await test.step('Ordonnance ajoutée', () => prescriptions.expectMedicationForm(med2));
+        await test.step("Bulletin d'analyses inchangé", () => prescriptions.expectLaboratoryForm(lab1));
+      });
+
+      test(`Enregistrer la ${def.label.toLowerCase()} sans rien modifier : aucune donnée ne change`, async ({ page }) => {
+        let root = await openExistingConsultation(page, patient, def);
+        let form = new ConsultationFormPage(page, root);
+        let prescriptions = new PrescriptionManagerPage(page);
+        const fieldsBefore = await form.snapshot();
+        const prescriptionsBefore = await prescriptions.snapshot();
+        await form.activate(def.probe);
+        await form.saveUpdate();
+        await new PortalPage(page).openMenu('Dossiers patients', '**/patient/patients');
+        root = await openExistingConsultation(page, patient, def);
+        form = new ConsultationFormPage(page, root);
+        prescriptions = new PrescriptionManagerPage(page);
+        // Chaque champ du formulaire à l'identique : rien de perdu, rien d'ajouté ni de réécrit
+        await expect.poll(() => form.snapshot(), { timeout: 20000, message: 'Champs du formulaire inchangés' }).toEqual(fieldsBefore);
+        expect(await prescriptions.snapshot(), 'Prescriptions inchangées').toEqual(prescriptionsBefore);
+        await prescriptions.expectMedicationRow(medication1, { nom: med1.medicationName, posologie: med1Updated.posologie, duree: '10 jours', recommandations: med1.recommandations });
+        await prescriptions.expectMedicationRow(medication2, { nom: med2.medicationName, posologie: med2.posologie });
+        await prescriptions.expectLaboratorySummary(lab1);
       });
 
       if (key === 'pediatric') {
@@ -379,6 +453,20 @@ test.describe('Module Dossier médical — Consultations', () => {
         const consultationPage = await reopen(page);
         await consultationPage.expectSavedValues({ ...created, report: updated.report, summary: updated.summary });
       });
+    });
+
+    test('Enregistrer la consultation standard sans rien modifier : aucune donnée ne change', async ({ page }) => {
+      const form = () => new ConsultationFormPage(page, page.locator('app-consultation-standard-edit').filter({ visible: true }).first());
+      let consultationPage = await reopen(page);
+      await expect(consultationPage.reportInput).toBeVisible({ timeout: 15000 });
+      const before = await form().snapshot();
+      await consultationPage.activateForm();
+      await consultationPage.updateConsultation();
+      await expect(consultationPage.confirmButton).not.toBeVisible();
+      await new PortalPage(page).openMenu('Dossiers patients', '**/patient/patients');
+      consultationPage = await reopen(page);
+      await expect(consultationPage.reportInput).toBeVisible({ timeout: 15000 });
+      await expect.poll(() => form().snapshot(), { timeout: 20000, message: 'Champs du formulaire inchangés' }).toEqual(before);
     });
 
     test('Supprimer la consultation standard', async ({ page }) => {

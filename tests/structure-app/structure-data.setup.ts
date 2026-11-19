@@ -32,9 +32,16 @@ async function specialityOf(api: StructureApi, type: string, code: number): Prom
  * refuse d'ajouter un acte déjà présent), ajoutés sinon. Renvoie ce qui a été fait.
  */
 async function ensureScenarioActs(api: StructureApi): Promise<string[]> {
-  // Tous les actes de la structure, désactivés compris (la session ne garde que les actifs)
-  const { json: all } = await api.call('GET', '/his/billableacts');
-  const acts: (StructureAct & { id: number })[] = Array.isArray(all?.result) ? all.result : [];
+  // Tous les actes de la structure, désactivés compris (la session ne garde que les actifs).
+  // Une réponse en erreur ou vide (service qui redémarre) ferait croire tous les actes absents
+  // et l'ajout serait refusé (409 « déjà présent ») : relue jusqu'à obtenir la liste.
+  let acts: (StructureAct & { id: number })[] = [];
+  await expect(async () => {
+    const { status, json: all } = await api.call('GET', '/his/billableacts');
+    expect(status, 'Liste des actes de la structure (GET /his/billableacts)').toBe(200);
+    expect(Array.isArray(all?.result) && all.result.length > 0, 'Actes de la structure lus').toBe(true);
+    acts = all.result;
+  }).toPass({ timeout: 60000, intervals: [2000, 5000] });
   const find = (key: keyof typeof ACTS) => acts.filter(a => a.type === ACT_REFS[key].type && a.code === ACT_REFS[key].code);
   const keys = (Object.keys(ACT_REFS) as (keyof typeof ACTS)[]).filter(key => !find(key).some(a => a.active !== false));
   const done: string[] = [];
