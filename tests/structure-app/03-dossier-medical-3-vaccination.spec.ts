@@ -3,6 +3,7 @@ import { test, expect } from '../../fixtures/structure.fixture';
 import { createDossierPatient, openDossier, DOSSIER_SETUP_TIMEOUT, type DossierPatient } from '../../fixtures/dossier-patient';
 import { DossierSearchPage } from '../../pages/structure/patient/dossier-search.page';
 import { VaccinationPage } from '../../pages/structure/vaccination/vaccination.page';
+import { PortalPage } from '../../pages/structure/portal/portal.page';
 import { ConsultationFormPage, type FieldSpec, type FilledValues } from '../../pages/structure/consultation/consultation-form.page';
 import { isoDate } from '../../test-data/consultation-fields';
 import { clearPrefilledConsultant } from '../../pages/structure/shared/consultant';
@@ -57,6 +58,29 @@ const confirm = async (page: Page) => {
   await button.click();
 };
 
+const DOSE = 'app-vaccination-simple-item-item';
+const doseCards = (item: ReturnType<Page['locator']>) => item.locator('.card[id^="accordionItemV_"]');
+
+// Champs de la vaccination (hors doses) relus après chaque enregistrement
+const vaccinationFields = (): FieldSpec[] => createFields().filter(f => ['type', 'caregiverId', 'date', 'commentary', 'billableActs'].includes(f.name));
+const doseSpec: FieldSpec[] = [
+  { name: 'date', kind: 'date', value: '' },
+  { name: 'dose', kind: 'select' },
+  { name: 'lot', kind: 'text', value: '' },
+];
+
+/** Une dose (repérée par sa date) restitue sa date, sa dose et son lot. */
+async function expectDose(page: Page, item: ReturnType<Page['locator']>, values: FilledValues) {
+  const dose = await openDose(item, values.date as string);
+  await new ConsultationFormPage(page, dose).expectValues(doseSpec, values);
+}
+
+/** Doses attendues : exactement ce nombre, chacune avec toutes ses valeurs. */
+async function expectDoses(page: Page, item: ReturnType<Page['locator']>, expected: FilledValues[]) {
+  await expect(doseCards(item), `${expected.length} dose(s)`).toHaveCount(expected.length, { timeout: 15000 });
+  for (const values of expected) await expectDose(page, item, values);
+}
+
 test.describe('Module Dossier médical — Vaccination', () => {
   test.describe.configure({ mode: 'serial' });
   let patient: DossierPatient;
@@ -64,6 +88,11 @@ test.describe('Module Dossier médical — Vaccination', () => {
   let edited: FilledValues = {};
   let dose1: FilledValues = {};
   let dose2: FilledValues = {};
+  // Dose initiale (saisie à la création de la vaccination) et actes à facturer ajoutés en modification
+  const initialDose = (): FilledValues => ({ date: created.date, dose: created.dose, lot: created.lot });
+  let addedActs: string[] = [];
+  /** Vaccination après modification : champs modifiés, type inchangé, actes d'origine + ajoutés. */
+  const afterEdit = (): FilledValues => ({ ...created, ...edited, billableActs: [...(created.billableActs as string[]), ...addedActs] });
 
   test.beforeAll(async ({ browser }) => {
     test.setTimeout(DOSSIER_SETUP_TIMEOUT);
@@ -76,6 +105,13 @@ test.describe('Module Dossier médical — Vaccination', () => {
     await openDossier(page, patient);
     await new VaccinationPage(page).gotoFromPatientDashboard();
   });
+
+  /** Repart de la recherche des dossiers et rouvre la vaccination : données relues sur le serveur. */
+  async function reopenDossier(page: Page) {
+    await new PortalPage(page).openMenu('Dossiers patients', '**/patient/patients');
+    await openDossier(page, patient);
+    await new VaccinationPage(page).gotoFromPatientDashboard();
+  }
 
   /** Déplie la (seule) vaccination de la patiente. */
   async function openVaccination(page: Page) {
@@ -94,31 +130,47 @@ test.describe('Module Dossier médical — Vaccination', () => {
     await expect(vaccination.firstVaccinationHeader).toContainText(created.type as string, { ignoreCase: true });
   });
 
-  test('Rouvrir la vaccination : les champs sont conservés et la dose initiale est listée', async ({ page }) => {
+  test('Rouvrir la vaccination : tous les champs, actes à facturer et dose initiale (date, dose, lot) conservés', async ({ page }) => {
     const item = await openVaccination(page);
-    await new ConsultationFormPage(page, item).expectValues(
-      createFields().filter(f => ['type', 'caregiverId', 'date', 'commentary', 'billableActs'].includes(f.name)), created);
-    const initialDose = await openDose(item, created.date as string);
-    await expect(initialDose.locator('[formcontrolname="lot"]')).toHaveValue(created.lot as string);
+    await new ConsultationFormPage(page, item).expectValues(vaccinationFields(), created, { exact: true });
+    await expectDoses(page, item, [initialDose()]);
   });
 
-  test('Modifier la vaccination (consultant, date, commentaire)', async ({ page }) => {
+  test("Annuler une modification de la vaccination : rien n'est enregistré", async ({ page }) => {
+    let item = await openVaccination(page);
+    const form = () => new ConsultationFormPage(page, item);
+    const before = await form().snapshot(DOSE);
+    await item.getByRole('button', { name: /Modifier la vaccination/ }).click();
+    await form().fill([...editFields(), { name: 'billableActs', kind: 'multiselect', count: 1 }]);
+    await item.getByRole('button', { name: /^\W*Annuler$/ }).click();
+    await test.step('Valeurs restaurées à l\'écran', async () => {
+      await expect.poll(() => form().snapshot(DOSE), { timeout: 15000, message: 'Valeurs restaurées' }).toEqual(before);
+    });
+    await test.step('Après rechargement : valeurs de la création', async () => {
+      await reopenDossier(page);
+      item = await openVaccination(page);
+      await form().expectValues(vaccinationFields(), created, { exact: true });
+      await expectDoses(page, item, [initialDose()]);
+    });
+  });
+
+  test('Modifier la vaccination (consultant, date, commentaire) et ajouter un acte à facturer', async ({ page }) => {
     const item = await openVaccination(page);
     await item.getByRole('button', { name: /Modifier la vaccination/ }).click();
-    edited = await new ConsultationFormPage(page, item).fill(editFields());
+    const form = new ConsultationFormPage(page, item);
+    edited = await form.fill(editFields());
+    addedActs = (await form.fill([{ name: 'billableActs', kind: 'multiselect', count: 1 }])).billableActs as string[];
     await item.getByRole('button', { name: /^\W*Enregistrer$/ }).click();
     await confirm(page);
     await expect(page.getByText('Vaccination mise à jour avec succès').first()).toBeVisible({ timeout: 15000 });
   });
 
-  test('Rouvrir la vaccination : les modifications sont conservées, la dose initiale toujours listée', async ({ page }) => {
+  test('Rouvrir la vaccination : modifications conservées, type et actes d\'origine inchangés, dose initiale intacte', async ({ page }) => {
     const item = await openVaccination(page);
-    await new ConsultationFormPage(page, item).expectValues(editFields(), edited);
+    await new ConsultationFormPage(page, item).expectValues(vaccinationFields(), afterEdit(), { exact: true });
     // Non-régression (bug backend corrigé le 2026-11-19 : mettre à jour une vaccination vidait ses
-    // doses en base) : la dose initiale, et elle seule, est toujours là avec son lot.
-    await expect(item.locator('.card[id^="accordionItemV_"]'), 'Dose initiale conservée').toHaveCount(1, { timeout: 15000 });
-    const initialDose = await openDose(item, created.date as string);
-    await expect(initialDose.locator('[formcontrolname="lot"]')).toHaveValue(created.lot as string);
+    // doses en base) : la dose initiale, et elle seule, est toujours là avec toutes ses valeurs.
+    await expectDoses(page, item, [initialDose()]);
   });
 
   test('Ajouter une dose avec tous les champs', async ({ page }) => {
@@ -143,6 +195,12 @@ test.describe('Module Dossier médical — Vaccination', () => {
     await expect(doses).toHaveCount(before + 1, { timeout: 15000 });
   });
 
+  test('Rouvrir la vaccination : dose ajoutée complète, dose initiale et vaccination inchangées', async ({ page }) => {
+    const item = await openVaccination(page);
+    await expectDoses(page, item, [initialDose(), dose1]);
+    await new ConsultationFormPage(page, item).expectValues(vaccinationFields(), afterEdit(), { exact: true });
+  });
+
   test('Modifier une dose (tous les champs)', async ({ page }) => {
     const item = await openVaccination(page);
     const dose = await openDose(item, dose1.date as string);
@@ -158,8 +216,36 @@ test.describe('Module Dossier médical — Vaccination', () => {
     const item = await openVaccination(page);
     const dose = await openDose(item, dose2.date as string);
     await new ConsultationFormPage(page, dose).expectValues(doseFields(2), dose2);
-    // Non-régression : modifier une dose ne retire pas l'autre (dose initiale + dose ajoutée)
-    await expect(item.locator('.card[id^="accordionItemV_"]'), 'Les deux doses conservées').toHaveCount(2, { timeout: 15000 });
+    // Non-régression : modifier une dose ne retire ni ne modifie l'autre (dose initiale + dose modifiée)
+    await expectDoses(page, item, [initialDose(), dose2]);
+    await new ConsultationFormPage(page, item).expectValues(vaccinationFields(), afterEdit(), { exact: true });
+  });
+
+  test('Enregistrer la vaccination sans rien modifier : aucune donnée ni dose ne change', async ({ page }) => {
+    let item = await openVaccination(page);
+    const before = await new ConsultationFormPage(page, item).snapshot(DOSE);
+    await item.getByRole('button', { name: /Modifier la vaccination/ }).click();
+    await item.getByRole('button', { name: /^\W*Enregistrer$/ }).click();
+    await confirm(page);
+    await expect(page.getByText('Vaccination mise à jour avec succès').first()).toBeVisible({ timeout: 15000 });
+    await reopenDossier(page);
+    item = await openVaccination(page);
+    await expect.poll(() => new ConsultationFormPage(page, item).snapshot(DOSE), { timeout: 20000, message: 'Champs inchangés' }).toEqual(before);
+    await expectDoses(page, item, [initialDose(), dose2]);
+  });
+
+  test("Enregistrer une dose sans rien modifier : ni elle ni l'autre dose ne change", async ({ page }) => {
+    let item = await openVaccination(page);
+    const dose = await openDose(item, dose2.date as string);
+    const form = new ConsultationFormPage(page, dose);
+    await form.activate('lot');
+    await dose.locator('button.btn-success').click();
+    await confirm(page);
+    await expect(page.getByText(/r[ée]ussi/i).first()).toBeVisible({ timeout: 15000 });
+    await reopenDossier(page);
+    item = await openVaccination(page);
+    await expectDoses(page, item, [initialDose(), dose2]);
+    await new ConsultationFormPage(page, item).expectValues(vaccinationFields(), afterEdit(), { exact: true });
   });
 
   test('Une dose sans date ni dose est refusée', async ({ page }) => {
@@ -188,6 +274,12 @@ test.describe('Module Dossier médical — Vaccination', () => {
     await dose.getByRole('button', { name: /Supprimer/ }).click();
     await confirm(page);
     await expect(doses).toHaveCount(before - 1, { timeout: 15000 });
+    await test.step('Après rechargement : seule la dose initiale reste, intacte, et la vaccination est inchangée', async () => {
+      await reopenDossier(page);
+      const reopened = await openVaccination(page);
+      await expectDoses(page, reopened, [initialDose()]);
+      await new ConsultationFormPage(page, reopened).expectValues(vaccinationFields(), afterEdit(), { exact: true });
+    });
   });
 
   test('Supprimer la vaccination', async ({ page }) => {
