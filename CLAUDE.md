@@ -103,7 +103,7 @@ npm run test:local:isolation          # 10-isolation.spec.ts on the current TENA
 
 **Visual runs**: with `SLOWMO>0` (`npm run test:visuel`, 1.5 s per action) a banner (`fixtures/visual-notes.ts`, closed shadow DOM, invisible to locators) shows module › section, test and the last 3 steps (current one in green), from the very opening of each test page; each new step pauses `VISUAL_PAUSE` ms (1500 by default) so it can be read.
 
-**App behaviours to know**: creating a patient redirects to its medical dashboard (switching to the Dossier médical module) and may trigger the duplicate-detection panel; in the patient model `firstName` holds the family name and `lastName` the given name; Base patients opens the administrative file on row click, Dossier médical is "search first" and opens the medical dashboard.
+**App behaviours to know**: leaving a page with an unsaved entry (consultation, bilan, imagerie, vaccination, pathway step) shows the app popup « … NON ENREGISTRÉE(S) » (Rester sur la page / Quitter quand même; `pages/structure/shared/unsaved-dialog.ts`); a new consultation left unsaved is kept as a local draft offered on return (banner Reprendre / Supprimer), tested in 03-1; the browser's native beforeunload warning is accepted by the `beforeUnload` fixture so reloads in tests go through; creating a patient redirects to its medical dashboard (switching to the Dossier médical module) and may trigger the duplicate-detection panel; in the patient model `firstName` holds the family name and `lastName` the given name; Base patients opens the administrative file on row click, Dossier médical is "search first" and opens the medical dashboard.
 
 ## Configuration
 

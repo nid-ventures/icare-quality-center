@@ -10,6 +10,7 @@ import { DentalChartPage, ADULT_TEETH, CHILD_TEETH } from '../../pages/structure
 import { ConsultationStandardDataGenerator, type ConsultationData } from '../../pages/structure/generator/consultation-standard-data-generator';
 import { prenatalFields, planificationFields, pediatricFields, dentalFields, isoDate } from '../../test-data/consultation-fields';
 import { clearPrefilledConsultant } from '../../pages/structure/shared/consultant';
+import { UnsavedDialog, DraftBanner } from '../../pages/structure/shared/unsaved-dialog';
 
 test.setTimeout(240000);
 
@@ -634,6 +635,134 @@ test.describe('Module Dossier médical — Consultations', () => {
       await chart.selectPatientType('adult');
       await chart.recordTooth({ number: '48', diagnostic: 'Dent incluse', treatment: 'Alvulsion dentaire' });
       await chart.expectStats({ examined: 1, extractions: 1, treatments: 0 });
+    });
+  });
+
+  // ======================================================================
+  // Saisie non enregistrée : avertissement avant de quitter et brouillon sur le poste
+  // ======================================================================
+  test.describe('Consultation non enregistrée — avertissement et brouillon', () => {
+    const def = TYPES.pediatric;
+    const leave = (page: Page) => page.locator('.patient-header .btn-back').click();
+    const report = (root: ReturnType<Page['locator']>) => root.locator('[formcontrolname="report"]');
+    const LEAVE_TITLE = /CONSULTATION NON ENREGISTRÉE/;
+
+    /** Revient sur la page Consultations depuis le tableau de bord du patient. */
+    async function backToConsultations(page: Page) {
+      const consultationPage = new ConsultationPage(page);
+      await expect(page).toHaveURL(/patient-dashboard/);
+      await consultationPage.goToConsultationTab();
+      await consultationPage.expectConsultationsListLoaded();
+      return consultationPage;
+    }
+
+    test('Quitter la page Consultations sans rien saisir : aucun avertissement', async ({ page }) => {
+      await startConsultation(page, patient, def);
+      await leave(page);
+      await expect(page, 'Tableau de bord ouvert directement').toHaveURL(/patient-dashboard/);
+      await new UnsavedDialog(page).expectClosed();
+    });
+
+    test('Quitter une consultation non enregistrée : avertissement, « Rester sur la page » garde la saisie', async ({ page }) => {
+      const root = await startConsultation(page, patient, def);
+      const text = `Brouillon QA ${Date.now()}`;
+      await report(root).fill(text);
+      const dialog = new UnsavedDialog(page);
+      await test.step('Retour : la popup prévient que la consultation est gardée en brouillon', async () => {
+        await leave(page);
+        await dialog.expectOpen(LEAVE_TITLE, /gardées en brouillon sur ce poste/);
+      });
+      await test.step('« Rester sur la page » : saisie intacte', async () => {
+        await dialog.answer(/Rester sur la page/);
+        await expect(page).toHaveURL(/consultations\//);
+        await expect(report(root)).toHaveValue(text);
+      });
+      await test.step('Annuler puis « Abandonner la saisie » : formulaire refermé', async () => {
+        await new ConsultationPage(page).cancelButton.click();
+        await dialog.expectOpen(LEAVE_TITLE, /seront perdues/);
+        await dialog.answer(/Abandonner la saisie/);
+        await expect(consultationRoot(page, def.createRoot)).toHaveCount(0);
+      });
+    });
+
+    test('Quitter quand même puis revenir : le brouillon (formulaire et ordonnance) est proposé et « Reprendre » le restaure', async ({ page }) => {
+      const root = await startConsultation(page, patient, def);
+      const text = `Brouillon QA ${Date.now()}`;
+      const prescriptions = new PrescriptionManagerPage(page);
+      await test.step('Saisir le compte rendu et une ordonnance, sans enregistrer', async () => {
+        await report(root).fill(text);
+        await prescriptions.addMedicationPrescription({ medicationName: 'Ibuprofène', posologie: '1 cp le soir' });
+      });
+      const dialog = new UnsavedDialog(page);
+      await test.step('Quitter quand même', async () => {
+        await leave(page);
+        await dialog.expectOpen(LEAVE_TITLE);
+        await dialog.answer(/Quitter quand même/);
+      });
+      const banner = new DraftBanner(page);
+      await test.step('Retour sur Consultations : brouillon proposé avec son type et sa prescription', async () => {
+        await backToConsultations(page);
+        await expect(banner.root).toBeVisible();
+        await expect(banner.root).toContainText(/Consultation non enregistrée/);
+        await expect(banner.root).toContainText(/pédiatrique/i);
+        await expect(banner.root).toContainText(/\(1 prescription\)/);
+      });
+      await test.step('« Reprendre » : formulaire et ordonnance restaurés', async () => {
+        await banner.resume.click();
+        const resumed = consultationRoot(page, def.createRoot);
+        await expect(resumed).toBeVisible({ timeout: 15000 });
+        await expect(report(resumed)).toHaveValue(text);
+        await prescriptions.expectCount('Ordonnance', 1);
+        await expect(await prescriptions.row('Ordonnance', 'Ibuprofène')).toBeVisible();
+        await expect(banner.root, 'Bandeau retiré').toHaveCount(0);
+      });
+      await test.step('Annuler et abandonner : plus de brouillon au retour', async () => {
+        await new ConsultationPage(page).cancelButton.click();
+        await dialog.answer(/Abandonner la saisie/);
+        await leave(page);
+        await backToConsultations(page);
+        await expect(banner.root).toHaveCount(0);
+      });
+    });
+
+    test('Supprimer le brouillon retrouvé : confirmation, puis plus proposé', async ({ page }) => {
+      const root = await startConsultation(page, patient, def);
+      await report(root).fill(`Brouillon à supprimer QA ${Date.now()}`);
+      const dialog = new UnsavedDialog(page);
+      await leave(page);
+      await dialog.answer(/Quitter quand même/);
+      await backToConsultations(page);
+      const banner = new DraftBanner(page);
+      await expect(banner.root).toBeVisible();
+      await test.step('« Supprimer » puis « Annuler » : le brouillon reste', async () => {
+        await banner.discard.click();
+        await dialog.expectOpen(/SUPPRIMER LE BROUILLON/, /Supprimer définitivement/);
+        await dialog.answer(/^Annuler$/);
+        await expect(banner.root).toBeVisible();
+      });
+      await test.step('« Supprimer » confirmé : bandeau retiré, même après rechargement', async () => {
+        await banner.discard.click();
+        await dialog.answer(/^Supprimer$/);
+        await expect(banner.root).toHaveCount(0);
+        await page.reload();
+        await new ConsultationPage(page).expectConsultationsListLoaded();
+        await expect(banner.root).toHaveCount(0);
+      });
+    });
+
+    test('Annuler une saisie en cours : confirmation, « Revenir à la saisie » garde le formulaire', async ({ page }) => {
+      const root = await startConsultation(page, patient, def);
+      const text = `Brouillon QA ${Date.now()}`;
+      await report(root).fill(text);
+      const consultationPage = new ConsultationPage(page);
+      const dialog = new UnsavedDialog(page);
+      await consultationPage.cancelButton.click();
+      await dialog.expectOpen(LEAVE_TITLE, /seront perdues/);
+      await dialog.answer(/Revenir à la saisie/);
+      await expect(report(root), 'Saisie intacte').toHaveValue(text);
+      await consultationPage.cancelButton.click();
+      await dialog.answer(/Abandonner la saisie/);
+      await expect(consultationPage.newConsultationBar).toBeVisible();
     });
   });
 

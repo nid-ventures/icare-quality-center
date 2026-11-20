@@ -2,7 +2,8 @@ import { type Page, type Locator, expect } from '@playwright/test';
 import { MyConfigurationPage } from './configuration.page';
 
 export type StructureDetails = { name: string; primaryEmail: string; primaryStreet: string; postalCode: string };
-export type InvoiceSettings = { policy: string; color: string; header: string; footer: string };
+/** color : texte ; titleColor : titres et tableaux (facture, ordonnance, bulletins). */
+export type InvoiceSettings = { policy: string; color: string; titleColor: string; header: string; footer: string };
 
 /**
  * Administration > Paramètres : "Détails de la structure" (app-hi-details) et "Configuration de
@@ -102,6 +103,7 @@ export class StructureSettingsPage {
     return {
       policy: await this.invoiceInput('policy').inputValue(),
       color: await this.invoiceInput('color').inputValue(),
+      titleColor: await this.invoiceInput('titleColor').inputValue(),
       header: await this.invoiceInput('header').inputValue(),
       footer: await this.invoiceInput('footer').inputValue(),
     };

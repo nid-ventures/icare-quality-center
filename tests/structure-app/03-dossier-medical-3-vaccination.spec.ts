@@ -7,6 +7,7 @@ import { PortalPage } from '../../pages/structure/portal/portal.page';
 import { ConsultationFormPage, type FieldSpec, type FilledValues } from '../../pages/structure/consultation/consultation-form.page';
 import { isoDate } from '../../test-data/consultation-fields';
 import { clearPrefilledConsultant } from '../../pages/structure/shared/consultant';
+import { UnsavedDialog } from '../../pages/structure/shared/unsaved-dialog';
 
 test.setTimeout(240000);
 
@@ -151,6 +152,32 @@ test.describe('Module Dossier médical — Vaccination', () => {
       item = await openVaccination(page);
       await form().expectValues(vaccinationFields(), created, { exact: true });
       await expectDoses(page, item, [initialDose()]);
+    });
+  });
+
+  test('Quitter la vaccination en cours de modification : avertissement, rien n\'est enregistré', async ({ page }) => {
+    const item = await openVaccination(page);
+    await item.getByRole('button', { name: /Modifier la vaccination/ }).click();
+    const commentary = item.locator('[formcontrolname="commentary"]');
+    await commentary.fill('Commentaire non enregistré QA');
+    const dialog = new UnsavedDialog(page);
+    const leave = () => page.locator('.btn-back').filter({ visible: true }).first().click();
+    await test.step('Retour : avertissement « Modifications non enregistrées »', async () => {
+      await leave();
+      await dialog.expectOpen(/MODIFICATIONS NON ENREGISTRÉES/, /seront perdues si vous quittez la page/);
+    });
+    await test.step('« Rester sur la page » : saisie intacte', async () => {
+      await dialog.answer(/Rester sur la page/);
+      await expect(page).toHaveURL(/vaccinations\//);
+      await expect(commentary).toHaveValue('Commentaire non enregistré QA');
+    });
+    await test.step('« Quitter quand même » : tableau de bord, la vaccination garde ses valeurs', async () => {
+      await leave();
+      await dialog.answer(/Quitter quand même/);
+      await expect(page).toHaveURL(/patient-dashboard/);
+      await new VaccinationPage(page).gotoFromPatientDashboard();
+      const reopened = await openVaccination(page);
+      await new ConsultationFormPage(page, reopened).expectValues(vaccinationFields(), created, { exact: true });
     });
   });
 

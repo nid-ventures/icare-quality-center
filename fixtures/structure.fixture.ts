@@ -11,6 +11,12 @@ type StructureFixtures = {
   /** Bandeau "module › rubrique / test / étape" affiché pendant les tests visuels (SLOWMO > 0). */
   visualNotes: void;
   /**
+   * Avertissement natif du navigateur (beforeunload) quand une saisie n'est pas enregistrée : accepté
+   * pour les rechargements / navigations par URL des tests. La popup de l'application (navigation
+   * interne) reste à traiter par les tests (UnsavedDialog).
+   */
+  beforeUnload: void;
+  /**
    * Portail iCare déjà ouvert (`/modules`) avec la session administrateur partagée
    * (storageState écrit par auth.setup.ts). Chaque test part donc d'un état connecté.
    */
@@ -58,6 +64,14 @@ export const test = base.extend<StructureFixtures>({
     await use();
     currentPage = null;
     currentNote = null;
+  }, { auto: true }],
+
+  beforeUnload: [async ({ page }, use) => {
+    // Un écouteur remplace le refus automatique de Playwright : les autres boîtes restent refusées
+    page.on('dialog', dialog => {
+      void (dialog.type() === 'beforeunload' ? dialog.accept() : dialog.dismiss()).catch(() => {});
+    });
+    await use();
   }, { auto: true }],
 
   portal: async ({ page }, use) => {

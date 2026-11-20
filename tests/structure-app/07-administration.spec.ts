@@ -1575,9 +1575,9 @@ test.describe('Module Administration', () => {
       // La police enregistrée n'est pas réaffichée par le formulaire : elle est lue dans la session
       const saved = await page.evaluate(() => JSON.parse(localStorage.getItem('refdatahi') ?? '{}'));
       const original = { ...(await settings.readInvoice()), policy: saved.policy || 'Calibri' };
-      const changed = { policy: 'Arial', color: '#1a5276', header: `En-tête QA ${stamp}`, footer: `Pied de page QA ${stamp}` };
+      const changed = { policy: 'Arial', color: '#1a5276', titleColor: '#7b241c', header: `En-tête QA ${stamp}`, footer: `Pied de page QA ${stamp}` };
       try {
-        await test.step('Modifier police, couleur, en-tête et pied de page, enregistrer (sans déconnexion)', async () => {
+        await test.step('Modifier police, couleurs du texte et des titres, en-tête et pied de page, enregistrer (sans déconnexion)', async () => {
           await settings.enableInvoice();
           await settings.fillInvoice(changed);
           await settings.save(settings.invoiceSave);
@@ -1588,15 +1588,18 @@ test.describe('Module Administration', () => {
           const shown = await settings.readInvoice();
           expect.soft(shown.header, 'En-tête').toBe(changed.header);
           expect.soft(shown.footer, 'Pied de page').toBe(changed.footer);
-          expect.soft(shown.color, 'Couleur').toBe(changed.color);
+          expect.soft(shown.color, 'Couleur du texte').toBe(changed.color);
+          expect.soft(shown.titleColor, 'Couleur des titres et tableaux').toBe(changed.titleColor);
           expect.soft(shown.policy, 'Police réaffichée').toBe(changed.policy);
         });
-        await test.step('La facture imprimée applique en-tête, pied de page, police et couleur', async () => {
+        await test.step('La facture imprimée applique en-tête, pied de page, police et les deux couleurs', async () => {
           const { text, html } = await printFirstInvoice(page);
           expect.soft(text, 'En-tête imprimé').toContain(changed.header);
           expect.soft(text, 'Pied de page imprimé').toContain(changed.footer);
           expect.soft(html, 'Police').toMatch(/font-family:\s*Arial/);
-          expect.soft(html.toLowerCase(), 'Couleur').toMatch(/#1a5276|rgb\(26,\s*82,\s*118\)/);
+          expect.soft(html.toLowerCase(), 'Couleur du texte').toMatch(/#1a5276|rgb\(26,\s*82,\s*118\)/);
+          // Titre de la facture et en-tête du tableau
+          expect.soft(html.toLowerCase(), 'Couleur des titres et tableaux').toMatch(/#7b241c|rgb\(123,\s*36,\s*28\)/);
         });
       } finally {
         await test.step("Remettre les valeurs d'origine", async () => {
@@ -1613,8 +1616,8 @@ test.describe('Module Administration', () => {
           settings = await openSettings(page);
           await settings.openInvoice();
           const restored = await settings.readInvoice();
-          expect({ header: restored.header, footer: restored.footer, color: restored.color }, "Valeurs d'origine")
-            .toEqual({ header: original.header, footer: original.footer, color: original.color });
+          expect({ header: restored.header, footer: restored.footer, color: restored.color, titleColor: restored.titleColor }, "Valeurs d'origine")
+            .toEqual({ header: original.header, footer: original.footer, color: original.color, titleColor: original.titleColor });
         });
       }
     });
