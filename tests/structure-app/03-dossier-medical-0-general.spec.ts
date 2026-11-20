@@ -9,7 +9,7 @@ import { RenseignementsGenerauxPage } from '../../pages/structure/patient/rensei
 import { AntecedentPage } from '../../pages/structure/patient/antecedant_patient.page';
 import { ConsultationPage } from '../../pages/structure/consultation/consultation.page';
 import { OrdonnancePage } from '../../pages/structure/ordonnance/ordonnance.page';
-import { PrescriptionManagerPage } from '../../pages/structure/consultation/prescription-manager.page';
+import { PrescriptionManagerPage, DEFAULT_MEDICATION_TITLE } from '../../pages/structure/consultation/prescription-manager.page';
 import { ConsultationStandardDataGenerator } from '../../pages/structure/generator/consultation-standard-data-generator';
 
 test.setTimeout(120000);
@@ -175,7 +175,8 @@ test.describe('Module Dossier médical', () => {
       const prescriptions = new PrescriptionManagerPage(page);
       const ordonnancePage = new OrdonnancePage(page);
       const consultation = ConsultationStandardDataGenerator.generate();
-      const title = `Ordonnance test ${Date.now()}`;
+      // Titre masqué depuis le 2026-11-20 (« Ordonnance jj/mm/aaaa ») : ordonnance retrouvée par son médicament
+      const medication = `Paracétamol QA ${Date.now()}`;
 
       await test.step('Démarrer une consultation standard', async () => {
         await openDossier(page);
@@ -189,8 +190,7 @@ test.describe('Module Dossier médical', () => {
 
       await test.step('Ajouter une ordonnance dans le gestionnaire de prescriptions', async () => {
         await prescriptions.addMedicationPrescription({
-          title,
-          medicationName: 'Paracétamol',
+          medicationName: medication,
           posologie: '1 comprimé matin et soir',
           recommandations: 'Repos et hydratation recommandés',
         });
@@ -204,7 +204,9 @@ test.describe('Module Dossier médical', () => {
         await openDossierAgain(page);
         await ordonnancePage.gotoFromPatientDashboard();
         await expect(page.getByRole('heading', { name: /^Ordonnances \([1-9]\d*\)/ })).toBeVisible();
-        await expect(page.getByText(title).first()).toBeVisible();
+        const row = page.locator('table tbody tr').filter({ hasText: medication });
+        await expect(row, 'Ordonnance listée avec son médicament').toHaveCount(1);
+        await expect(row.locator('td').nth(2), 'Titre par défaut').toHaveText(DEFAULT_MEDICATION_TITLE);
       });
     });
 

@@ -4,7 +4,7 @@ import { type Page, type Locator, expect } from '@playwright/test';
 /**
  * Espace paramétrage (`/my-space/configuration`, `MyConfigurationComponent`) : accordéon de 8
  * cartes repliables. Seules 2 cartes sont manipulées ici (hors périmètre pour les 6 autres) :
- * "Détails de la structure" (`app-hi-details`) et "Configuration de facture" (`app-invoice`).
+ * "Détails de la structure" (`app-hi-details`) et "Configuration des documents" (ex « Configuration de facture ») (`app-invoice`).
  *
  * Chaque carte a un en-tête cliquable (`.config-card-header`) qui bascule la classe `expanded`
  * sur `.config-card-body` (transition CSS de 0.4s sur max-height : `expect(...).toBeVisible()`
@@ -59,7 +59,7 @@ export class MyConfigurationPage {
     this.detailsHeader = this.detailsCard.locator('.config-card-header');
     this.detailsBody = this.detailsCard.locator('.config-card-body');
 
-    this.invoiceCard = page.locator('.config-card').filter({ hasText: 'Configuration de facture' });
+    this.invoiceCard = page.locator('.config-card').filter({ hasText: 'Configuration des documents' });
     this.invoiceHeader = this.invoiceCard.locator('.config-card-header');
     this.invoiceBody = this.invoiceCard.locator('.config-card-body');
 
@@ -175,7 +175,7 @@ export class MyConfigurationPage {
       await this.invoiceHeader.click();
     }
     await expect(this.invoiceBody).toHaveClass(/expanded/);
-    await expect(this.invoiceRoot.getByRole('heading', { name: 'Configuration de la facture' })).toBeVisible();
+    await expect(this.invoiceRoot.getByRole('heading', { name: 'Configuration des documents' })).toBeVisible();
   }
 
   async closeInvoiceSection() {

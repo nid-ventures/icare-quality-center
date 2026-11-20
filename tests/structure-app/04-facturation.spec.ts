@@ -470,6 +470,16 @@ test.describe('Module Facturation', () => {
       });
     });
 
+    // Depuis le 2026-11-20 : la prise en charge active (débutée, non échue, la plus récente) est présélectionnée
+    test('La prise en charge active du patient est présélectionnée et appliquée sans la choisir', async ({ portal, page }) => {
+      const invoicePage = await openBilling(portal, page);
+      await price(invoicePage, THREE);
+      await expect(invoicePage.selectedCover, 'Prise en charge présélectionnée').toContainText(INSURER, { timeout: 15000 });
+      const computed = computeCover(THREE, COVER);
+      await expect.poll(() => invoicePage.coverSummary(), { message: 'Quote-parts calculées sans choix' })
+        .toEqual({ rate: 80, cap: 0, garant: computed.garant, patient: computed.patient });
+    });
+
     test('Exceptions de la prise en charge : acte exclu et cas spécifique signalés sur les lignes', async ({ portal, page }) => {
       const invoicePage = await openBilling(portal, page);
       await price(invoicePage, THREE);
@@ -585,7 +595,8 @@ test.describe('Module Facturation', () => {
       expect(await again.showPendingAct(ACTS.uro.act), 'Consultation non cochée : toujours à facturer').not.toBeNull();
     });
 
-    test('Prix saisi dans « Ajouter des actes » : mémorisé sur le poste, puis effacé', async ({ portal, page }) => {
+    // Depuis le 2026-11-20 : plus de prix mémorisés ni d'actes « Récents » sur le poste
+    test('Prix saisi dans « Ajouter des actes » : repris dans la facture, rien de mémorisé sur le poste', async ({ portal, page }) => {
       const invoicePage = await openBilling(portal, page);
       await test.step(`Ajouter ${ACTS.visite.act} au prix de 7 000`, async () => {
         await invoicePage.openAddActModal();
@@ -596,22 +607,15 @@ test.describe('Module Facturation', () => {
         await expect(invoicePage.priceInput(line), 'Prix repris dans la facture').toHaveValue(/7\s?000/);
         expect(await invoicePage.isSelected(line), 'Acte chiffré : coché').toBe(true);
       });
-      await test.step('Rechoisir le même acte : prix mémorisé proposé', async () => {
+      await test.step('Rouvrir la fenêtre : pas d\'actes « Récents » ni de bouton « Effacer les prix mémorisés »', async () => {
         await invoicePage.openAddActModal();
-        await invoicePage.pickActWithCaregiver(ACTS.visite);
-        await expect(invoicePage.pickedPrice(ACTS.visite.act), 'Dernier prix saisi proposé').toHaveValue(/7\s?000/);
-        await expect(invoicePage.clearRememberedPricesButton).toBeVisible();
+        await expect(invoicePage.addActModal.getByText(/^\s*Récents\s*$/), 'Pas de liste « Récents »').toHaveCount(0);
+        await expect(invoicePage.clearRememberedPricesButton, 'Pas de bouton « Effacer les prix mémorisés »').toHaveCount(0);
       });
-      await test.step('« Effacer les prix mémorisés » : prix vidé, plus rien de mémorisé', async () => {
-        await invoicePage.clearRememberedPricesButton.click();
-        await expect(invoicePage.pickedPrice(ACTS.visite.act), 'Prix proposé vidé').toHaveValue('');
-        await expect(invoicePage.clearRememberedPricesButton, 'Bouton masqué').toHaveCount(0);
-        await invoicePage.closeAddActModal();
-      });
-      await test.step('Rechoisir l\'acte : plus de prix proposé', async () => {
-        await invoicePage.openAddActModal();
+      await test.step('Rechoisir le même acte : aucun prix proposé', async () => {
         await invoicePage.pickActWithCaregiver(ACTS.visite);
-        await expect(invoicePage.pickedPrice(ACTS.visite.act)).toHaveValue('');
+        await expect(invoicePage.pickedPrice(ACTS.visite.act), 'Prix non mémorisé').toHaveValue('');
+        await expect(invoicePage.clearRememberedPricesButton).toHaveCount(0);
         await invoicePage.closeAddActModal();
       });
     });
@@ -671,7 +675,9 @@ test.describe('Module Facturation', () => {
         if (addActs) for (const line of LINES) await invoicePage.addAct(line);
         for (const line of LINES) await invoicePage.setActAmount(line.act, line.amount);
         await invoicePage.proceedToBilling();
+        // La prise en charge active est présélectionnée (2026-11-20) : la retirer pour facturer sans
         if (withCover) await invoicePage.chooseCover(INSURER);
+        else await invoicePage.clearCover();
         await invoicePage.generateInvoice();
       });
       const garant = await newInvoices(portal, page, 'garant');

@@ -105,7 +105,8 @@ export class OrdonnancePage {
    */
   async fillOrdonnanceForm(data: OrdonnanceData) {
     await this.selectFirstNgOption(this.prescripteurSelect);
-    await this.titreInput.fill(data.title);
+    // Titre masqué depuis le 2026-11-20 (« Ordonnance jj/mm/aaaa » par défaut)
+    if (await this.titreInput.isVisible()) await this.titreInput.fill(data.title);
     await this.medicamentInput.fill(data.medicationName);
     await this.posologieInput.fill(data.posologie);
     await this.remarquesInput.fill(data.remarques);

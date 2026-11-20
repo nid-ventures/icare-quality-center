@@ -27,7 +27,7 @@ export class StructureSettingsPage {
   }
 
   async openInvoice() {
-    await this.config.openSection('Configuration de facture');
+    await this.config.openSection('Configuration des documents');
     await expect(this.invoice.locator('input[formcontrolname="header"]')).toBeVisible();
   }
 

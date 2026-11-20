@@ -1,8 +1,13 @@
 import { type Page, type Locator, expect } from '@playwright/test';
 import { ConsultationFormPage, type FilledValues } from './consultation-form.page';
 
+/** Titre d'une ordonnance (champ masqué depuis le 2026-11-20) : « Ordonnance jj/mm/aaaa » par défaut. */
+export const DEFAULT_MEDICATION_TITLE = /^\s*Ordonnance \d{2}\/\d{2}\/\d{4}\s*$/;
+const TITLE_PLACEHOLDER = 'Ex: Traitement antibiotique, Traitement de fond...';
+
 export interface MedicationPrescriptionData {
-  title: string;
+  /** Saisi seulement si le champ titre est affiché (masqué depuis le 2026-11-20). */
+  title?: string;
   medicationName: string;
   posologie: string;
   recommandations?: string;
@@ -60,7 +65,8 @@ export class PrescriptionManagerPage {
     const form = this.root.locator('app-medication-prescription');
     await expect(form).toBeVisible();
 
-    await form.getByPlaceholder('Ex: Traitement antibiotique, Traitement de fond...').fill(data.title);
+    const titleInput = form.getByPlaceholder(TITLE_PLACEHOLDER);
+    if (data.title && await titleInput.isVisible()) await titleInput.fill(data.title);
     const medicationName = form.getByPlaceholder('Nom du médicament');
     if (await medicationName.count() === 0) {
       await form.getByRole('button', { name: /Médicament/ }).click();
@@ -87,7 +93,8 @@ export class PrescriptionManagerPage {
     await this.openCreator('Ordonnance');
     const form = this.root.locator('app-medication-prescription');
     await expect(form).toBeVisible();
-    await form.getByPlaceholder('Ex: Traitement antibiotique, Traitement de fond...').fill(title);
+    const titleInput = form.getByPlaceholder(TITLE_PLACEHOLDER);
+    if (await titleInput.isVisible()) await titleInput.fill(title);
     await expect(form.getByRole('button', { name: /Enregistrer l'ordonnance/ })).toBeDisabled();
     await form.getByRole('button', { name: /Annuler/ }).click();
     await expect(form).toBeHidden();
@@ -191,10 +198,13 @@ export class PrescriptionManagerPage {
    * Résumé d'une ordonnance : une ligne par médicament, chaque colonne restituée (« -- » sans
    * remarque), et l'encadré « Recommandations » de l'ordonnance (absent s'il n'y en a pas).
    */
-  async expectMedicationRow(title: string, med: { nom: string; posologie: string; duree?: string; remarques?: string; recommandations?: string }) {
-    const details = await this.details('Ordonnance', title);
+  async expectMedicationRow(medication: string, med: { nom: string; posologie: string; duree?: string; remarques?: string; recommandations?: string }) {
+    const row = await this.row('Ordonnance', medication);
+    // Titre masqué : celui par défaut, conservé tel quel
+    await expect(row.locator('.rx-row-title'), "Titre par défaut de l'ordonnance").toHaveText(DEFAULT_MEDICATION_TITLE);
+    const details = await this.details('Ordonnance', medication);
     const rows = details.locator('tbody tr');
-    await expect(rows, `Ordonnance "${title}" : un médicament`).toHaveCount(1);
+    await expect(rows, `Ordonnance "${medication}" : un médicament`).toHaveCount(1);
     const cells = rows.first().locator('td');
     await expect(cells.nth(0), 'Médicament').toHaveText(med.nom);
     await expect(cells.nth(1), 'Posologie').toHaveText(med.posologie);
@@ -225,9 +235,9 @@ export class PrescriptionManagerPage {
     await expect(details.locator('.alert'), 'Diagnostic').toHaveText(filled.notice as string);
   }
 
-  /** Ouvre en modification la prescription (titre donné, sinon la première) ; consultation activée. */
-  private async openEditor(kind: PrescriptionKind, selector: string, title = ''): Promise<Locator> {
-    const row = this.rows(kind).filter({ hasText: title }).first();
+  /** Ouvre en modification la prescription (repérée comme dans `row`, sinon la première) ; consultation activée. */
+  private async openEditor(kind: PrescriptionKind, selector: string, text = ''): Promise<Locator> {
+    const row = await this.row(kind, text);
     await row.locator('button[title="Modifier"]').click();
     const form = this.root.locator(selector);
     await expect(form, `Formulaire de modification "${kind}"`).toBeVisible();
@@ -241,8 +251,11 @@ export class PrescriptionManagerPage {
 
   /** Formulaire de l'ordonnance rouvert : titre, médicament, posologie, durée, recommandations. */
   async expectMedicationForm(data: MedicationPrescriptionData) {
-    const form = await this.openEditor('Ordonnance', 'app-medication-prescription', data.title);
-    await expect(form.getByPlaceholder('Ex: Traitement antibiotique, Traitement de fond...'), 'Titre').toHaveValue(data.title);
+    const form = await this.openEditor('Ordonnance', 'app-medication-prescription', data.medicationName);
+    const titleInput = form.getByPlaceholder(TITLE_PLACEHOLDER);
+    // Titre saisi s'il est affiché, sinon celui par défaut, conservé
+    if (data.title && await titleInput.isVisible()) await expect(titleInput, 'Titre').toHaveValue(data.title);
+    else await expect(titleInput, 'Titre par défaut').toHaveValue(DEFAULT_MEDICATION_TITLE);
     await expect(form.getByPlaceholder('Nom du médicament'), 'Un médicament').toHaveCount(1);
     await expect(form.getByPlaceholder('Nom du médicament'), 'Médicament').toHaveValue(data.medicationName);
     await expect(form.getByPlaceholder('Ex: 1 cp matin et soir').first(), 'Posologie').toHaveValue(data.posologie);
@@ -310,31 +323,50 @@ export class PrescriptionManagerPage {
 
   /** Vérifie qu'une prescription contenant ce texte est présente (après réouverture). */
   async expectPrescriptionText(kind: PrescriptionKind, text: string) {
-    await expect(this.rows(kind).filter({ hasText: text }).first()).toBeVisible();
+    await expect(await this.row(kind, text)).toBeVisible();
   }
 
   /**
    * Vérifie un détail (ex: posologie) affiché seulement quand la ligne est dépliée : déplie la
    * prescription dont le titre est donné puis contrôle son contenu.
    */
-  async expectPrescriptionDetail(kind: PrescriptionKind, title: string, detail: string) {
-    const row = this.rows(kind).filter({ hasText: title }).first();
-    await expect(row).toBeVisible();
-    if (!/\bexpanded\b/.test((await row.getAttribute('class')) ?? '')) {
-      await row.locator('.rx-row-header').click();
-    }
-    await expect(row.locator('.rx-row-details')).toContainText(detail);
+  async expectPrescriptionDetail(kind: PrescriptionKind, text: string, detail: string) {
+    await expect(await this.details(kind, text)).toContainText(detail);
   }
 
-  /** Déplie la ligne de la prescription (titre donné) et renvoie son détail. */
-  async details(kind: PrescriptionKind, title: string): Promise<Locator> {
-    const row = this.rows(kind).filter({ hasText: title }).first();
+  /** Déplie la ligne de la prescription (repérée comme dans `row`) et renvoie son détail. */
+  async details(kind: PrescriptionKind, text: string): Promise<Locator> {
+    const row = await this.row(kind, text);
+    await this.expand(row);
+    return row.locator('.rx-row-details');
+  }
+
+  private async expand(row: Locator) {
     await expect(row).toBeVisible();
     if (!/\bexpanded\b/.test((await row.getAttribute('class')) ?? '')) {
       await row.locator('.rx-row-header').click();
     }
-    const details = row.locator('.rx-row-details');
-    await expect(details).toBeVisible();
-    return details;
+    await expect(row.locator('.rx-row-details')).toBeVisible();
+  }
+
+  /**
+   * Ligne d'une prescription. Ordonnance : repérée par le nom d'un de ses médicaments (titre
+   * masqué depuis le 2026-11-20, le même « Ordonnance jj/mm/aaaa » pour toutes celles du jour) ou
+   * par son titre ; autres types : par un texte de l'en-tête ; texte vide : la première.
+   */
+  async row(kind: PrescriptionKind, text = ''): Promise<Locator> {
+    const rows = this.rows(kind);
+    if (!text) return rows.first();
+    if (kind !== 'Ordonnance') return rows.filter({ hasText: text }).first();
+    await expect(rows.first(), 'Au moins une ordonnance').toBeVisible();
+    const count = await rows.count();
+    for (let i = 0; i < count; i++) {
+      const row = rows.nth(i);
+      if (((await row.locator('.rx-row-title').textContent()) ?? '').includes(text)) return row;
+      await this.expand(row);
+      const names = (await row.locator('.rx-row-details tbody tr td:first-child').allTextContents()).map(t => t.replace(/\s+/g, ' ').trim());
+      if (names.includes(text)) return row;
+    }
+    throw new Error(`Ordonnance du médicament "${text}" introuvable`);
   }
 }

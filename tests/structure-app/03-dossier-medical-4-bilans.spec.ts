@@ -309,11 +309,12 @@ test.describe("Module Dossier médical — Bilans d'analyses", () => {
     await expect(pane.getByText('Modifier la pièce jointe')).toBeVisible();
   });
 
-  test('Télécharger la pièce jointe du résultat', async ({ page }) => {
+  test('Télécharger la pièce jointe du résultat sans activer le formulaire', async ({ page }) => {
     await page.goto(bilanUrl);
     const pane = await openResultTab(page);
-    // Le bouton n'est actif que lorsque le formulaire est activé
-    await activateResult(page, pane);
+    // Depuis le 2026-11-20 : téléchargeable dès qu'une pièce jointe existe, formulaire verrouillé
+    await expect(pane.locator('textarea[formcontrolname="diagnostic"]'), 'Formulaire verrouillé').toBeDisabled();
+    await expect(pane.getByRole('button', { name: /Télécharger la pièce jointe/ })).toBeEnabled({ timeout: 15000 });
     const [download] = await Promise.all([
       page.waitForEvent('download', { timeout: 20000 }),
       pane.getByRole('button', { name: /Télécharger la pièce jointe/ }).click(),

@@ -175,7 +175,7 @@ export class BillingInvoicePage {
         await this.pickAct(act.category, act.act);
     }
 
-    /** Prix d'un acte choisi dans la fenêtre (repris dans la facture, mémorisé sur le poste). */
+    /** Prix d'un acte choisi dans la fenêtre (repris dans la facture ; plus mémorisé sur le poste depuis le 2026-11-20). */
     pickedPrice(act: string): Locator {
         const rest = act.replace(/^\s*(consultation|visite)\s+/i, '');
         return this.addActModal.locator('.ama-picked')
@@ -183,7 +183,7 @@ export class BillingInvoicePage {
             .locator('.ama-price input');
     }
 
-    /** Bouton « Effacer les prix mémorisés » (affiché quand des prix sont mémorisés sur le poste). */
+    /** Bouton « Effacer les prix mémorisés » (retiré le 2026-11-20 : ne doit plus apparaître). */
     get clearRememberedPricesButton(): Locator {
         return this.addActModal.getByRole('button', { name: /Effacer les prix mémorisés/ });
     }
@@ -493,7 +493,12 @@ export class BillingInvoicePage {
 
     // ======================== Prise en charge et émission ========================
 
-    /** Choisit la prise en charge de l'assureur indiqué (aucune n'est choisie par défaut). */
+    /** Prise en charge choisie (valeur du sélecteur) : l'active est présélectionnée depuis le 2026-11-20. */
+    get selectedCover(): Locator {
+        return this.coverSelect.locator('.ng-value');
+    }
+
+    /** Choisit la prise en charge de l'assureur indiqué (l'active est présélectionnée). */
     async chooseCover(insurer: string): Promise<void> {
         await this.coverSelect.locator('.ng-select-container').click();
         const option = this.page.locator('.ng-dropdown-panel:visible .ng-option').filter({ hasText: insurer }).first();
@@ -512,6 +517,9 @@ export class BillingInvoicePage {
 
     /** Retire la prise en charge choisie (croix du sélecteur) : le patient règle la totalité. */
     async clearCover(): Promise<void> {
+        // Rien à retirer : aucune prise en charge choisie (ou proposée)
+        if (!await this.coverSelect.isVisible().catch(() => false) || await this.coverSelect.locator('.ng-value').count() === 0) return;
+        await this.coverSelect.hover();
         await this.coverSelect.locator('.ng-clear-wrapper').click();
         await expect(this.coverSelect.locator('.ng-value')).toHaveCount(0);
     }

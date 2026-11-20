@@ -134,12 +134,13 @@ test.describe('Module Dossier médical — Consultations', () => {
       // Prescriptions saisies (valeurs choisies), revérifiées après chaque enregistrement
       let lab1: FilledValues = {};
       let img1: FilledValues = {};
-      const stamp = Date.now();
-      const medication1 = `Ordonnance ${key} ${stamp}`;
-      const medication2 = `Ordonnance 2 ${key} ${stamp}`;
-      const med1 = { title: medication1, medicationName: 'Paracétamol', posologie: '1 cp matin et soir', recommandations: 'Hydratation', duree: { nombre: 10, unite: 'Jours' as const } };
+      // Titre d'ordonnance masqué depuis le 2026-11-20 (« Ordonnance jj/mm/aaaa ») : chaque
+      // ordonnance est repérée par le nom de son médicament
+      const medication1 = 'Paracétamol';
+      const medication2 = 'Amoxicilline';
+      const med1 = { medicationName: medication1, posologie: '1 cp matin et soir', recommandations: 'Hydratation', duree: { nombre: 10, unite: 'Jours' as const } };
       const med1Updated = { ...med1, posologie: '2 cp trois fois par jour' };
-      const med2 = { title: medication2, medicationName: 'Amoxicilline', posologie: '1 gélule matin et soir' };
+      const med2 = { medicationName: medication2, posologie: '1 gélule matin et soir' };
       // Champs saisis à la création et non touchés à la modification : doivent rester identiques
       const unchanged = v1.filter(f => !v2.some(g => g.name === f.name));
       // Après modification : valeurs modifiées ; une liste multiple complétée (actes à facturer)
@@ -383,7 +384,7 @@ test.describe('Module Dossier médical — Consultations', () => {
           const root = await openExistingConsultation(page, patient, def);
           const form = new ConsultationFormPage(page, root);
           await form.activate(def.probe);
-          await new PrescriptionManagerPage(page).addMedicationPrescription({ title: `Résumé ${stamp}`, medicationName: 'Ibuprofène', posologie: '1 cp le soir' });
+          await new PrescriptionManagerPage(page).addMedicationPrescription({ medicationName: 'Ibuprofène', posologie: '1 cp le soir' });
           const description = root.locator('[formcontrolname="description"]');
           await expect(description).toHaveValue(/Ibuprofène/);
           await expect(description).not.toHaveValue(/undefined/);

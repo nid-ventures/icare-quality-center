@@ -454,7 +454,7 @@ test.describe('Module Administration', () => {
         'Modules de la structure',
         'Modules & Privilèges',
         'Configuration de consentement',
-        'Configuration de facture',
+        'Configuration des documents',
         'Garants',
         'Actes',
         'Rémunération médecin',

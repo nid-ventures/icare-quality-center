@@ -250,7 +250,7 @@ const realizeConsultation = (page: Page): Realize => async (body, title) => {
   const filled = await fillAllFields(page, body, title);
   const prescriptions = new PrescriptionManagerPage(page, body);
   await prescriptions.addMedicationPrescription({
-    title: `Ordonnance ${title}`, medicationName: 'Paracétamol', posologie: '1 cp matin et soir', recommandations: 'Hydratation QA',
+    medicationName: 'Paracétamol', posologie: '1 cp matin et soir', recommandations: 'Hydratation QA',
   });
   await prescriptions.addLaboratoryPrescription(`Analyses ${title}`);
   await prescriptions.addImagingPrescription(`Imagerie ${title}`, isoDate());
