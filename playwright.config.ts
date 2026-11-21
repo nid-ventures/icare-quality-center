@@ -31,12 +31,16 @@ dotenv.config({ path: envFile });
 // - SLOWMO (ms, optionnel) -> pause après chaque action pour suivre les tests à l'écran
 //   (ex: SLOWMO=1500 avec --headed, cf. "npm run test:visuel"). 0 par défaut.
 const slowMo = Number(process.env.SLOWMO) || 0;
+// Mode visuel (SLOWMO) : zoom de l'application dans la fenêtre maximisée, 100 % par défaut ;
+// VISUAL_ZOOM=0.8 l'affiche réduite pour voir la page entière (largeur CSS 1920 / 0.8 = 2400 px,
+// l'app reste en disposition desktop, ≥ 1300 px).
+const scale = slowMo > 0 ? Number(process.env.VISUAL_ZOOM) || 1 : 1;
 const chrome = {
   channel: 'chrome',
   viewport: null,
   launchOptions: {
     slowMo,
-    args: ['--start-maximized', '--window-size=1920,1080', '--force-device-scale-factor=1'],
+    args: ['--start-maximized', '--window-size=1920,1080', `--force-device-scale-factor=${scale}`],
   },
 };
 

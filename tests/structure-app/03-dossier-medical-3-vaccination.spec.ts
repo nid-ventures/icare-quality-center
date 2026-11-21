@@ -157,27 +157,31 @@ test.describe('Module Dossier médical — Vaccination', () => {
 
   test('Quitter la vaccination en cours de modification : avertissement, rien n\'est enregistré', async ({ page }) => {
     const item = await openVaccination(page);
+    const form = (root = item) => new ConsultationFormPage(page, root);
+    const before = await form().snapshot(DOSE);
     await item.getByRole('button', { name: /Modifier la vaccination/ }).click();
-    const commentary = item.locator('[formcontrolname="commentary"]');
-    await commentary.fill('Commentaire non enregistré QA');
+    const edits = [...editFields(), { name: 'billableActs', kind: 'multiselect', count: 1 } as FieldSpec];
+    const typed = await form().fill(edits);
     const dialog = new UnsavedDialog(page);
     const leave = () => page.locator('.btn-back').filter({ visible: true }).first().click();
     await test.step('Retour : avertissement « Modifications non enregistrées »', async () => {
       await leave();
       await dialog.expectOpen(/MODIFICATIONS NON ENREGISTRÉES/, /seront perdues si vous quittez la page/);
     });
-    await test.step('« Rester sur la page » : saisie intacte', async () => {
+    await test.step('« Rester sur la page » : chaque champ saisi intact', async () => {
       await dialog.answer(/Rester sur la page/);
       await expect(page).toHaveURL(/vaccinations\//);
-      await expect(commentary).toHaveValue('Commentaire non enregistré QA');
+      await form().expectValues(edits, typed);
     });
-    await test.step('« Quitter quand même » : tableau de bord, la vaccination garde ses valeurs', async () => {
+    await test.step('« Quitter quand même » : la vaccination et ses doses gardent les valeurs enregistrées', async () => {
       await leave();
       await dialog.answer(/Quitter quand même/);
       await expect(page).toHaveURL(/patient-dashboard/);
       await new VaccinationPage(page).gotoFromPatientDashboard();
       const reopened = await openVaccination(page);
-      await new ConsultationFormPage(page, reopened).expectValues(vaccinationFields(), created, { exact: true });
+      await expect.poll(() => form(reopened).snapshot(DOSE), { timeout: 15000, message: 'Relevé complet identique' }).toEqual(before);
+      await form(reopened).expectValues(vaccinationFields(), created, { exact: true });
+      await expectDoses(page, reopened, [initialDose()]);
     });
   });
 

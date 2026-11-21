@@ -1,3 +1,4 @@
+import { readFileSync } from 'fs';
 import { type Page, type Locator } from '@playwright/test';
 import { test, expect } from '../../fixtures/structure.fixture';
 import { clearPrefilledConsultant } from '../../pages/structure/shared/consultant';
@@ -309,17 +310,25 @@ test.describe("Module Dossier médical — Bilans d'analyses", () => {
     await expect(pane.getByText('Modifier la pièce jointe')).toBeVisible();
   });
 
-  test('Télécharger la pièce jointe du résultat sans activer le formulaire', async ({ page }) => {
+  test('Télécharger la pièce jointe du résultat : indisponible formulaire verrouillé, puis fichier identique à celui joint', async ({ page }) => {
     await page.goto(bilanUrl);
     const pane = await openResultTab(page);
-    // Depuis le 2026-11-20 : téléchargeable dès qu'une pièce jointe existe, formulaire verrouillé
-    await expect(pane.locator('textarea[formcontrolname="diagnostic"]'), 'Formulaire verrouillé').toBeDisabled();
-    await expect(pane.getByRole('button', { name: /Télécharger la pièce jointe/ })).toBeEnabled({ timeout: 15000 });
-    const [download] = await Promise.all([
-      page.waitForEvent('download', { timeout: 20000 }),
-      pane.getByRole('button', { name: /Télécharger la pièce jointe/ }).click(),
-    ]);
-    expect(download.suggestedFilename()).toMatch(/\.pdf$/i);
+    const download = pane.getByRole('button', { name: /Télécharger la pièce jointe/ });
+    await test.step('Formulaire verrouillé : bouton de téléchargement désactivé', async () => {
+      await expect(pane.locator('textarea[formcontrolname="diagnostic"]'), 'Formulaire verrouillé').toBeDisabled();
+      await expect(download).toBeDisabled();
+    });
+    await test.step('Formulaire activé : le fichier téléchargé est celui joint au résultat', async () => {
+      await activateResult(page, pane);
+      await expect(download).toBeEnabled({ timeout: 15000 });
+      const [file] = await Promise.all([
+        page.waitForEvent('download', { timeout: 20000 }),
+        download.click(),
+      ]);
+      expect(file.suggestedFilename()).toMatch(/\.pdf$/i);
+      const content = readFileSync(await file.path());
+      expect(content.equals(ATTACHMENT.buffer), 'Contenu identique au fichier joint').toBe(true);
+    });
   });
 
   test('Modifier le résultat : nouveau diagnostic et résultat de la première analyse', async ({ page }) => {

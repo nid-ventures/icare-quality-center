@@ -10,6 +10,8 @@ type StructureFixtures = {
   slowMoTimeout: void;
   /** Bandeau "module › rubrique / test / étape" affiché pendant les tests visuels (SLOWMO > 0). */
   visualNotes: void;
+  /** Zoom de l'application en mode visuel (VISUAL_APP_ZOOM, 0.5 par défaut). */
+  appZoom: void;
   /**
    * Avertissement natif du navigateur (beforeunload) quand une saisie n'est pas enregistrée : accepté
    * pour les rechargements / navigations par URL des tests. La popup de l'application (navigation
@@ -64,6 +66,26 @@ export const test = base.extend<StructureFixtures>({
     await use();
     currentPage = null;
     currentNote = null;
+  }, { auto: true }],
+
+  // Mode visuel : l'application (contenu de la page) est affichée réduite, VISUAL_APP_ZOOM (0.5 par
+  // défaut ; 1 pour la taille réelle). Le navigateur et le bandeau du test (hors du body) gardent leur taille.
+  appZoom: [async ({ page }, use) => {
+    const zoom = visualNotesEnabled() ? Number(process.env.VISUAL_APP_ZOOM) || 0.5 : 1;
+    if (zoom !== 1) {
+      await page.addInitScript((value: number) => {
+        const apply = () => {
+          if (document.getElementById('qa-app-zoom') || !document.documentElement) return;
+          const style = document.createElement('style');
+          style.id = 'qa-app-zoom';
+          style.textContent = `body { zoom: ${value}; }`;
+          document.documentElement.appendChild(style);
+        };
+        apply();
+        document.addEventListener('DOMContentLoaded', apply);
+      }, zoom);
+    }
+    await use();
   }, { auto: true }],
 
   beforeUnload: [async ({ page }, use) => {

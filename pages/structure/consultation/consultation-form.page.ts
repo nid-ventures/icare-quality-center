@@ -1,4 +1,5 @@
 import { type Page, type Locator, expect } from '@playwright/test';
+import { confirmSave } from '../shared/confirm-save';
 
 /**
  * Description d'un champ de formulaire de consultation, repéré par son formControlName.
@@ -190,10 +191,14 @@ export class ConsultationFormPage {
     await this.confirm();
   }
 
+  /**
+   * Confirme et attend la réponse du serveur (création, mise à jour ou suppression) : sans cette
+   * attente, un rechargement ou une navigation juste après coupait la requête (consultation jamais créée).
+   */
   private async confirm() {
     const confirm = this.page.getByRole('button', { name: /^\W*Confirmer$/ }).last();
     await expect(confirm).toBeVisible({ timeout: 10000 });
-    await confirm.click();
+    await confirmSave(this.page, confirm, 'Consultation');
     await expect(confirm).toBeHidden({ timeout: 20000 });
   }
 
@@ -206,7 +211,9 @@ export class ConsultationFormPage {
   async snapshot(exclude = ''): Promise<Record<string, string>> {
     await expect(this.root.locator('[formcontrolname]').first()).toBeAttached({ timeout: 15000 });
     const entries = await this.root.locator('[formcontrolname]').evaluateAll((els, excluded) => els
-      .filter(e => !e.closest('app-prescription-manager') && !(excluded && e.closest(excluded)))
+      // Zone masquée ([hidden]) : doublon d'un champ affiché ailleurs (ex. second « Consultant » de la
+      // dentaire, même contrôle), dont le libellé n'est pas tenu à jour
+      .filter(e => !e.closest('app-prescription-manager') && !e.closest('[hidden]') && !(excluded && e.closest(excluded)))
       .map(e => {
         const name = e.getAttribute('formcontrolname') ?? '';
         const text = (s: string | null | undefined) => (s ?? '').replace(/\s+/g, ' ').trim();

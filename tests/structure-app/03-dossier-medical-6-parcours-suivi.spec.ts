@@ -310,6 +310,11 @@ const realizeBilan = (page: Page): Realize => async (body, title, reopen) => {
   const create = body.locator('app-create-health-check');
   await expect(create, 'Formulaire de création du bilan').toBeVisible();
   await fillAllFields(page, create, title);
+  // Analyses choisies à la création : une zone de résultat par analyse, ni plus ni moins
+  const analysesChosen = await create.locator('ng-select[formcontrolname="analyses"] .ng-value').count();
+  if (analysesChosen === 0) {
+    test.info().annotations.push({ type: 'Donnée de la structure', description: `${title} : aucune analyse proposée pour ce type de bilan (résultat sans zone d'analyse)` });
+  }
   await create.getByRole('button', { name: /^\W*Enregistrer\s*$/ }).click();
   await expect(success(page)).toBeVisible({ timeout: 20000 });
 
@@ -329,11 +334,13 @@ const realizeBilan = (page: Page): Realize => async (body, title, reopen) => {
   // analyses, éventuellement après "Activer le formulaire" : on (ré)active jusqu'à ce qu'elles
   // soient toutes modifiables, sinon elles restaient vides sans être signalées.
   const inputs = result.locator('textarea.result-input');
-  await expect(inputs.first(), `${title} : une zone de résultat par analyse`).toBeVisible({ timeout: 30000 });
+  if (analysesChosen > 0) await expect(inputs.first(), `${title} : une zone de résultat par analyse`).toBeVisible({ timeout: 30000 });
+  await expect(inputs, `${title} : ${analysesChosen} zone(s) de résultat, une par analyse choisie`).toHaveCount(analysesChosen, { timeout: 30000 });
   const toggle = result.getByRole('button', { name: /Activer le formulaire|Verrouiller/ });
+  const lastEditable = analysesChosen > 0 ? inputs.last() : result.locator('textarea[formcontrolname="diagnostic"]');
   await expect(async () => {
-    if (await inputs.last().isDisabled()) await toggle.click();
-    await expect(inputs.last()).toBeEnabled({ timeout: 3000 });
+    if (await lastEditable.isDisabled()) await toggle.click();
+    await expect(lastEditable).toBeEnabled({ timeout: 3000 });
     await expect(result.locator('textarea[formcontrolname="diagnostic"]')).toBeEnabled({ timeout: 1000 });
   }).toPass({ timeout: 30000 });
   const filled = await fillAllFields(page, result, title);
@@ -354,6 +361,9 @@ const realizeBilan = (page: Page): Realize => async (body, title, reopen) => {
   return async reopened => {
     const kept = await openResult(async () => reopened);
     await expectKept(kept, filled, `${title} (résultat)`);
+    // Pièce jointe enregistrée : téléchargeable sans activer le formulaire (depuis le 20/11)
+    await expect.soft(kept.locator('textarea[formcontrolname="diagnostic"]'), `${title} : résultat verrouillé à la réouverture`).toBeDisabled();
+    await expect.soft(kept.getByRole('button', { name: /Télécharger la pièce jointe/ }), `${title} : pièce jointe téléchargeable, formulaire verrouillé`).toBeEnabled({ timeout: 15000 });
     await expect.soft(kept.locator('textarea.result-input'), `${title} : une zone de résultat par analyse`).toHaveCount(count);
     for (const [id, value] of Object.entries(results)) {
       await expect.soft(kept.locator(`textarea.result-input[name="${id}"]`), `${title} : résultat de l'analyse ${id} réaffiché`)
