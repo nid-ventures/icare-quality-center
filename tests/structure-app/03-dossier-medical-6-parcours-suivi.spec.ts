@@ -4,10 +4,11 @@ import { createDossierPatient, openDossier, DOSSIER_SETUP_TIMEOUT, type DossierP
 import { PortalPage } from '../../pages/structure/portal/portal.page';
 import { CarePathwayPage } from '../../pages/structure/patient/care-pathway.page';
 import { CarePathwayTemplatePage, ACT_DOMAINS, type CarePathwayTemplate, type SelectedActs } from '../../pages/structure/my-space/care-pathway-template.page';
-import { ConsultationFormPage } from '../../pages/structure/consultation/consultation-form.page';
+import { ConsultationFormPage, type FieldSpec } from '../../pages/structure/consultation/consultation-form.page';
 import { PrescriptionManagerPage } from '../../pages/structure/consultation/prescription-manager.page';
 import { fillAllFields, keptFieldsDiff, type FieldSnapshot } from '../../pages/structure/shared/fill-all-fields';
 import { isoDate } from '../../test-data/consultation-fields';
+import { renewSessionIfExpiring } from '../../fixtures/admin-login';
 
 test.setTimeout(300000);
 
@@ -76,9 +77,17 @@ async function openPatientFile(page: Page, patient: DossierPatient) {
   // Les tuiles de la carte se chargent après le titre : sans cette attente, un lien vérifié trop
   // tôt est absent (et une absence vérifiée trop tôt passe à tort).
   await page.locator('.pathway-actions .qa-btn').first().waitFor({ state: 'visible', timeout: 30000 }).catch(() => {});
-  // Au-delà de 10 types, la carte n'affiche que les premiers : tout afficher pour vérifier chaque tuile
+  // Au-delà de 10 types, la carte n'affiche que les premiers : tout afficher pour vérifier chaque tuile.
+  // Les parcours du patient arrivent après les premières tuiles : on attend la fin des chargements
+  // avant de chercher « Voir tous », puis on vérifie que la liste est bien dépliée.
+  await page.waitForLoadState('networkidle', { timeout: 15000 }).catch(() => {});
   const showAll = page.getByRole('button', { name: /Voir tous les parcours/ });
-  if (await showAll.isVisible()) await showAll.click();
+  // Le bouton peut apparaître après la fin des chargements réseau : courte attente
+  await showAll.waitFor({ state: 'visible', timeout: 5000 }).catch(() => {});
+  if (await showAll.isVisible()) {
+    await showAll.click();
+    await expect(page.getByRole('button', { name: /^\s*Réduire\s*$/ }), 'Liste des parcours dépliée').toBeVisible();
+  }
 }
 
 /** Tuile (lien actif ou bouton grisé) d'un type de parcours sur le dashboard. */
@@ -119,12 +128,19 @@ async function goToStep(page: Page, n: number) {
 }
 
 /**
- * Bouton de la barre d'actions du parcours ("Modifier …", "Archiver …"). Le libellé prévu porte le
- * titre du parcours, mais ce titre vient du référentiel des parcours prédéfinis : il est vide pour
- * un parcours paramétré (bouton "Modifier" / "Archiver" seul).
+ * Bouton de la barre d'actions du parcours ("Modifier …", "Archiver …"), suivi du nom du parcours.
  */
 const pathwayAction = (page: Page, action: 'Modifier' | 'Archiver') =>
   page.locator('.pw-actions-bar').getByRole('button', { name: new RegExp(`^\\W*${action}\\b`) });
+
+/** « Archiver » un parcours non prénatal : simple confirmation (sans issue de grossesse), puis Enregistrer. */
+async function confirmSimpleArchive(page: Page, name: string) {
+  await pathwayAction(page, 'Archiver').click();
+  const modal = page.locator('#obstetrical');
+  await expect(modal).toBeVisible();
+  await expect(modal.getByText(`Confirmez-vous l'archivage du parcours ${name} ?`)).toBeVisible();
+  await modal.getByRole('button', { name: /^\W*Enregistrer\s*$/ }).click();
+}
 
 /** Contenu de l'étape affichée. */
 const activeStep = (page: Page) => page.locator('.pw-tab-pane--active');
@@ -178,6 +194,13 @@ async function realizeAllActs(page: Page, patient: DossierPatient, pathway: stri
   const total = await content.locator('.acc-item').count();
   expect(total, `Actes de la prestation ${domain}`).toBeGreaterThan(0);
   for (let i = 0; i < total; i++) {
+    // Réalisation de tous les actes : plus que la durée du jeton (30 min) en mode visuel ; session
+    // refaite avant chaque acte si elle expire bientôt, puis parcours rouvert sur l'étape
+    // Marge élargie en visuel : un acte (consultation avec prescriptions) y dure plus de 8 min
+    if (await renewSessionIfExpiring(page, VISUAL > 1 ? 20 * 60 * 1000 : undefined)) {
+      await openPathway(page, patient, pathway);
+      await goToStep(page, step);
+    }
     const current = await openDomain(page, domain);
     const item = current.locator('.acc-item').nth(i);
     const title = ((await item.locator('.acc-item-title').textContent()) ?? '').trim();
@@ -191,7 +214,9 @@ async function realizeAllActs(page: Page, patient: DossierPatient, pathway: stri
         verify = await realize(await expandAct(current, i), title, reopen);
       } catch (error) {
         await page.reload();
-        await expect(page.locator('.pw-hero')).toBeVisible({ timeout: 20000 });
+        // Reprise impossible : on remonte l'erreur d'origine (plus parlante que celle du rechargement)
+        const reloaded = await page.locator('.pw-hero').waitFor({ state: 'visible', timeout: 30000 }).then(() => true, () => false);
+        if (!reloaded) throw error;
         await goToStep(page, step);
         const retry = (await openDomain(page, domain)).locator('.acc-item').nth(i);
         if (await retry.locator('.acc-item-badge').count() > 0) throw error;
@@ -205,6 +230,9 @@ async function realizeAllActs(page: Page, patient: DossierPatient, pathway: stri
       await test.step(`Réouverture : données de "${title}" conservées`, async () => {
         // Rechargement complet : les données viennent bien du serveur, pas du formulaire en mémoire
         await page.reload();
+        // Jeton expiré pendant l'acte : le rechargement mène à la connexion ; session refaite, parcours rouvert
+        await expect(page.locator('.pw-hero').or(page.getByRole('heading', { name: 'Connexion' }))).toBeVisible({ timeout: 20000 });
+        if (await renewSessionIfExpiring(page)) await openPathway(page, patient, pathway);
         await expect(page.locator('.pw-hero')).toBeVisible({ timeout: 20000 });
         await goToStep(page, step);
         await verify(await reopen());
@@ -222,7 +250,7 @@ const realizeConsultation = (page: Page): Realize => async (body, title) => {
   const filled = await fillAllFields(page, body, title);
   const prescriptions = new PrescriptionManagerPage(page, body);
   await prescriptions.addMedicationPrescription({
-    title: `Ordonnance ${title}`, medicationName: 'Paracétamol', posologie: '1 cp matin et soir', recommandations: 'Hydratation QA',
+    medicationName: 'Paracétamol', posologie: '1 cp matin et soir', recommandations: 'Hydratation QA',
   });
   await prescriptions.addLaboratoryPrescription(`Analyses ${title}`);
   await prescriptions.addImagingPrescription(`Imagerie ${title}`, isoDate());
@@ -282,6 +310,11 @@ const realizeBilan = (page: Page): Realize => async (body, title, reopen) => {
   const create = body.locator('app-create-health-check');
   await expect(create, 'Formulaire de création du bilan').toBeVisible();
   await fillAllFields(page, create, title);
+  // Analyses choisies à la création : une zone de résultat par analyse, ni plus ni moins
+  const analysesChosen = await create.locator('ng-select[formcontrolname="analyses"] .ng-value').count();
+  if (analysesChosen === 0) {
+    test.info().annotations.push({ type: 'Donnée de la structure', description: `${title} : aucune analyse proposée pour ce type de bilan (résultat sans zone d'analyse)` });
+  }
   await create.getByRole('button', { name: /^\W*Enregistrer\s*$/ }).click();
   await expect(success(page)).toBeVisible({ timeout: 20000 });
 
@@ -301,11 +334,13 @@ const realizeBilan = (page: Page): Realize => async (body, title, reopen) => {
   // analyses, éventuellement après "Activer le formulaire" : on (ré)active jusqu'à ce qu'elles
   // soient toutes modifiables, sinon elles restaient vides sans être signalées.
   const inputs = result.locator('textarea.result-input');
-  await expect(inputs.first(), `${title} : une zone de résultat par analyse`).toBeVisible({ timeout: 30000 });
+  if (analysesChosen > 0) await expect(inputs.first(), `${title} : une zone de résultat par analyse`).toBeVisible({ timeout: 30000 });
+  await expect(inputs, `${title} : ${analysesChosen} zone(s) de résultat, une par analyse choisie`).toHaveCount(analysesChosen, { timeout: 30000 });
   const toggle = result.getByRole('button', { name: /Activer le formulaire|Verrouiller/ });
+  const lastEditable = analysesChosen > 0 ? inputs.last() : result.locator('textarea[formcontrolname="diagnostic"]');
   await expect(async () => {
-    if (await inputs.last().isDisabled()) await toggle.click();
-    await expect(inputs.last()).toBeEnabled({ timeout: 3000 });
+    if (await lastEditable.isDisabled()) await toggle.click();
+    await expect(lastEditable).toBeEnabled({ timeout: 3000 });
     await expect(result.locator('textarea[formcontrolname="diagnostic"]')).toBeEnabled({ timeout: 1000 });
   }).toPass({ timeout: 30000 });
   const filled = await fillAllFields(page, result, title);
@@ -326,6 +361,9 @@ const realizeBilan = (page: Page): Realize => async (body, title, reopen) => {
   return async reopened => {
     const kept = await openResult(async () => reopened);
     await expectKept(kept, filled, `${title} (résultat)`);
+    // Pièce jointe enregistrée : téléchargeable sans activer le formulaire (depuis le 20/11)
+    await expect.soft(kept.locator('textarea[formcontrolname="diagnostic"]'), `${title} : résultat verrouillé à la réouverture`).toBeDisabled();
+    await expect.soft(kept.getByRole('button', { name: /Télécharger la pièce jointe/ }), `${title} : pièce jointe téléchargeable, formulaire verrouillé`).toBeEnabled({ timeout: 15000 });
     await expect.soft(kept.locator('textarea.result-input'), `${title} : une zone de résultat par analyse`).toHaveCount(count);
     for (const [id, value] of Object.entries(results)) {
       await expect.soft(kept.locator(`textarea.result-input[name="${id}"]`), `${title} : résultat de l'analyse ${id} réaffiché`)
@@ -450,7 +488,8 @@ test.describe('Module Dossier médical — Suivi des parcours de soins (homme, f
   // ---------------- Détail du parcours et navigation ----------------
   test('Détail du parcours : état, informations, actes prévus par étape', async ({ page }) => {
     await openPathway(page, woman, FEMMES.name);
-    await expect(page.locator('.pw-hero-status')).toHaveText(/Courant/);
+    // Badge d'état affiché seulement pour un parcours archivé (plus de « Courant(e) »)
+    await expect(page.locator('.pw-hero-status')).toHaveCount(0);
     await expect(page.locator('.pw-state')).toHaveText(/En cours/);
     await expect(page.locator('.pw-info-line').filter({ hasText: "Date d'enregistrement" })).not.toContainText(/^\s*-?\s*$/);
     const planned = page.locator('.pw-acts-item');
@@ -523,31 +562,16 @@ test.describe('Module Dossier médical — Suivi des parcours de soins (homme, f
     });
   }
 
-  // ---------------- Clôture des étapes ----------------
+  // ---------------- État des étapes (plus de clôture manuelle) ----------------
+  // Depuis le 10/11, le bouton « Clôturer cette étape » et l'état « Clôturée » sont masqués : l'état
+  // d'une étape suit les actes réalisés. Légende : Terminée, Incomplète, Manquée, À venir.
   for (const step of FEMMES.steps.map((_, i) => i + 1)) {
-    test(`Clôturer l'étape ${step} (tous les actes réalisés) : étape terminée`, async ({ page }) => {
+    test(`Étape ${step}, tous les actes réalisés : étape terminée, sans bouton de clôture`, async ({ page }) => {
       await openPathway(page, woman, FEMMES.name);
       await goToStep(page, step);
-      const close = activeStep(page).getByRole('button', { name: /Clôturer cette étape/ });
-      // Patients réutilisés : étape déjà clôturée par un passage précédent, on vérifie seulement son état
-      if (!(REUSED_PATIENTS && await close.count() === 0)) {
-        await close.click();
-        await confirm(page);
-        await expect(page.getByText(/clôture de cet(te)? étape a\s+r[ée]ussi/i).first()).toBeVisible({ timeout: 20000 });
-      }
-      await expect(stepButton(page, step)).toHaveClass(/pw-step-success/, { timeout: 20000 });
-      await expect(activeStep(page).getByRole('button', { name: /Clôturer cette étape/ })).toHaveCount(0);
-
-      // Étape clôturée : plus aucun bouton de modification dans ses actes, quel que soit le type
-      await page.reload();
-      await expect(page.locator('.pw-hero')).toBeVisible({ timeout: 20000 });
-      await goToStep(page, step);
-      const editButtons = /^\W*(Activer|Activer le formulaire|Verrouiller|Mettre à jour.*|Enregistrer.*|Modifier la vaccination|Nouvelle dose)\s*$/;
-      for (const domain of [/Consultation/i, /chographie/i, /Vaccination/i, /Bilan/i]) {
-        const body = await expandAct(await openDomain(page, domain), 0);
-        await page.waitForTimeout(2000); // chargement de l'acte depuis le serveur
-        await expect.soft(body.getByRole('button', { name: editButtons }), `Étape ${step} ${domain} : aucun bouton de modification, étape clôturée`).toHaveCount(0);
-      }
+      await expect(stepButton(page, step), 'Étape terminée (vert)').toHaveClass(/pw-step-success/, { timeout: 20000 });
+      await expect(activeStep(page).getByRole('button', { name: /Clôturer cette étape/ }), 'Plus de bouton de clôture').toHaveCount(0);
+      await expect(page.locator('.pw-steps-legend'), 'Légende sans « Clôturée »').toHaveText(/^\s*Terminée\s*Incomplète\s*Manquée\s*À venir\s*$/);
     });
   }
 
@@ -560,9 +584,9 @@ test.describe('Module Dossier médical — Suivi des parcours de soins (homme, f
     await expect(activeStep(page).getByRole('button', { name: /Clôturer cette étape/ })).toHaveCount(0);
   });
 
-  test("Clôturer une étape commencée mais incomplète : étape incomplète", async ({ page }) => {
+  test("Une étape commencée mais incomplète : étape incomplète, sans bouton de clôture", async ({ page }) => {
     test.setTimeout(1800000 * VISUAL);
-    // Étape 1 du parcours tous les sexes de la patiente : une seule consultation réalisée, puis clôture
+    // Étape 1 du parcours tous les sexes de la patiente : une seule consultation réalisée
     await openPathway(page, woman, TOUS.name);
     await expect(activeStep(page)).toContainText('Étape 1');
     const content = await openDomain(page, /Consultation/i);
@@ -572,88 +596,81 @@ test.describe('Module Dossier médical — Suivi des parcours de soins (homme, f
       await page.reload();
       await expect(page.locator('.pw-hero')).toBeVisible({ timeout: 20000 });
     }
-    const close = activeStep(page).getByRole('button', { name: /Clôturer cette étape/ });
-    // Patients réutilisés : étape déjà clôturée par un passage précédent, on vérifie seulement son état
-    if (!(REUSED_PATIENTS && await close.count() === 0)) {
-      await close.click();
-      await confirm(page);
-      await expect(page.getByText(/clôture de cet(te)? étape a\s+r[ée]ussi/i).first()).toBeVisible({ timeout: 20000 });
-    }
-    await expect(stepButton(page, 1)).toHaveClass(/pw-step-warning/, { timeout: 20000 });
+    await expect(stepButton(page, 1), 'Étape incomplète (orange)').toHaveClass(/pw-step-warning/, { timeout: 20000 });
     await expect(activeStep(page).getByRole('button', { name: /Clôturer cette étape/ })).toHaveCount(0);
   });
 
   // ---------------- Résumé et modification ----------------
   test('Les boutons du parcours portent le nom du parcours', async ({ page }) => {
-    test.fail(true, "Anomalie : les boutons \"Modifier …\", \"Archiver …\" et \"Voir les archives …\" affichent le titre du parcours lu dans le référentiel des parcours prédéfinis (careplantemplateTitle) : il est vide pour un parcours paramétré.");
     await openPathway(page, woman, FEMMES.name);
     await expect(pathwayAction(page, 'Modifier')).toContainText(FEMMES.name, { timeout: 5000 });
   });
 
-  test('Ouvrir le résumé du parcours', async ({ page }) => {
+  test("Le résumé du parcours (fiche grossesse) n'est pas proposé pour un parcours non prénatal", async ({ page }) => {
+    // Résumé réservé au parcours prénatal : ouvert dans le groupe « Archivage d'un parcours prénatal »
     await openPathway(page, woman, FEMMES.name);
-    await page.getByRole('button', { name: /Voir résumé/ }).click();
-    const summary = page.locator('#bd-summary');
-    await expect(summary).toBeVisible();
-    await expect(summary.getByText('Résumé du parcours')).toBeVisible();
-    await summary.getByRole('button', { name: /Close|×/ }).first().click();
-    await expect(summary).toBeHidden();
+    await expect(pathwayAction(page, 'Modifier')).toBeVisible();
+    await expect(page.getByRole('button', { name: /Voir résumé/ })).toHaveCount(0);
   });
 
-  test('Modifier le parcours (praticien et date de début)', async ({ page }) => {
+  test('Modifier le parcours (praticien et date de début) : modifications conservées', async ({ page }) => {
+    const fields: FieldSpec[] = [
+      { name: 'startDate', kind: 'date', value: isoDate(-1) },
+      { name: 'caregiverId', kind: 'select', index: 1 },
+    ];
     await openPathway(page, woman, FEMMES.name);
+    // Non-régression (même famille que le bug backend des analyses / doses vidées à la mise à jour,
+    // corrigé le 2026-11-19) : nombre d'étapes et actes prévus de chaque étape relevés avant la
+    // modification (dates et état des étapes peuvent suivre la nouvelle date de début : non comparés).
+    const steps = page.locator('.pw-steps-track button.pw-step');
+    const planned = page.locator('.pw-acts-item');
+    await expect(planned, 'Actes prévus : une ligne par étape').toHaveCount(2, { timeout: 20000 });
+    const snapshot = async () => ({
+      steps: await steps.count(),
+      acts: await planned.evaluateAll(els => els.map(e => [...e.querySelectorAll('.pw-act-badge')].map(b => b.textContent?.replace(/\s+/g, ' ').trim()).sort())),
+    });
+    const before = await snapshot();
+    expect(before.acts.flat().length, 'Actes prévus relevés').toBeGreaterThan(0);
     await pathwayAction(page, 'Modifier').click();
     const modal = page.locator('#bd-careplan');
     await expect(modal).toBeVisible();
-    await new ConsultationFormPage(page, modal).fill([
-      { name: 'startDate', kind: 'date', value: isoDate(-1) },
-      { name: 'caregiverId', kind: 'select', index: 1 },
-    ]);
+    const filled = await new ConsultationFormPage(page, modal).fill(fields);
     await modal.getByRole('button', { name: /^\W*Enregistrer\s*$/ }).click();
     await confirm(page);
     await expect(page.getByText(/modification de ce parcours .* a réussi/i).first()).toBeVisible({ timeout: 20000 });
+    await test.step('Rouvrir après rechargement : date de début et praticien enregistrés', async () => {
+      await page.reload();
+      await expect(page.locator('.pw-hero')).toBeVisible({ timeout: 20000 });
+      await pathwayAction(page, 'Modifier').click();
+      await expect(modal).toBeVisible();
+      await new ConsultationFormPage(page, modal).expectValues(fields, filled);
+      await modal.getByRole('button', { name: /Fermer|Annuler|Close|×/ }).first().click();
+      await expect(modal).toBeHidden();
+    });
+    await test.step('Étapes et actes prévus inchangés', async () => {
+      await expect.poll(snapshot, { timeout: 20000 }).toEqual(before);
+    });
   });
 
   // ---------------- Archivage ----------------
-  test("Archiver sans renseigner l'année ni le sexe de l'enfant est refusé", async ({ page }) => {
-    await openPathway(page, woman, FEMMES.name);
-    await pathwayAction(page, 'Archiver').click();
-    const modal = page.locator('#obstetrical');
-    await expect(modal).toBeVisible();
-    await modal.getByRole('button', { name: /^\W*Enregistrer\s*$/ }).click();
-    await expect(modal.getByText("L'année est obligatoire")).toBeVisible();
-    await expect(modal.getByText("Le sexe de l'enfant 1 est obligatoire")).toBeVisible();
-    await expect(modal.getByText('Veuillez remplir tous les champs obligatoires')).toBeVisible();
-    await expect(page).toHaveURL(/patient-care-pathway-detail/);
-  });
-
+  // L'issue de grossesse n'est demandée que pour un parcours prénatal (voir le groupe « Archivage
+  // d'un parcours prénatal » plus bas) : les parcours paramétrés sont archivés sur simple confirmation.
   test("Archiver un parcours non prénatal ne demande pas d'antécédent obstétrical", async ({ page }) => {
-    test.fail(true, "Anomalie : l'archivage de tout parcours (vaccinal, pédiatrique, parcours d'un homme…) ouvre le formulaire d'issue de grossesse et crée un antécédent obstétrical (care-pathways-step openModalArchive / openModalAntecedentObstetrical).");
     await openPathway(page, man, HOMMES.name);
     await pathwayAction(page, 'Archiver').click();
     const modal = page.locator('#obstetrical');
     await expect(modal).toBeVisible();
-    await expect(modal.getByText('Issue de la grossesse'), 'Pas de question de grossesse').toHaveCount(0, { timeout: 3000 });
+    await expect(modal.getByText(`Confirmez-vous l'archivage du parcours ${HOMMES.name} ?`)).toBeVisible();
+    await expect(modal.getByText('Issue de la grossesse'), 'Pas de question de grossesse').toHaveCount(0);
+    await expect(modal.locator('input[formcontrolname="annee"]'), "Pas d'année de grossesse").toHaveCount(0);
+    await modal.getByRole('button', { name: 'Close' }).click();
+    await expect(modal).toBeHidden();
+    await expect(page, 'Toujours sur le parcours (pas archivé)').toHaveURL(/patient-care-pathway-detail/);
   });
 
-  test('Archiver le parcours de la patiente avec tous les champs', async ({ page }) => {
+  test('Archiver le parcours de la patiente sur simple confirmation', async ({ page }) => {
     await openPathway(page, woman, FEMMES.name);
-    await pathwayAction(page, 'Archiver').click();
-    const modal = page.locator('#obstetrical');
-    await expect(modal).toBeVisible();
-    await new ConsultationFormPage(page, modal).fill([
-      { name: 'annee', kind: 'number', value: String(new Date().getFullYear()) },
-      { name: 'issue', kind: 'select' },
-      { name: 'terme', kind: 'text', value: '39 SA + 2 jours' },
-      { name: 'complications', kind: 'multiselect', count: 1 },
-      { name: 'sexe', kind: 'select' },
-      { name: 'poids', kind: 'number', value: '3200' },
-      { name: 'accouchement_delivrance', kind: 'select' },
-      { name: 'allaitement', kind: 'select' },
-      { name: 'evolution_commentaire', kind: 'select' },
-      { name: 'precisions', kind: 'textarea', value: 'Archivage du parcours de suivi QA' },
-    ]);
-    await modal.getByRole('button', { name: /^\W*Enregistrer\s*$/ }).click();
+    await confirmSimpleArchive(page, FEMMES.name);
     await expect(page.getByText(/archivage a r[ée]ussie?/i).first()).toBeVisible({ timeout: 20000 });
     await page.waitForURL('**/patient/patient-care-pathway-list/**');
   });
@@ -703,14 +720,7 @@ test.describe('Module Dossier médical — Suivi des parcours de soins (homme, f
         // Patients réutilisés : parcours déjà archivé par un passage précédent (tuile de démarrage de nouveau active)
         if (REUSED_PATIENTS && await pathwayTile(page, template.name).first().isEnabled().catch(() => false)) return;
         await openPathway(page, patient, template.name);
-        await pathwayAction(page, 'Archiver').click();
-        const modal = page.locator('#obstetrical');
-        await expect(modal).toBeVisible();
-        await new ConsultationFormPage(page, modal).fill([
-          { name: 'annee', kind: 'number', value: String(new Date().getFullYear()) },
-          { name: 'sexe', kind: 'select' },
-        ]);
-        await modal.getByRole('button', { name: /^\W*Enregistrer\s*$/ }).click();
+        await confirmSimpleArchive(page, template.name);
         await page.waitForURL('**/patient/patient-care-pathway-list/**', { timeout: 30000 });
       });
     }
@@ -805,5 +815,103 @@ test.describe('Module Dossier médical — Suivi des parcours de soins (homme, f
 
     // Nettoyage : de nouveau désactivé
     await (await openTemplates(page)).deactivate(HOMMES.name);
+  });
+});
+
+// ======================================================================
+// Archivage d'un parcours prénatal : seul type qui demande l'issue de la grossesse
+// (antécédent obstétrical créé à l'archivage)
+// ======================================================================
+test.describe("Module Dossier médical — Archivage d'un parcours prénatal", () => {
+  test.describe.configure({ mode: 'serial' });
+  const PRENATAL = 'PRENATAL';
+  let patient: DossierPatient;
+
+  test.beforeAll(async ({ browser }) => {
+    test.setTimeout(DOSSIER_SETUP_TIMEOUT);
+    // Le parcours prénatal peut être limité en âge (46 ans au plus dans la structure nest) : patiente de 28 ans
+    const dob = new Date();
+    dob.setFullYear(dob.getFullYear() - 28);
+    patient = await createDossierPatient(browser, 'FEMME', { dob: dob.toISOString().split('T')[0] });
+  });
+
+  test.beforeEach(async ({ portal }) => {
+    await portal.goto();
+  });
+
+  test('Démarrer un parcours prénatal chez la patiente', async ({ page }) => {
+    await openPatientFile(page, patient);
+    // Tuiles des parcours chargées après le dashboard
+    await expect(page.locator('.pathway-actions .qa-btn').first()).toBeVisible({ timeout: 20000 });
+    test.skip(await pathwayTile(page, PRENATAL).count() === 0, "Pas de modèle de parcours PRENATAL actif dans cette structure");
+    const carePathway = new CarePathwayPage(page);
+    await carePathway.openStartForm(PRENATAL);
+    // Formulaire prénatal : date des dernières règles, groupe sanguin, rhésus, praticien, gestité, parité.
+    // Le formulaire est repris du résumé de la patiente une fois chargé (champs remis à vide) : on
+    // attend la fin des chargements et on vérifie les valeurs avant de démarrer.
+    await page.waitForLoadState('networkidle', { timeout: 15000 }).catch(() => {});
+    await expect(async () => {
+      await page.locator('#dateDerniereRegle').fill(isoDate(-60));
+      await page.locator('#groupSanguin').selectOption('O');
+      await page.locator('#rhesus').selectOption('POSITIF');
+      await page.locator('#g').fill('1');
+      await page.locator('#p').fill('0');
+      await page.waitForTimeout(1000);
+      await expect(page.locator('#groupSanguin')).toHaveValue(/O/);
+      await expect(page.locator('#rhesus')).toHaveValue(/POSITIF/);
+      await expect(page.locator('#g')).toHaveValue('1');
+    }).toPass({ timeout: 30000 });
+    // Praticien toujours choisi : la valeur reprise peut ne correspondre à aucun praticien proposé
+    const caregiver = page.locator('ng-select[formcontrolname="caregiverId"]');
+    await caregiver.locator('.ng-select-container').click();
+    await page.locator('.ng-dropdown-panel .ng-option:not(.ng-option-disabled)').first().click();
+    await expect(caregiver.locator('.ng-value'), 'Praticien choisi').toHaveCount(1);
+    await carePathway.start();
+    await expect(pathwayAction(page, 'Archiver'), 'Bouton portant le nom du parcours').toContainText(PRENATAL);
+  });
+
+  test('Ouvrir le résumé du parcours prénatal', async ({ page }) => {
+    await openPathway(page, patient, PRENATAL);
+    await page.getByRole('button', { name: /Voir résumé/ }).click();
+    const summary = page.locator('#bd-summary');
+    await expect(summary).toBeVisible();
+    await expect(summary.getByText('Résumé du parcours')).toBeVisible();
+    await summary.getByRole('button', { name: /Close|×/ }).first().click();
+    await expect(summary).toBeHidden();
+  });
+
+  test("Archiver sans renseigner l'année ni le sexe de l'enfant est refusé", async ({ page }) => {
+    await openPathway(page, patient, PRENATAL);
+    await pathwayAction(page, 'Archiver').click();
+    const modal = page.locator('#obstetrical');
+    await expect(modal).toBeVisible();
+    await expect(modal.getByText('Issue de la grossesse'), 'Issue de la grossesse demandée').toBeVisible();
+    await modal.getByRole('button', { name: /^\W*Enregistrer\s*$/ }).click();
+    await expect(modal.getByText("L'année est obligatoire")).toBeVisible();
+    await expect(modal.getByText("Le sexe de l'enfant 1 est obligatoire")).toBeVisible();
+    await expect(modal.getByText('Veuillez remplir tous les champs obligatoires')).toBeVisible();
+    await expect(page).toHaveURL(/patient-care-pathway-detail/);
+  });
+
+  test("Archiver le parcours prénatal avec l'issue de la grossesse (tous les champs)", async ({ page }) => {
+    await openPathway(page, patient, PRENATAL);
+    await pathwayAction(page, 'Archiver').click();
+    const modal = page.locator('#obstetrical');
+    await expect(modal).toBeVisible();
+    await new ConsultationFormPage(page, modal).fill([
+      { name: 'annee', kind: 'number', value: String(new Date().getFullYear()) },
+      { name: 'issue', kind: 'select' },
+      { name: 'terme', kind: 'text', value: '39 SA + 2 jours' },
+      { name: 'complications', kind: 'multiselect', count: 1 },
+      { name: 'sexe', kind: 'select' },
+      { name: 'poids', kind: 'number', value: '3200' },
+      { name: 'accouchement_delivrance', kind: 'select' },
+      { name: 'allaitement', kind: 'select' },
+      { name: 'evolution_commentaire', kind: 'select' },
+      { name: 'precisions', kind: 'textarea', value: 'Archivage du parcours prénatal QA' },
+    ]);
+    await modal.getByRole('button', { name: /^\W*Enregistrer\s*$/ }).click();
+    await expect(page.getByText(/archivage a r[ée]ussie?/i).first()).toBeVisible({ timeout: 20000 });
+    await page.waitForURL('**/patient/patient-care-pathway-list/**');
   });
 });

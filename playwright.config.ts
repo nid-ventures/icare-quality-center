@@ -2,6 +2,7 @@ import { defineConfig } from '@playwright/test';
 import dotenv from 'dotenv';
 import fs from 'fs';
 import path from 'path';
+import { tenant, adminStorageState } from './test-data/tenants';
 
 // Sélection de l'environnement cible via TEST_ENV=local|dev|test (npm run test:local /
 // test:dev / test:test). Sans TEST_ENV (ex: `npm test`, ou le workflow CI qui génère son
@@ -30,25 +31,32 @@ dotenv.config({ path: envFile });
 // - SLOWMO (ms, optionnel) -> pause après chaque action pour suivre les tests à l'écran
 //   (ex: SLOWMO=1500 avec --headed, cf. "npm run test:visuel"). 0 par défaut.
 const slowMo = Number(process.env.SLOWMO) || 0;
+// Mode visuel (SLOWMO) : zoom de l'application dans la fenêtre maximisée, 100 % par défaut ;
+// VISUAL_ZOOM=0.8 l'affiche réduite pour voir la page entière (largeur CSS 1920 / 0.8 = 2400 px,
+// l'app reste en disposition desktop, ≥ 1300 px).
+const scale = slowMo > 0 ? Number(process.env.VISUAL_ZOOM) || 1 : 1;
 const chrome = {
   channel: 'chrome',
   viewport: null,
   launchOptions: {
     slowMo,
-    args: ['--start-maximized', '--window-size=1920,1080', '--force-device-scale-factor=1'],
+    args: ['--start-maximized', '--window-size=1920,1080', `--force-device-scale-factor=${scale}`],
   },
 };
 
 export default defineConfig({
   testDir: './tests',
   testMatch: '**/*.ts',
-  fullyParallel: true,
+  // WORKERS=n : n fichiers en même temps (un fichier entier par worker, ses tests dans l'ordre)
+  fullyParallel: !process.env.WORKERS,
   forbidOnly: !!process.env.CI,
   retries: process.env.CI ? 2 : 0,
-  workers: 1,
+  workers: Number(process.env.WORKERS) || 1,
   reporter: [
     ['list'],
-    ['allure-playwright', { outputFolder: 'allure-results' }],
+    // Structure testée affichée dans l'onglet « Environnement » du rapport
+    // ALLURE_RESULTS_DIR : dossier propre à un run (plusieurs structures lancées en même temps)
+    ['allure-playwright', { resultsDir: process.env.ALLURE_RESULTS_DIR || 'allure-results', environmentInfo: { Structure: `${tenant.name} (${tenant.key})`, Environnement: testEnv ?? 'défaut (.env)' } }],
     ['html', { open: 'never' }],
   ],
   use: {
@@ -73,16 +81,26 @@ export default defineConfig({
       use: { ...chrome },
     },
     {
+      // Données nécessaires aux tests ajoutées à la structure si elles manquent (actes, garant,
+      // analyses), spécialité des honoraires choisie parmi ses soignants.
+      name: 'setup-data',
+      testDir: './tests/structure-app',
+      testMatch: /structure-data\.setup\.ts/,
+      dependencies: ['setup'],
+      use: { ...chrome, storageState: adminStorageState() },
+    },
+    {
       // Application structure (hi-icare-patient) : un fichier .spec.ts par module métier.
       name: 'structure-app',
+      metadata: { tenant: tenant.key },
       testDir: './tests/structure-app',
       testMatch: /.*\.spec\.ts/,
-      dependencies: ['setup'],
+      dependencies: ['setup-data'],
       use: {
         ...chrome,
-        // Même chemin que ADMIN_STORAGE_STATE (test-data/structure-users.ts), non importé ici
-        // pour ne pas évaluer ce module avant le chargement du fichier .env.
-        storageState: 'playwright/.auth/structure-admin.json',
+        // Session de la structure testée (variable TENANT, cf. test-data/tenants.ts) : même chemin
+        // que ADMIN_STORAGE_STATE ; tenants.ts ne dépend pas du fichier .env
+        storageState: adminStorageState(),
       },
     },
     {

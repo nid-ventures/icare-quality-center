@@ -126,9 +126,10 @@ export class PatientCarePage {
      * @param data - Les données de la prise en charge
      */
     async fillCareForm(data: CareData) {
-        // Sélection de l'assureur
+        // Sélection de l'assureur ; s'il n'existe pas dans la structure testée (garants propres à
+        // chaque structure), le premier assureur proposé est pris et data.insurerName mis à jour
         await this.insurerSelect.click();
-        await this.page.getByRole('option', { name: data.insurerName }).click();
+        data.insurerName = await this.pickOption(data.insurerName);
 
         // Dates
         await this.startingDateInput.fill(data.startingDate);
@@ -295,25 +296,77 @@ export class PatientCarePage {
  * @param newInsurerName - Nouvel assureur (ex: 'Ascoma Assurance (ASSURANCE)')
  * @param newEndingDate - Nouvelle date de fin (format YYYY-MM-DD)
  */
-    async modifyFirstCare(newInsurerName: string, newEndingDate: string) {
+    /**
+     * Choisit l'option `wanted` de la liste déroulante ouverte si elle existe, sinon la première
+     * option disponible (hors `except`) ; renvoie le libellé choisi.
+     */
+    private async pickOption(wanted?: string, except?: string): Promise<string> {
+        // Assureurs groupés par type : les titres de groupe (ASSURANCE, IPM…) ne sont pas des choix
+        const options = this.page.locator('.ng-dropdown-panel .ng-option:not(.ng-optgroup):not(.ng-option-disabled)');
+        await expect(options.first(), 'Au moins un assureur proposé').toBeVisible({ timeout: 15000 });
+        const labels = (await options.allInnerTexts()).map(s => s.replace(/\s+/g, ' ').trim()).filter(Boolean);
+        const chosen = (wanted && labels.find(l => l === wanted)) || labels.find(l => l !== except) || labels[0];
+        await options.filter({ hasText: chosen }).first().click();
+        await expect(this.page.locator('.ng-dropdown-panel'), 'Assureur choisi : liste refermée').toBeHidden();
+        return chosen;
+    }
+
+    /**
+     * Modifie la première prise en charge : assureur `newInsurerName` s'il existe dans la structure,
+     * sinon un autre assureur disponible ; renvoie l'assureur choisi.
+     */
+    async modifyFirstCare(newInsurerName: string | undefined, newEndingDate: string): Promise<string> {
         // Cliquer sur le bouton Action de cette ligne
         await this.actionButtonFirst.click();
         // Cliquer sur Modifier
         await this.page.getByRole('link', { name: 'Modifier' }).click();
         // Vérifier que le modal de modification est visible
         await expect(this.modifyModalHeading).toBeVisible();
-        // Modifier l'assureur
+        // Modifier l'assureur (un autre que l'actuel si celui demandé n'existe pas dans la structure)
+        const current = ((await this.modifyInsurerSelect.locator('.ng-value-label').first().textContent().catch(() => '')) ?? '').replace(/\s+/g, ' ').trim();
         await this.modifyInsurerSelect.click();
-        await this.page.getByRole('option', { name: newInsurerName }).click();
+        const chosen = await this.pickOption(newInsurerName, current);
         // Modifier la date de fin
         await this.modifyEndingDateInput.fill(newEndingDate);
         // Cliquer sur Modifier (bouton de confirmation)
         await this.modifyButton.click();
         // Attendre la fermeture du modal (l'enregistrement peut prendre plus de temps sous charge).
         await expect(this.modifyModalHeading).not.toBeVisible({ timeout: 15000 });
-
+        return chosen;
     }
     /**
+     * Valeurs de la ligne de prise en charge de l'assureur donné (ou de la première), lues par
+     * en-tête de colonne : Assureur, Début / Fin validité, Numéro assuré, Numéro carte, Taux, Plafond.
+     */
+    async coverRow(text?: string): Promise<Record<string, string>> {
+        // Tableau de la liste (le panneau contient aussi le tableau des actes de la fenêtre d'ajout)
+        const table = this.page.locator('#pills-prise-en-charge-fill table')
+            .filter({ has: this.page.getByRole('columnheader', { name: 'Assureur', exact: true }) }).first();
+        const headers = (await table.locator('thead th').allTextContents()).map(h => h.replace(/\s+/g, ' ').trim()); // textContent : en-têtes affichés en majuscules par le style
+        const rows = table.locator('tbody tr').filter({ has: this.page.getByRole('button', { name: 'Action' }) });
+        const row = text ? rows.filter({ hasText: text }).first() : rows.first();
+        await expect(row, `Prise en charge ${text ?? ''} listée`).toBeVisible({ timeout: 15000 });
+        const cells = (await row.locator('td').allInnerTexts()).map(c => c.replace(/\s+/g, ' ').trim());
+        return Object.fromEntries(headers.map((h, i) => [h, cells[i] ?? '']));
+    }
+
+    /** La ligne listée correspond aux valeurs saisies (dates acceptées en jj/mm/aaaa ou aaaa-mm-jj). */
+    async expectCoverRow(data: Pick<CareData, 'insurerName' | 'startingDate' | 'endingDate' | 'insuranceNumber' | 'cardNumber' | 'coverageRate' | 'paymentCap'>) {
+        // Ligne retrouvée par son numéro d'assuré, unique
+        const row = await this.coverRow(data.insuranceNumber);
+        const date = (iso: string) => new RegExp(`${iso}|${iso.split('-').reverse().join('/')}`);
+        // Chiffres sans décimales éventuelles (« 25 % », « 1 234 567,00 »)
+        const digits = (v: string) => v.replace(/[.,]\d{1,2}\s*(%|FCFA)?\s*$/, '').replace(/\D/g, '');
+        expect(row['Assureur'], 'Assureur').toContain(data.insurerName.replace(/\s*\(.*\)\s*$/, ''));
+        expect(row['Début validité'], 'Début de validité').toMatch(date(data.startingDate));
+        expect(row['Fin validité'], 'Fin de validité').toMatch(date(data.endingDate));
+        expect(row['Numéro assuré'], 'Numéro assuré').toBe(data.insuranceNumber);
+        expect(row['Numéro carte'], 'Numéro carte').toBe(data.cardNumber);
+        expect(digits(row['Taux']), 'Taux').toBe(digits(data.coverageRate));
+        expect(digits(row['Plafond (FCFA)']), 'Plafond').toBe(digits(data.paymentCap));
+    }
+
+/**
  * Ouvre les détails de la première prise en charge (Voir les détails)
  */
     async viewFirstCareDetails() {

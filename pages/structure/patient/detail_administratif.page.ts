@@ -114,33 +114,48 @@ export class DetailPatientPage {
     await expect(this.buttonActiveTab).toBeVisible();
   }
 
-  async updateData() {
-
-    // Activer le formulaire
+  /**
+   * Modifie les détails administratifs : date de naissance, email, quartier, rue, ville et région.
+   * Renvoie les valeurs saisies, à revérifier après rechargement (expectAdministrativeData).
+   */
+  async updateData(): Promise<AdministrativeData> {
+    const stamp = Date.now().toString().slice(-6);
+    const data: AdministrativeData = {
+      doB: '1985-04-05',
+      email: `patient.qa${stamp}@example.com`,
+      address: `Quartier QA ${stamp}`,
+      street: `Rue QA ${stamp}`,
+      city: 'SAINT-LOUIS',
+      state: 'KÉDOUGOU',
+    };
     await this.buttonActiveTab.click();
-    // Attendre que les champs deviennent éditables (par exemple, le champ date de naissance)
     await expect(this.dateNaissanceInput).toBeEditable();
-    // Modifier la date de naissance
-    await this.dateNaissanceInput.fill('2026-04-05');
-    // Modifier la ville (premier ng-select) – adapter selon le besoin
-    // Ici on suppose que le premier ng-select correspond à la ville
-    const citySelect = this.optionFirst;
-    await citySelect.click();
+    await this.dateNaissanceInput.fill(data.doB);
+    await this.page.locator('input#email').fill(data.email);
+    await this.page.locator('input#address').fill(data.address);
+    await this.page.locator('input#street').fill(data.street);
+    await this.optionFirst.click();
     await this.optionCity.click();
-    // Modifier la région/état (second ng-select) – adapter
-    const stateSelect = this.optionState;
-    await stateSelect.click();
+    await this.optionState.click();
     await this.optionStateValue.click();
-    // Enregistrer
     await this.buttonEnregistrer.click();
-    // Confirmer la modification dans la modale
     await expect(this.buttonConfirmer).toBeVisible();
     await this.buttonConfirmer.click();
-
-
-
-
+    await expect(this.buttonConfirmer, 'Modification confirmée').toBeHidden({ timeout: 20000 });
+    return data;
   }
+
+  /** Relit les détails administratifs affichés (après rechargement) et les compare aux valeurs saisies. */
+  async expectAdministrativeData(data: AdministrativeData) {
+    await expect(this.dateNaissanceInput, 'Date de naissance').toHaveValue(data.doB, { timeout: 15000 });
+    await expect(this.page.locator('input#email'), 'Email').toHaveValue(data.email);
+    await expect(this.page.locator('input#address'), 'Quartier').toHaveValue(data.address);
+    await expect(this.page.locator('input#street'), 'Rue').toHaveValue(data.street);
+    // Libellé seul (.ng-value contient aussi la croix d'effacement « × »)
+    await expect(this.optionFirst.locator('.ng-value-label'), 'Ville').toHaveText(data.city, { ignoreCase: true });
+    await expect(this.optionState.locator('.ng-value-label'), 'Région').toHaveText(data.state, { ignoreCase: true });
+  }
+
   /**
    * Ouvre l'onglet "Personne à contacter"
    */
@@ -217,21 +232,68 @@ export class DetailPatientPage {
    * @param nationalityCode - Code de la nationalité (ex: '32')
    */
   async modifyFirstContactPerson(regionCode: string, nationalityCode: string) {
-    // Cliquer sur le bouton Action de la première ligne
-    await this.actionButtonFirst.click();
-    // Cliquer sur Modifier
-    await this.modifyLink.click();
-    // Vérifier que le modal de modification est visible
-    await expect(this.modifyModalHeading).toBeVisible();
-    // Modifier la région
+    await this.openFirstContactDetails();
     await this.modifyRegionSelect.selectOption(regionCode);
-    // Modifier la nationalité
     await this.modifyNationalitySelect.selectOption(nationalityCode);
-    // Enregistrer
-    await this.modifySaveButton.click();
-    // Attendre la fermeture du modal (optionnel, par exemple disparition du heading)
-    await expect(this.modifyModalHeading).not.toBeVisible({ timeout: 5000 });
+    await this.page.locator('#update_person_contact').click();
+    await expect(this.modifyModalHeading).not.toBeVisible({ timeout: 15000 });
   }
+
+  /** Ouvre le détail (« Modifier ») de la première personne à contacter. */
+  async openFirstContactDetails() {
+    await this.actionButtonFirst.click();
+    await this.modifyLink.click();
+    await expect(this.modifyModalHeading).toBeVisible();
+    // Formulaire rempli à partir de la personne choisie
+    await expect(this.page.locator('#sctfirstName')).not.toHaveValue('', { timeout: 10000 });
+  }
+
+  async closeContactDetails() {
+    await this.page.locator('.see-bd-modifie-personne-modal-xl').getByRole('button', { name: 'Fermer' }).click();
+    await expect(this.modifyModalHeading).not.toBeVisible({ timeout: 10000 });
+  }
+
+  /** Ligne de la personne dans la liste : prénom, nom, téléphones et lien enregistrés. */
+  async expectContactRow(data: ContactPersonData) {
+    const panel = this.page.getByRole('tabpanel', { name: 'Personne à contacter' });
+    const row = panel.locator('tbody tr').filter({ hasText: data.lastName }).first();
+    await expect(row, 'Personne listée').toBeVisible({ timeout: 15000 });
+    const cells = row.locator('td');
+    await expect(cells.nth(0), 'Prénom').toHaveText(data.firstName);
+    await expect(cells.nth(1), 'Nom').toHaveText(data.lastName);
+    const digits = (v: string) => v.replace(/\D/g, '').slice(-9);
+    expect(digits(await cells.nth(2).innerText()), 'Téléphone 1').toBe(digits(data.phonePrimary));
+    if (data.phoneSecondary) expect(digits(await cells.nth(3).innerText()), 'Téléphone 2').toBe(digits(data.phoneSecondary));
+    await expect(cells.nth(4), 'Lien renseigné').not.toHaveText(/^\s*$/);
+  }
+
+  /** Détail de la première personne : chaque champ saisi est restitué (listes comparées par code). */
+  async expectContactDetails(data: ContactPersonData) {
+    await this.openFirstContactDetails();
+    const field = (id: string) => this.page.locator(`#${id}`);
+    const code = (c: string) => new RegExp(`(^|: )${c}$`);
+    await expect(field('sctfirstName'), 'Prénom').toHaveValue(data.firstName);
+    await expect(field('sctlastName'), 'Nom').toHaveValue(data.lastName);
+    await expect(field('sctsexe'), 'Sexe').toHaveValue(code(data.sex));
+    await expect(field('sctlinkType'), 'Lien').toHaveValue(code(data.linkType));
+    await expect(field('sctdoB'), 'Date de naissance').toHaveValue(data.dob);
+    await expect(field('sctrue'), 'Lien de parenté').toHaveValue(data.relation);
+    await expect(field('sctaddress'), 'Adresse').toHaveValue(data.address);
+    await expect(field('mctville'), 'Ville').toHaveValue(code(data.city));
+    await expect(field('sctregion'), 'Région').toHaveValue(code(data.region));
+    await expect(field('sctpays'), 'Pays').toHaveValue(code(data.country));
+    await expect(field('sctnationalite'), 'Nationalité').toHaveValue(code(data.nationality));
+    await this.closeContactDetails();
+  }
+
+  /** Nombre de personnes à contacter listées (0 si « Aucun enregistrement »). */
+  async contactCount(): Promise<number> {
+    const panel = this.page.getByRole('tabpanel', { name: 'Personne à contacter' });
+    await expect(panel.locator('tbody tr').first()).toBeVisible({ timeout: 15000 });
+    if (await panel.getByText('Aucun enregistrement').isVisible()) return 0;
+    return panel.locator('tbody tr').count();
+  }
+
   /**
  * Supprime la première personne à contacter de la liste
  */
@@ -245,6 +307,16 @@ export class DetailPatientPage {
     await this.confirmDeleteButton.click();
 
   }
+}
+
+/** Détails administratifs modifiés (updateData) */
+export interface AdministrativeData {
+  doB: string;
+  email: string;
+  address: string;
+  street: string;
+  city: string;
+  state: string;
 }
 
 /**

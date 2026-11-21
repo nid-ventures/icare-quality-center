@@ -5,6 +5,7 @@ import { DossierSearchPage } from '../../pages/structure/patient/dossier-search.
 import { ImagerieDashboardPage, type ImagingActeKind } from '../../pages/structure/imagerie/imagerie-dashboard.page';
 import { ConsultationFormPage, type FieldSpec, type FilledValues } from '../../pages/structure/consultation/consultation-form.page';
 import { ImagingWorklistPage } from '../../pages/structure/imagerie/imaging-worklist.page';
+import { PortalPage } from '../../pages/structure/portal/portal.page';
 import { ImagingDataGenerator } from '../../pages/structure/generator/imaging-data-generator';
 import { isoDate } from '../../test-data/consultation-fields';
 
@@ -12,6 +13,12 @@ test.setTimeout(300000);
 
 /** Fichier joint de test (PDF minimal généré en mémoire). */
 const attachment = (name: string) => ({ name, mimeType: 'application/pdf', buffer: Buffer.from('%PDF-1.4\n%QA iCare\n1 0 obj<<>>endobj\ntrailer<<>>\n%%EOF\n') });
+
+/** Compte rendu Word (.docx) : seul le type MIME compte pour l'application. */
+const wordAttachment = (name: string) => ({ name, mimeType: 'application/vnd.openxmlformats-officedocument.wordprocessingml.document', buffer: Buffer.from('PK\u0003\u0004 QA iCare compte rendu') });
+
+/** PDF de `mb` Mo (taille seule vérifiée par l'application). */
+const pdfOfSize = (name: string, mb: number) => ({ name, mimeType: 'application/pdf', buffer: Buffer.alloc(Math.round(mb * 1024 * 1024), 0x20) });
 
 // Champs généraux, communs aux 4 types et modifiables après création (app-imaging-item / echographie-simple-item)
 const generalFields = (v: 1 | 2, withExamDate = true): FieldSpec[] => [
@@ -21,7 +28,7 @@ const generalFields = (v: 1 | 2, withExamDate = true): FieldSpec[] => [
   { name: 'region', kind: 'select', index: v === 1 ? 0 : 1 },
 ];
 
-// Scanner, IRM et radiographie : à la création, l'application n'affiche que les champs généraux,
+// Scanner, IRM et radiographie : à la création, l'application n'affiche que les champs généraux, le compte-rendu,
 // les actes à facturer et les pièces jointes ; tous les paramètres techniques (protocole, contraste,
 // kV, séquences, incidence, résultats…) sont masqués dans les formulaires (attribut hidden).
 type ImagingType = {
@@ -36,6 +43,11 @@ const TYPES: ImagingType[] = [
   { kind: 'SCANNER', key: 'scanner', label: 'Scanner', createRoot: 'app-scanner-static', submit: /Enregistrer le scanner/ },
   { kind: 'IRM', key: 'irm', label: 'IRM', createRoot: 'app-irm-static', submit: /Enregistrer l'IRM|Enregistrer/ },
   { kind: 'RADIOGRAPHIE', key: 'radiographie', label: 'Radiographie', createRoot: 'app-radiographie-static', submit: /Enregistrer la radiographie|Enregistrer/ },
+];
+
+// Compte-rendu libre (scanner, IRM, radiographie), enregistré dans « conclusion » : à la création et à la modification
+const reportField = (v: 1 | 2, key: string): FieldSpec[] => [
+  { name: 'conclusion', kind: 'textarea', value: `Compte-rendu ${key} QA${v === 2 ? ' (modifié)' : ''}` },
 ];
 
 const billableActs: FieldSpec[] = [{ name: 'billableActs', kind: 'multiselect', count: 1 }];
@@ -89,13 +101,32 @@ async function foetusSheet(item: Locator, n: number): Promise<Locator> {
 
 const visible = (page: Page, selector: string) => page.locator(selector).filter({ visible: true }).first();
 
+/**
+ * Documents enregistrés d'un acte rouvert : noms des fichiers listés (relus sur le serveur), triés.
+ * Attendus exactement : aucun document perdu, ni ajouté, ni en double.
+ */
+async function expectDocuments(item: Locator, names: string[]) {
+  const files = item.locator('.selected-files:not(.invalid-files) .file-name');
+  await expect.poll(async () => (await files.allTextContents()).map(n => n.trim()).sort(), { timeout: 20000, message: 'Documents joints' })
+    .toEqual([...names].sort());
+}
+
+/** Badge du nombre de documents dans l'en-tête de la ligne d'historique (la plus récente du type). */
+const attachmentsBadge = (page: Page, kind: string) => page.locator(`.imaging-item.imaging-item--${kind}`).first().locator('.imaging-item-attachments');
+
+/** Fiches foetus d'une échographie rouverte : leur ordre d'affichage n'est pas stable (vérifiées à part). */
+const FOETUS = 'app-echographie-simple-foetus';
+
 /** Ligne de l'historique d'imagerie (la plus récente du type), dépliée ; renvoie son formulaire. */
 async function openHistoryItem(page: Page, kind: string): Promise<Locator> {
   const item = page.locator(`.imaging-item.imaging-item--${kind}`).first();
   await expect(item, `Acte "${kind}" dans l'historique`).toBeVisible({ timeout: 15000 });
   const body = item.locator('.imaging-item-body');
-  if (!(await body.isVisible().catch(() => false))) await item.locator('.imaging-item-header').click();
-  await expect(body).toBeVisible();
+  // Juste après un rechargement, le clic peut être perdu (dépliage Bootstrap pas encore prêt) : on reclique
+  await expect(async () => {
+    if (!(await body.isVisible().catch(() => false))) await item.locator('.imaging-item-header').click();
+    await expect(body).toBeVisible({ timeout: 3000 });
+  }).toPass({ timeout: 20000 });
   return body.locator(kind === 'echographie' ? 'app-echographie-simple-item' : 'app-imaging-item');
 }
 
@@ -132,12 +163,18 @@ test.describe('Module Dossier médical — Imagerie', () => {
       test.describe.configure({ mode: 'serial' });
       let general1: FilledValues = {};
       let general2: FilledValues = {};
+      // Actes à facturer choisis à la création, puis ajoutés à la modification
+      let acts1: string[] = [];
+      let acts2: string[] = [];
+      const doc1 = `compte-rendu-${type.key}.pdf`;
+      const doc2 = `complement-${type.key}.pdf`;
+      const fields = (v: 1 | 2) => [...generalFields(v), ...reportField(v, type.key)];
 
       test(`Créer un acte "${type.label}" avec tous les champs affichés et une pièce jointe`, async ({ page }) => {
         const root = await startActe(page, type.kind, type.createRoot);
         const form = new ConsultationFormPage(page, root);
-        general1 = await form.fill(generalFields(1));
-        await form.fill(billableActs);
+        general1 = await form.fill(fields(1));
+        acts1 = (await form.fill(billableActs)).billableActs as string[];
         await root.locator('input[type="file"]').first().setInputFiles(attachment(`compte-rendu-${type.key}.pdf`));
         await expect(root.getByText(`compte-rendu-${type.key}.pdf`)).toBeVisible();
         await root.getByRole('button', { name: type.submit }).last().click();
@@ -145,29 +182,45 @@ test.describe('Module Dossier médical — Imagerie', () => {
         await expect(page.locator(`.imaging-item.imaging-item--${type.key}`).first()).toBeVisible({ timeout: 20000 });
       });
 
-      test(`Rouvrir l'acte "${type.label}" : champs généraux et pièce jointe conservés`, async ({ page }) => {
+      test(`Rouvrir l'acte "${type.label}" : champs, compte-rendu, actes à facturer et pièce jointe conservés`, async ({ page }) => {
         const item = await openHistoryItem(page, type.key);
-        await new ConsultationFormPage(page, item).expectValues(generalFields(1), general1);
-        await expect(page.locator(`.imaging-item.imaging-item--${type.key}`).first().locator('.imaging-item-attachments')).toContainText('1');
+        await new ConsultationFormPage(page, item).expectValues([...fields(1), ...billableActs], { ...general1, billableActs: acts1 }, { exact: true });
+        await expect(attachmentsBadge(page, type.key)).toContainText('1');
+        await expectDocuments(item, [doc1]);
       });
 
-
-
-      test(`Modifier les champs de l'acte "${type.label}" et ajouter une pièce jointe`, async ({ page }) => {
+      test(`Modifier les champs de l'acte "${type.label}", ajouter un acte à facturer et une pièce jointe`, async ({ page }) => {
         const item = await openHistoryItem(page, type.key);
         const form = new ConsultationFormPage(page, item);
         await form.activate('date');
-        general2 = await form.fill(generalFields(2));
+        general2 = await form.fill(fields(2));
+        acts2 = (await form.fill(billableActs)).billableActs as string[];
         await item.locator('input[type="file"]').first().setInputFiles(attachment(`complement-${type.key}.pdf`));
         await expect(item.getByText(`complement-${type.key}.pdf`)).toBeVisible();
         await item.locator('button.btn-success').last().click();
         await confirmUpdate(page);
       });
 
-      test(`Rouvrir l'acte "${type.label}" : modifications et 2 pièces jointes conservées`, async ({ page }) => {
+      test(`Rouvrir l'acte "${type.label}" : modifications, actes d'origine et ajouté, 2 pièces jointes conservés`, async ({ page }) => {
         const item = await openHistoryItem(page, type.key);
-        await new ConsultationFormPage(page, item).expectValues(generalFields(2), general2);
-        await expect(page.locator(`.imaging-item.imaging-item--${type.key}`).first().locator('.imaging-item-attachments')).toContainText('2');
+        await new ConsultationFormPage(page, item).expectValues([...fields(2), ...billableActs], { ...general2, billableActs: [...acts1, ...acts2] }, { exact: true });
+        await expect(attachmentsBadge(page, type.key)).toContainText('2');
+        await expectDocuments(item, [doc1, doc2]);
+      });
+
+      test(`Enregistrer l'acte "${type.label}" sans rien modifier : aucune donnée ni pièce jointe ne change`, async ({ page }) => {
+        let item = await openHistoryItem(page, type.key);
+        const before = await new ConsultationFormPage(page, item).snapshot();
+        const form = new ConsultationFormPage(page, item);
+        await form.activate('date');
+        await item.locator('button.btn-success').last().click();
+        await confirmUpdate(page);
+        await page.reload();
+        item = await openHistoryItem(page, type.key);
+        await expect.poll(() => new ConsultationFormPage(page, item).snapshot(), { timeout: 20000, message: 'Champs inchangés' }).toEqual(before);
+        // Pièces jointes ni perdues ni renvoyées en double
+        await expect(attachmentsBadge(page, type.key)).toContainText('2');
+        await expectDocuments(item, [doc1, doc2]);
       });
 
       test(`Supprimer l'acte "${type.label}"`, async ({ page }) => {
@@ -190,31 +243,115 @@ test.describe('Module Dossier médical — Imagerie', () => {
     let foetus1: FilledValues = {};
     let foetus2: FilledValues = {};
     let edited: FilledValues = {};
+    let standard: FilledValues = {};
+    const standardFields: FieldSpec[] = [
+      ...generalFields(1, false),
+      { name: 'conclusion', kind: 'text', value: 'Échographie standard normale QA' },
+      { name: 'notice', kind: 'textarea', value: 'Foie, rate et reins sans particularité QA' },
+      { name: 'billableActs', kind: 'multiselect', count: 1 },
+    ];
+    // Champs de l'échographie obstétricale hors fiches foetus (région « Bassin » remplacée par le choix)
+    const obstetricFields: FieldSpec[] = [
+      ...generalFields(1, false),
+      { name: 'ddr', kind: 'date', value: isoDate(-150) },
+      { name: 'billableActs', kind: 'multiselect', count: 1 },
+    ];
+    const asCheck = (names: string[]) => obstetricFields.filter(f => names.includes(f.name));
+
+    /** Les fiches foetus attendues, chacune avec toutes ses valeurs, et le nombre d'embryons qui suit. */
+    async function expectFoetuses(page: Page, item: Locator, expected: [number, FilledValues][]) {
+      await expect(item.locator(FOETUS), `${expected.length} fiche(s) foetus`).toHaveCount(expected.length, { timeout: 15000 });
+      await expect(item.locator('[formcontrolname="nombreEmbryon"]'), "Nombre d'embryons").toHaveValue(String(expected.length));
+      for (const [n, values] of expected) {
+        await new ConsultationFormPage(page, await foetusSheet(item, n)).expectValues(foetusFields(n), values);
+      }
+    }
 
     test('Créer une échographie standard avec tous les champs', async ({ page }) => {
       const root = await startActe(page, 'ECHOGRAPHIE', 'app-echographie-simple-static');
       const form = new ConsultationFormPage(page, root);
       await form.fill([{ name: 'type', kind: 'select', option: 'Standard' }]);
-      await form.fill([
-        ...generalFields(1, false),
-        { name: 'conclusion', kind: 'text', value: 'Échographie standard normale QA' },
-        { name: 'notice', kind: 'textarea', value: 'Foie, rate et reins sans particularité QA' },
-        { name: 'billableActs', kind: 'multiselect', count: 1 },
-      ]);
+      standard = await form.fill(standardFields);
+      await test.step('Joindre le compte rendu en Word (.docx)', async () => {
+        await root.locator('input[type="file"]').first().setInputFiles(wordAttachment('compte-rendu-echo.docx'));
+        await expect(root.locator('.selected-files:not(.invalid-files) .file-name'), 'Word accepté').toHaveText(['compte-rendu-echo.docx']);
+      });
       await root.getByRole('button', { name: /Enregistrer l'échographie/ }).click();
       await confirm(page);
-      await expect(page.locator('.imaging-item.imaging-item--echographie').first()).toBeVisible({ timeout: 20000 });
+      const saved = page.locator('.imaging-item.imaging-item--echographie').first();
+      await expect(saved).toBeVisible({ timeout: 20000 });
+      await expect(saved.locator('.imaging-item-attachments'), 'Compte rendu Word enregistré').toContainText('1');
+    });
+
+    test("Rouvrir l'échographie standard : type, champs, résultats, actes à facturer et compte rendu Word conservés", async ({ page }) => {
+      const item = await openHistoryItem(page, 'echographie');
+      const form = new ConsultationFormPage(page, item);
+      // Le type n'est pas affiché à la réouverture : gabarit standard (résultats, pas de champs grossesse)
+      await expect(item.locator('[formcontrolname="notice"]'), 'Gabarit standard : résultats').toBeVisible();
+      await expect(item.locator('[formcontrolname="ddr"]'), 'Pas de champs grossesse').toHaveCount(0);
+      await form.expectValues(standardFields, standard, { exact: true });
+      await expect(item.locator(FOETUS), 'Pas de fiche foetus').toHaveCount(0);
+      await expectDocuments(item, ['compte-rendu-echo.docx']);
+    });
+
+    test('Pièces jointes : Word accepté, autre format refusé, 10 Mo maximum', async ({ page }) => {
+      const root = await startActe(page, 'ECHOGRAPHIE', 'app-echographie-simple-static');
+      await new ConsultationFormPage(page, root).fill([{ name: 'type', kind: 'select', option: 'Standard' }]);
+      await expect(root.getByText(/Formats acceptés: PDF, JPG, PNG, Word \(max\. 10MB\)/)).toBeVisible();
+      await root.locator('input[type="file"]').first().setInputFiles([
+        wordAttachment('compte-rendu.docx'),
+        pdfOfSize('examen-3mo.pdf', 3),
+        { name: 'notes.txt', mimeType: 'text/plain', buffer: Buffer.from('QA') },
+        pdfOfSize('examen-11mo.pdf', 11),
+      ]);
+      const valid = root.locator('.selected-files:not(.invalid-files) .selected-file-item');
+      const invalid = root.locator('.invalid-files .selected-file-item');
+      await expect(valid.locator('.file-name'), 'Fichiers acceptés : Word, PDF de 3 Mo (plus de 2 Mo autorisé)')
+        .toHaveText(['compte-rendu.docx', 'examen-3mo.pdf'], { timeout: 15000 });
+      await expect(valid.filter({ hasText: 'compte-rendu.docx' }).locator('.fa-file-word'), 'Icône Word').toHaveCount(1);
+      await expect(invalid.filter({ hasText: 'notes.txt' }).locator('.file-error')).toHaveText('Type de fichier non autorisé (accepté : PDF, JPG, PNG, Word)');
+      await expect(invalid.filter({ hasText: 'examen-11mo.pdf' }).locator('.file-error')).toHaveText('Fichier trop volumineux (max 10 Mo)');
+      await expect(root.getByText('2 fichier(s) invalide(s) - veuillez les supprimer')).toBeVisible();
+    });
+
+    test("Types d'échographie : champs grossesse (région Bassin préremplie) pour l'obstétricale seulement, standard pour tous les autres", async ({ page }) => {
+      const root = await startActe(page, 'ECHOGRAPHIE', 'app-echographie-simple-static');
+      const typeSelect = root.locator('ng-select[formcontrolname="type"]');
+      const options = page.locator('.ng-dropdown-panel:visible .ng-option');
+      await typeSelect.locator('.ng-select-container').click();
+      await expect(options.first(), "Types d'échographie proposés").toBeVisible({ timeout: 10000 });
+      const types = (await options.allInnerTexts()).map(t => t.replace(/\s+/g, ' ').trim()).filter(Boolean);
+      await typeSelect.locator('.ng-select-container').click();
+      test.info().annotations.push({ type: "Types d'échographie", description: types.join(' ; ') });
+      expect(types.length, 'Plusieurs types (standard, obstétricale et types de suivi)').toBeGreaterThan(2);
+      // Même règle que l'application (isStandardEchoType) : obstétricale ou T1/T2/T3 -> grossesse
+      const obstetricLabel = (label: string) => /obst[ée]tricale|\bt[123]\b/i.test(label);
+      for (const [index, type] of types.entries()) {
+        await test.step(`${type} : ${obstetricLabel(type) ? 'champs grossesse' : 'gabarit standard'}`, async () => {
+          await typeSelect.locator('.ng-select-container').click();
+          await options.nth(index).click();
+          // Liste en majuscules (CSS), valeur choisie telle qu'enregistrée : casse ignorée
+          await expect(typeSelect.locator('.ng-value'), `Type "${type}" choisi`).toContainText(type, { ignoreCase: true });
+          const ddr = root.locator('[formcontrolname="ddr"]');
+          const notice = root.locator('[formcontrolname="notice"]');
+          if (obstetricLabel(type)) {
+            await expect(ddr, 'DDR demandée').toBeVisible();
+            await expect(notice, 'Pas de résultats standard').toHaveCount(0);
+            await expect(root.locator('ng-select[formcontrolname="region"] .ng-value'), 'Région « Bassin » préremplie').toContainText('Bassin');
+          } else {
+            await expect(notice, 'Résultats standard').toBeVisible();
+            await expect(ddr, 'Pas de champs grossesse').toHaveCount(0);
+          }
+        });
+      }
     });
 
     test('Créer une échographie obstétricale avec 2 foetus (tous les champs)', async ({ page }) => {
       const root = await startActe(page, 'ECHOGRAPHIE', 'app-echographie-simple-static');
       const form = new ConsultationFormPage(page, root);
       await form.fill([{ name: 'type', kind: 'select', option: 'Obst' }]);
-      obstetric = await form.fill([
-        ...generalFields(1, false),
-        { name: 'ddr', kind: 'date', value: isoDate(-150) },
-        { name: 'billableActs', kind: 'multiselect', count: 1 },
-      ]);
+      await expect(root.locator('ng-select[formcontrolname="region"] .ng-value'), 'Région « Bassin » préremplie (modifiable)').toContainText('Bassin');
+      obstetric = await form.fill(obstetricFields);
 
       await test.step("Nombre d'embryons : 1 -> une fiche foetus, à remplir", async () => {
         await root.locator('[formcontrolname="nombreEmbryon"]').fill('1');
@@ -236,15 +373,14 @@ test.describe('Module Dossier médical — Imagerie', () => {
       await confirm(page);
     });
 
-    test("Rouvrir l'échographie obstétricale : champs et fiches des 2 foetus conservés", async ({ page }) => {
+    test("Rouvrir l'échographie obstétricale : champs, actes à facturer, nombre d'embryons et fiches des 2 foetus conservés", async ({ page }) => {
       const item = await openHistoryItem(page, 'echographie');
-      await new ConsultationFormPage(page, item).expectValues([
-        { name: 'caregiverId', kind: 'select' }, { name: 'date', kind: 'date', value: '' }, { name: 'ddr', kind: 'date', value: '' },
-      ], obstetric);
-      const foetuses = item.locator('app-echographie-simple-foetus');
-      await expect(foetuses).toHaveCount(2);
-      await new ConsultationFormPage(page, await foetusSheet(item, 1)).expectValues(foetusFields(1), foetus1);
-      await new ConsultationFormPage(page, await foetusSheet(item, 2)).expectValues(foetusFields(2), foetus2);
+      // Le type n'est pas affiché à la réouverture : gabarit obstétrical (champs grossesse, pas de résultats standard)
+      await expect(item.locator('[formcontrolname="ddr"]'), 'Gabarit obstétrical : DDR').toBeVisible();
+      await expect(item.locator('[formcontrolname="notice"]'), 'Pas de résultats standard').toHaveCount(0);
+      await new ConsultationFormPage(page, item).expectValues(obstetricFields, obstetric, { exact: true });
+      await expectFoetuses(page, item, [[1, foetus1], [2, foetus2]]);
+      await expectDocuments(item, []);
     });
 
     test("Modifier l'échographie : champs généraux et fiche du foetus 1", async ({ page }) => {
@@ -260,19 +396,69 @@ test.describe('Module Dossier médical — Imagerie', () => {
         .fill(foetusFields(1).map(f => (f.kind === 'text' || f.kind === 'textarea') ? { ...f, value: `${f.value} (modifié)` } : f));
       await item.locator('button.btn-success').last().click();
       await confirmUpdate(page);
+      // Échographie relue sur le serveur après l'enregistrement : pas de fiche foetus en double
+      await expect(item.locator('app-echographie-simple-foetus'), 'Toujours 2 fiches foetus après enregistrement').toHaveCount(2, { timeout: 15000 });
     });
 
-    test("Rouvrir l'échographie : modifications des champs généraux conservées", async ({ page }) => {
+    test("Rouvrir l'échographie : modifications des champs généraux conservées, région et actes à facturer inchangés", async ({ page }) => {
       const item = await openHistoryItem(page, 'echographie');
-      await new ConsultationFormPage(page, item).expectValues([
-        { name: 'caregiverId', kind: 'select' }, { name: 'date', kind: 'date', value: '' }, { name: 'ddr', kind: 'date', value: '' },
-      ], edited);
+      const form = new ConsultationFormPage(page, item);
+      await form.expectValues(asCheck(['caregiverId', 'date', 'ddr']), edited);
+      await form.expectValues(asCheck(['region', 'billableActs']), obstetric, { exact: true });
     });
 
-    test("Rouvrir l'échographie : modifications de la fiche du foetus 1 conservées", async ({ page }) => {
+    test("Rouvrir l'échographie : fiche du foetus 1 modifiée, fiche du foetus 2 inchangée", async ({ page }) => {
       const item = await openHistoryItem(page, 'echographie');
-      await new ConsultationFormPage(page, await foetusSheet(item, 1))
-        .expectValues(foetusFields(1), foetus1);
+      await expectFoetuses(page, item, [[1, foetus1], [2, foetus2]]);
+    });
+
+    test("Enregistrer l'échographie obstétricale sans rien modifier : aucune donnée ni fiche foetus ne change", async ({ page }) => {
+      let item = await openHistoryItem(page, 'echographie');
+      const before = await new ConsultationFormPage(page, item).snapshot(FOETUS);
+      await new ConsultationFormPage(page, item).activate('date');
+      await item.locator('button.btn-success').last().click();
+      await confirmUpdate(page);
+      await page.reload();
+      item = await openHistoryItem(page, 'echographie');
+      await expect.poll(() => new ConsultationFormPage(page, item).snapshot(FOETUS), { timeout: 20000, message: 'Champs inchangés' }).toEqual(before);
+      // Ni fiche foetus perdue ou dupliquée, ni valeur modifiée
+      await expectFoetuses(page, item, [[1, foetus1], [2, foetus2]]);
+    });
+
+    test("Retirer un foetus enregistré : seul ce foetus disparaît, une fiche ajoutée non enregistrée reste", async ({ page }) => {
+      const item = await openHistoryItem(page, 'echographie');
+      const sheets = item.locator('app-echographie-simple-foetus');
+      await expect(sheets).toHaveCount(2);
+      await new ConsultationFormPage(page, item).activate('date');
+      await test.step('Ajouter une fiche foetus, sans enregistrer', async () => {
+        // En modification, le bouton d'ajout s'intitule « Foetus » (« Ajouter un foetus » à la création)
+        await item.getByRole('button', { name: /^\W*Foetus\s*$/ }).click();
+        await expect(sheets).toHaveCount(3);
+      });
+      await test.step('Retirer le foetus 2 (enregistré) et confirmer', async () => {
+        await (await foetusSheet(item, 2)).getByRole('button', { name: /Retirer/ }).click();
+        await expect(page.getByText('voulez-vous retirer ce foetus ?'), 'Confirmation affichée').toBeVisible();
+        await confirm(page);
+        await expect(page.getByText(/Le retrait du fœtus a réussi/).first()).toBeVisible({ timeout: 20000 });
+      });
+      await test.step('Le foetus 1 et la fiche non enregistrée restent', async () => {
+        await expect(sheets, 'Foetus 2 retiré, les 2 autres fiches gardées').toHaveCount(2);
+        await new ConsultationFormPage(page, await foetusSheet(item, 1)).expectValues(foetusFields(1), foetus1);
+        await expect(foetusSheet(item, 2), 'Foetus 2 retiré').rejects.toThrow(/introuvable/);
+      });
+      await test.step('Réouverture : seul le foetus 1 est enregistré', async () => {
+        await page.reload();
+        const reopened = await openHistoryItem(page, 'echographie');
+        // Fiches redessinées au chargement (0 puis 1) : on attend que le foetus 1 soit affiché
+        await expect(async () => {
+          await expect(reopened.locator('app-echographie-simple-foetus')).toHaveCount(1, { timeout: 3000 });
+          await foetusSheet(reopened, 1);
+        }).toPass({ timeout: 20000 });
+        // Foetus 1 intact, nombre d'embryons ramené à 1, autres champs inchangés
+        await expectFoetuses(page, reopened, [[1, foetus1]]);
+        await new ConsultationFormPage(page, reopened).expectValues(asCheck(['caregiverId', 'date', 'ddr']), edited);
+        await new ConsultationFormPage(page, reopened).expectValues(asCheck(['region', 'billableActs']), obstetric, { exact: true });
+      });
     });
 
     test('Supprimer les échographies', async ({ page }) => {
@@ -292,29 +478,47 @@ test.describe('Module Dossier médical — Imagerie', () => {
   test.describe("Depuis la worklist d'imagerie", () => {
     async function createEchographie(page: Page) {
       const imagerie = new ImagerieDashboardPage(page);
+      const data = ImagingDataGenerator.generateEchographie();
       await imagerie.openNewActeModal();
       await imagerie.chooseType('ECHOGRAPHIE');
-      await imagerie.fillEchographieCreateForm(ImagingDataGenerator.generateEchographie());
+      await imagerie.fillEchographieCreateForm(data);
       await imagerie.submitEchographieCreateForm();
       await expect(imagerie.confirmButton).not.toBeVisible();
       await expect(imagerie.newActeButton).toBeVisible();
+      return data;
     }
 
-    test("Modifier une échographie depuis la worklist d'imagerie", async ({ page }) => {
+    test("Modifier une échographie depuis la worklist d'imagerie : modification relue dans le dossier du patient", async ({ page }) => {
       const worklist = new ImagingWorklistPage(page);
       const updated = ImagingDataGenerator.generateEchographieUpdate();
-      await createEchographie(page);
+      const created = await createEchographie(page);
       await worklist.goto();
       const found = await worklist.findFirstRowOfKind('echographie');
       expect(found).not.toBeNull();
-      await worklist.echoActiverButton(found!.expandedRow).click();
       const resume = worklist.echoResumeInput(found!.expandedRow);
       const compteRendu = worklist.echoCompteRenduTextarea(found!.expandedRow);
-      if (await resume.isVisible().catch(() => false)) await resume.fill(updated.resume);
-      if (await compteRendu.isVisible().catch(() => false)) await compteRendu.fill(updated.compteRendu);
+      // C'est bien l'échographie qui vient d'être créée (la plus récente de la worklist)
+      await expect(resume, "Échographie créée par le test").toHaveValue(created.resume);
+      await worklist.echoActiverButton(found!.expandedRow).click();
+      await expect(resume).toBeEnabled({ timeout: 10000 });
+      await resume.fill(updated.resume);
+      await compteRendu.fill(updated.compteRendu);
       await worklist.echoSubmitButton(found!.expandedRow).click();
       await worklist.confirmModal();
       await expect(worklist.confirmButton).not.toBeVisible();
+      await test.step('Dossier du patient : résumé et compte rendu modifiés, le reste inchangé', async () => {
+        await page.goto('/modules');
+        await new PortalPage(page).enterModule('Dossier médical');
+        await new DossierSearchPage(page).expectLoaded();
+        await openDossier(page, patient);
+        await new ImagerieDashboardPage(page).gotoFromPatientDashboard();
+        const item = await openHistoryItem(page, 'echographie');
+        await expect(item.locator('[formcontrolname="conclusion"]'), 'Résumé').toHaveValue(updated.resume);
+        await expect(item.locator('[formcontrolname="notice"]'), 'Compte rendu').toHaveValue(updated.compteRendu);
+        // Région : liste déroulante native dans le formulaire rouvert
+        const region = await item.locator('select[formcontrolname="region"]').evaluate((el: HTMLSelectElement) => el.selectedOptions[0]?.textContent?.trim() ?? '');
+        expect(region, 'Région inchangée').toMatch(/Abdomen/i);
+      });
     });
 
     test("Supprimer une échographie depuis la worklist d'imagerie", async ({ page }) => {
@@ -354,12 +558,21 @@ test.describe('Module Dossier médical — Imagerie', () => {
       await expect(page.getByRole('button', { name: /^\W*Confirmer$/ })).toHaveCount(0);
     });
 
-    test("Valider un acte d'imagerie sans type est refusé", async ({ page }) => {
-      test.fail(true, "Anomalie : \"Valider\" sans type d'acte ferme la fenêtre et ouvre le formulaire sans type (imagerie-dashboard.component.ts, onAddEchographie sans contrôle).");
+    test("Annuler après le choix d'un acte ferme le formulaire sans rien créer", async ({ page }) => {
+      const root = await startActe(page, 'SCANNER', 'app-scanner-static');
+      await expect(root, 'Formulaire du scanner ouvert').toBeVisible();
+      await new ImagerieDashboardPage(page).cancelNewActe();
+      // Le composant reste dans la page (cadre vide) : c'est son formulaire qui disparaît
+      await expect(page.locator('app-scanner-static form'), 'Formulaire fermé').toHaveCount(0);
+    });
+
+    test("Rechercher un acte d'imagerie inconnu ne propose aucun acte", async ({ page }) => {
       const imagerie = new ImagerieDashboardPage(page);
       await imagerie.openNewActeModal();
-      await page.locator('.modal.show').getByRole('button', { name: /Valider/ }).click();
-      await expect(page.locator('.modal.show'), 'La fenêtre doit rester ouverte avec un message').toBeVisible({ timeout: 3000 });
+      await imagerie.searchActe('zzz-qa-inconnu');
+      await expect(imagerie.newActeButton.getByText(/Aucun acte ne correspond/), 'Message "aucun acte"').toBeVisible();
+      await expect(imagerie.subTypeChips, 'Aucun acte proposé').toHaveCount(0);
+      await expect(imagerie.currentTypeBar, 'Aucun formulaire ouvert').toHaveCount(0);
     });
   });
 });

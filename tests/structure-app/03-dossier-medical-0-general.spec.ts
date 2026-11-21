@@ -9,7 +9,7 @@ import { RenseignementsGenerauxPage } from '../../pages/structure/patient/rensei
 import { AntecedentPage } from '../../pages/structure/patient/antecedant_patient.page';
 import { ConsultationPage } from '../../pages/structure/consultation/consultation.page';
 import { OrdonnancePage } from '../../pages/structure/ordonnance/ordonnance.page';
-import { PrescriptionManagerPage } from '../../pages/structure/consultation/prescription-manager.page';
+import { PrescriptionManagerPage, DEFAULT_MEDICATION_TITLE } from '../../pages/structure/consultation/prescription-manager.page';
 import { ConsultationStandardDataGenerator } from '../../pages/structure/generator/consultation-standard-data-generator';
 
 test.setTimeout(120000);
@@ -55,7 +55,8 @@ test.describe('Module Dossier médical', () => {
       await search.searchByIdentifier(patient.identifier);
       await search.expectResult(patient.identifier);
       await search.openDossier(patient.identifier);
-      await expect(page.getByRole('heading', { level: 1, name: `${patient.firstName} ${patient.lastName}` })).toBeVisible();
+      // Nom du patient chargé après l'ouverture du tableau de bord (titre d'abord vide)
+      await expect(page.getByRole('heading', { level: 1, name: `${patient.firstName} ${patient.lastName}` })).toBeVisible({ timeout: 15000 });
     });
 
     test('Afficher un message quand aucun patient ne correspond', async ({ page }) => {
@@ -102,9 +103,14 @@ test.describe('Module Dossier médical', () => {
       await new RenseignementsGenerauxPage(page).checkRenseignementInfos();
     });
 
-    test('Modifier les renseignements généraux', async ({ page }) => {
+    test('Modifier les renseignements généraux : chaque valeur est conservée', async ({ page }) => {
+      const renseignements = new RenseignementsGenerauxPage(page);
       await openDossier(page);
-      await new RenseignementsGenerauxPage(page).updateRenseignementGenerauxForms();
+      await renseignements.updateRenseignementGenerauxForms();
+      await test.step('Rouvrir le dossier : tableau de bord et formulaire reprennent les valeurs', async () => {
+        await openDossierAgain(page);
+        await renseignements.expectSavedRenseignements();
+      });
     });
 
     test('Vérifier les informations des antécédents', async ({ page }) => {
@@ -117,6 +123,17 @@ test.describe('Module Dossier médical', () => {
       await openDossier(page);
       await antecedentPage.checkAntecedentFormulaire();
       await antecedentPage.updateAntecedantGeneraux();
+      await test.step('Le dashboard affiche tous les antécédents et allergies saisis', async () => {
+        await expect(page.getByRole('button', { name: 'Confirmer' }), 'Enregistrement confirmé').toBeHidden({ timeout: 15000 });
+        await openDossierAgain(page);
+        await antecedentPage.expectDashboardShowsSavedAntecedents();
+      });
+      await test.step('Le résumé patient des consultations range « Autres pathologies » parmi les pathologies', async () => {
+        const consultationPage = new ConsultationPage(page);
+        await consultationPage.goToConsultationTab();
+        await consultationPage.expectConsultationsListLoaded();
+        await antecedentPage.expectSummaryShowsSavedAntecedents();
+      });
     });
   });
 
@@ -158,7 +175,8 @@ test.describe('Module Dossier médical', () => {
       const prescriptions = new PrescriptionManagerPage(page);
       const ordonnancePage = new OrdonnancePage(page);
       const consultation = ConsultationStandardDataGenerator.generate();
-      const title = `Ordonnance test ${Date.now()}`;
+      // Titre masqué depuis le 2026-11-20 (« Ordonnance jj/mm/aaaa ») : ordonnance retrouvée par son médicament
+      const medication = `Paracétamol QA ${Date.now()}`;
 
       await test.step('Démarrer une consultation standard', async () => {
         await openDossier(page);
@@ -172,8 +190,7 @@ test.describe('Module Dossier médical', () => {
 
       await test.step('Ajouter une ordonnance dans le gestionnaire de prescriptions', async () => {
         await prescriptions.addMedicationPrescription({
-          title,
-          medicationName: 'Paracétamol',
+          medicationName: medication,
           posologie: '1 comprimé matin et soir',
           recommandations: 'Repos et hydratation recommandés',
         });
@@ -187,7 +204,9 @@ test.describe('Module Dossier médical', () => {
         await openDossierAgain(page);
         await ordonnancePage.gotoFromPatientDashboard();
         await expect(page.getByRole('heading', { name: /^Ordonnances \([1-9]\d*\)/ })).toBeVisible();
-        await expect(page.getByText(title).first()).toBeVisible();
+        const row = page.locator('table tbody tr').filter({ hasText: medication });
+        await expect(row, 'Ordonnance listée avec son médicament').toHaveCount(1);
+        await expect(row.locator('td').nth(2), 'Titre par défaut').toHaveText(DEFAULT_MEDICATION_TITLE);
       });
     });
 
@@ -216,7 +235,6 @@ test.describe('Module Dossier médical', () => {
     });
 
     test("Ouvrir le dossier d'un patient inexistant affiche une erreur", async ({ page }) => {
-      test.fail(true, "Anomalie : /patient/patient-dashboard/<id inconnu> affiche un dashboard vide (nom vide), sans message d'erreur ni redirection.");
       await page.goto('/patient/patient-dashboard/00000000-0000-0000-0000-000000000000');
       await expect(page.getByText(/introuvable|n'existe pas|inexistant|erreur/i).first()).toBeVisible({ timeout: 10000 });
     });

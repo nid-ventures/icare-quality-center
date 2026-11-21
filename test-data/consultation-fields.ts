@@ -117,7 +117,8 @@ export function pediatricFields(v: Version): FieldSpec[] {
     { name: 'pb', kind: 'number', value: v === 1 ? '16' : '17' },
     { name: 'report', kind: 'textarea', value: `Compte-rendu pédiatrique QA${t}` },
     { name: 'synthesis', kind: 'textarea', value: `Synthèse : bon développement QA${t}` },
-    { name: 'description', kind: 'textarea', value: `Enfant éveillé, tonique QA${t}` },
+    // « Ordonnance de la consultation » (description) : plus saisie à la création, affichée en
+    // modification seulement si elle existe (les ordonnances passent par les prescriptions)
     { name: 'billableActs', kind: 'multiselect', count: 1 },
   ];
 }

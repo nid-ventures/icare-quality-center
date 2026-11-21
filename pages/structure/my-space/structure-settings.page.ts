@@ -2,7 +2,8 @@ import { type Page, type Locator, expect } from '@playwright/test';
 import { MyConfigurationPage } from './configuration.page';
 
 export type StructureDetails = { name: string; primaryEmail: string; primaryStreet: string; postalCode: string };
-export type InvoiceSettings = { policy: string; color: string; header: string; footer: string };
+/** color : texte ; titleColor : titres et tableaux (facture, ordonnance, bulletins). */
+export type InvoiceSettings = { policy: string; color: string; titleColor: string; header: string; footer: string };
 
 /**
  * Administration > Paramètres : "Détails de la structure" (app-hi-details) et "Configuration de
@@ -27,7 +28,7 @@ export class StructureSettingsPage {
   }
 
   async openInvoice() {
-    await this.config.openSection('Configuration de facture');
+    await this.config.openSection('Configuration des documents');
     await expect(this.invoice.locator('input[formcontrolname="header"]')).toBeVisible();
   }
 
@@ -38,13 +39,52 @@ export class StructureSettingsPage {
   get logoInput(): Locator { return this.details.locator('input[type="file"]'); }
 
   async enableDetails() {
-    await this.details.locator('button.edit-btn').click();
-    await expect(this.detailsSave).toBeVisible();
+    await this.enable(this.details.locator('button.edit-btn'), this.detailsSave);
   }
 
   async enableInvoice() {
-    await this.invoice.getByRole('button', { name: /Activer la modification/ }).click();
-    await expect(this.invoiceSave).toBeVisible();
+    await this.enable(this.invoice.getByRole('button', { name: /Activer la modification/ }), this.invoiceSave);
+  }
+
+  /**
+   * "Activer la modification" puis attente du bouton Enregistrer. Un clic arrivé avant la fin du
+   * chargement de la section reste sans effet (vu en mode visuel) : un second clic est alors fait.
+   */
+  private async enable(button: Locator, save: Locator) {
+    const wait = Number(process.env.SLOWMO) > 0 ? 20000 : 10000;
+    await this.page.locator('app-loader .backdrop.full-screen').waitFor({ state: 'hidden', timeout: wait }).catch(() => {});
+    await button.click();
+    if (await save.waitFor({ state: 'visible', timeout: wait }).then(() => false, () => true)) {
+      await button.click();
+    }
+    await expect(save, 'Formulaire en modification').toBeVisible({ timeout: wait });
+  }
+
+  /** Champs obligatoires vides dans la fiche de la structure (lecture seule, rien n'est modifié). */
+  async missingRequiredDetails(): Promise<string[]> {
+    const missing: string[] = [];
+    if (!(await this.detailsInput('primaryEmail').inputValue()).trim()) missing.push('e-mail');
+    if (await this.details.locator('ng-select[formcontrolname="primaryCountry"] .ng-value').count() === 0) missing.push('pays');
+    const phone = this.details.getByRole('textbox', { name: 'Entrez le numéro' });
+    if (await phone.isVisible().catch(() => false) && !(await phone.inputValue()).trim()) missing.push('téléphone');
+    return missing;
+  }
+
+  /**
+   * Formulaire en modification : remplit les champs obligatoires restés vides dans la fiche de la
+   * structure (e-mail, pays, téléphone), sans enregistrer. Une fiche incomplète (vu sur un serveur
+   * partagé) laisse sinon "Enregistrer" grisé, ou empêche la confirmation faute de téléphone.
+   */
+  async completeRequiredDetails() {
+    const email = this.detailsInput('primaryEmail');
+    if (!(await email.inputValue()).trim()) await email.fill('qa-structure@icaresenegal.com');
+    const country = this.details.locator('ng-select[formcontrolname="primaryCountry"]');
+    if (await country.locator('.ng-value').count() === 0) {
+      await country.locator('.ng-select-container').click();
+      await this.page.locator('.ng-dropdown-panel .ng-option').first().click();
+    }
+    const phone = this.details.getByRole('textbox', { name: 'Entrez le numéro' });
+    if (await phone.isVisible().catch(() => false) && !(await phone.inputValue()).trim()) await phone.fill('771234567');
   }
 
   async cancelDetails() { await this.details.locator('.form-actions').getByRole('button', { name: 'Annuler' }).click(); }
@@ -63,6 +103,7 @@ export class StructureSettingsPage {
     return {
       policy: await this.invoiceInput('policy').inputValue(),
       color: await this.invoiceInput('color').inputValue(),
+      titleColor: await this.invoiceInput('titleColor').inputValue(),
       header: await this.invoiceInput('header').inputValue(),
       footer: await this.invoiceInput('footer').inputValue(),
     };

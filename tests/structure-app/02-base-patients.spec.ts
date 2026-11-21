@@ -2,11 +2,12 @@ import { type Page } from '@playwright/test';
 import { test, expect } from '../../fixtures/structure.fixture';
 import { PatientPage } from '../../pages/structure/patient/patient.page';
 import { PortalPage } from '../../pages/structure/portal/portal.page';
-import { DetailPatientPage } from '../../pages/structure/patient/detail_administratif.page';
-import { PatientCarePage } from '../../pages/structure/patient/patient-care.page';
+import { DetailPatientPage, type ContactPersonData } from '../../pages/structure/patient/detail_administratif.page';
+import { PatientCarePage, type CareData } from '../../pages/structure/patient/patient-care.page';
 import { PatientDataGenerator, type PatientData } from '../../pages/structure/generator/data-generator';
 import { ContactPersonGenerator } from '../../pages/structure/generator/contact-person-generator';
 import { CareDataGenerator } from '../../pages/structure/generator/care-data-generator';
+import { hasModule, withoutModuleReason } from '../../test-data/tenants';
 
 // 5 min : la création d'un patient attend la liste des patients (/patients/getAll), qui peut
 // dépasser une minute en local ; multiplié par 6 en mode visuel (SLOWMO) comme dans la configuration
@@ -58,6 +59,9 @@ test.describe('Module Base patients', () => {
 
     test('Rechercher un patient par chaque critère puis réinitialiser', async ({ page }) => {
       const patientPage = new PatientPage(page);
+      // Patient créé par le test : premier de la liste (la plus récente création), avec des
+      // données connues dans toutes les structures (les patients existants peuvent être incomplets)
+      await createTestPatient(page);
 
       await test.step('Rechercher le premier patient par chacun de ses champs', async () => {
         await patientPage.definitionChamps(page);
@@ -143,9 +147,15 @@ test.describe('Module Base patients', () => {
   // Fiche administrative : détails
   // ======================================================================
   test.describe('Fiche administrative', () => {
-    test('Modifier les détails administratifs du patient', async ({ page }) => {
+    test('Modifier les détails administratifs du patient : valeurs conservées après rechargement', async ({ page }) => {
+      const detail = new DetailPatientPage(page);
       await createTestPatient(page, true);
-      await new DetailPatientPage(page).updateData();
+      const data = await test.step('Modifier naissance, email, quartier, rue, ville et région', () => detail.updateData());
+      await test.step('Recharger la fiche : chaque valeur modifiée est restituée', async () => {
+        await page.reload();
+        await detail.checkIfPageLoad();
+        await detail.expectAdministrativeData(data);
+      });
     });
 
     // Le backend renvoie le téléphone principal en premier : la facturation et les actes
@@ -175,29 +185,60 @@ test.describe('Module Base patients', () => {
   // Personnes à contacter
   // ======================================================================
   test.describe('Personnes à contacter', () => {
+    let contact: ContactPersonData;
+
     test.beforeEach(async ({ page }) => {
       const detailPatientPage = new DetailPatientPage(page);
+      // Test d'anomalie : personne née avant 1970 ; sinon date aléatoire après 1970
+      contact = ContactPersonGenerator.generate(/avant 1970/.test(test.info().title) ? { dob: '1958-03-14' } : {});
       await createTestPatient(page, true);
       await test.step('Ajouter une personne à contacter', async () => {
         await detailPatientPage.goToPersonContactTab();
         await detailPatientPage.openAddPersonModal();
-        await detailPatientPage.fillPersonContactForm(ContactPersonGenerator.generate());
+        await detailPatientPage.fillPersonContactForm(contact);
         await detailPatientPage.savePersonContact();
       });
     });
 
-    test('Ajouter une personne à contacter', async () => {
-      // L'ajout (et sa vérification) est réalisé dans le beforeEach.
+    /** Recharge la fiche et rouvre l'onglet : les données relues viennent du serveur. */
+    async function reloadContacts(page: Page) {
+      await page.reload();
+      const detail = new DetailPatientPage(page);
+      await detail.checkIfPageLoad();
+      await detail.goToPersonContactTab();
+      return detail;
+    }
+
+    test('Ajouter une personne à contacter : tous les champs enregistrés', async ({ page }) => {
+      const detail = await reloadContacts(page);
+      await test.step('Liste : prénom, nom, téléphones et lien', () => detail.expectContactRow(contact));
+      await test.step('Détail : chaque champ saisi est restitué', () => detail.expectContactDetails(contact));
     });
 
-    test('Modifier une personne à contacter (région et nationalité)', async ({ page }) => {
+    test('Modifier une personne à contacter (région et nationalité) : modification conservée', async ({ page }) => {
       await new DetailPatientPage(page).modifyFirstContactPerson('50', '32');
+      const detail = await reloadContacts(page);
+      // Région et nationalité modifiées, les autres champs inchangés
+      await detail.expectContactDetails({ ...contact, region: '50', nationality: '32' });
     });
 
-    test('Supprimer une personne à contacter', async ({ page }) => {
-      await new DetailPatientPage(page).deleteFirstContactPerson();
-      // Toast de l'application : "La suppression a réussi avec succès".
-      await expect(page.getByText(/suppression a r[ée]ussi/i)).toBeVisible();
+    test('Supprimer une personne à contacter : retirée de la liste, même après rechargement', async ({ page }) => {
+      const detail = new DetailPatientPage(page);
+      expect(await detail.contactCount(), 'Une personne avant suppression').toBe(1);
+      await detail.deleteFirstContactPerson();
+      const panel = page.getByRole('tabpanel', { name: 'Personne à contacter' });
+      await expect(panel.getByText('Aucun enregistrement'), 'Liste vide').toBeVisible({ timeout: 15000 });
+      await reloadContacts(page);
+      expect(await detail.contactCount(), 'Toujours supprimée après rechargement').toBe(0);
+    });
+
+    test("Une personne à contacter née avant 1970 : sa date de naissance est affichée", async ({ page }) => {
+      // patients-contact-person.component.ts (voirPersonneContacter) : date affichée seulement si
+      // doB > 0 (secondes depuis 1970) ; une date antérieure est enregistrée mais affichée vide, et
+      // une modification de la personne renverrait alors une date vide (1970-01-01).
+      test.fail(true, "Anomalie : date de naissance antérieure à 1970 d'une personne à contacter affichée vide");
+      const detail = await reloadContacts(page);
+      await detail.expectContactDetails(contact);
     });
   });
 
@@ -206,28 +247,58 @@ test.describe('Module Base patients', () => {
   // ======================================================================
   test.describe('Prises en charge', () => {
     let insurerName = '';
+    let careData: CareData;
+
+    /** Recharge la fiche et rouvre l'onglet : la liste relue vient du serveur. */
+    async function reloadCovers(page: Page) {
+      await page.reload();
+      await new DetailPatientPage(page).checkIfPageLoad();
+      const carePage = new PatientCarePage(page);
+      await carePage.goToCareTab();
+      return carePage;
+    }
 
     test.beforeEach(async ({ page }) => {
       const carePage = new PatientCarePage(page);
-      const careData = CareDataGenerator.generate();
-      insurerName = careData.insurerName;
+      careData = CareDataGenerator.generate();
       await createTestPatient(page, true);
-      await test.step(`Ajouter une prise en charge ${insurerName}`, async () => {
+      await test.step('Ajouter une prise en charge', async () => {
         await carePage.goToCareTab();
         await carePage.openAddCareModal();
+        // Assureur réellement choisi (repli sur un assureur de la structure si celui généré n'existe pas)
         await carePage.fillCareForm(careData);
+        insurerName = careData.insurerName;
         await carePage.saveCare();
       });
     });
 
-    test('Ajouter une prise en charge', async ({ page }) => {
+    test('Ajouter une prise en charge : chaque valeur saisie est enregistrée', async ({ page }) => {
       await expect(page.locator('#pills-prise-en-charge-fill tbody tr').filter({ hasText: insurerName }).first()).toBeVisible();
+      const carePage = await reloadCovers(page);
+      await carePage.expectCoverRow(careData);
     });
 
-    test('Modifier une prise en charge', async ({ page }) => {
-      // L'application exige une date de fin strictement postérieure à aujourd'hui.
+    test('Modifier une prise en charge : assureur et date de fin conservés, le reste inchangé', async ({ page }) => {
+      // Date de fin future (une date passée est aussi acceptée depuis le 2026-11-18 : prise en charge expirée saisie a posteriori)
       const newEndingDate = new Date(Date.now() + 60 * 24 * 60 * 60 * 1000).toISOString().split('T')[0];
-      await new PatientCarePage(page).modifyFirstCare('AFRIC MANAGEMENT (IPM)', newEndingDate);
+      const chosen = await new PatientCarePage(page).modifyFirstCare('AFRIC MANAGEMENT (IPM)', newEndingDate);
+      const carePage = await reloadCovers(page);
+      await carePage.expectCoverRow({ ...careData, insurerName: chosen, endingDate: newEndingDate });
+    });
+
+    test("Une prise en charge expirée (date de fin passée) est acceptée", async ({ page }) => {
+      // Saisie a posteriori d'une prise en charge expirée, permise depuis le 2026-11-18
+      const day = (offset: number) => new Date(Date.now() + offset * 86400000).toISOString().slice(0, 10);
+      const expired: CareData = { ...CareDataGenerator.generate(), startingDate: day(-90), endingDate: day(-10) };
+      const carePage = new PatientCarePage(page);
+      // Seule prise en charge du patient : pas de chevauchement avec celle du beforeEach
+      await carePage.removeAllCovers();
+      await carePage.openAddCareModal();
+      await carePage.fillCareForm(expired);
+      await carePage.saveCare();
+      await expect(page.getByText(/date de fin doit être supérieure à la date d'aujourd'hui/i)).toHaveCount(0);
+      const reloaded = await reloadCovers(page);
+      await reloaded.expectCoverRow(expired);
     });
 
     test("Voir les détails d'une prise en charge", async ({ page }) => {
@@ -236,8 +307,13 @@ test.describe('Module Base patients', () => {
       await carePage.closeViewModal();
     });
 
-    test('Supprimer une prise en charge', async ({ page }) => {
+    test('Supprimer une prise en charge : retirée de la liste, même après rechargement', async ({ page }) => {
+      const rows = page.locator('#pills-prise-en-charge-fill tbody tr').filter({ has: page.getByRole('button', { name: 'Action' }) });
+      await expect(rows).toHaveCount(1);
       await new PatientCarePage(page).deleteFirstCare();
+      await expect(rows).toHaveCount(0, { timeout: 15000 });
+      await reloadCovers(page);
+      await expect(rows, 'Toujours supprimée après rechargement').toHaveCount(0);
     });
   });
 
@@ -245,6 +321,7 @@ test.describe('Module Base patients', () => {
   // Raccourcis vers la facturation
   // ======================================================================
   test.describe('Raccourcis de facturation', () => {
+    test.skip(!hasModule('Facturation'), withoutModuleReason('Facturation'));
     test('Facturer un patient depuis la liste', async ({ page, portal }) => {
       const patientPage = new PatientPage(page);
       const data = await createTestPatient(page);

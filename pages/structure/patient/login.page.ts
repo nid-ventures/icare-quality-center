@@ -113,7 +113,7 @@ export class LoginPage {
    * Un compte associé à une seule structure/HI code passe directement au dashboard
    * sans que la modale n'apparaisse : dans ce cas, cette méthode ne fait rien.
    */
-  async selectStructure(structureName: string = 'NEST FOR ALL') {
+  async selectStructure(code: string): Promise<{ code: string; name: string }[]> {
     const structureModalHeading = this.page.getByRole('heading', { name: /Sélectionnez votre établissement/ });
     // Fenêtre de choix ou arrivée directe au portail (une seule structure) : la première des deux.
     // Un délai fixe court faisait conclure à tort « pas de choix » quand la connexion était lente.
@@ -122,19 +122,30 @@ export class LoginPage {
       this.page.waitForURL('**/modules', { timeout: 30000 }).then(() => false, () => false),
     ]);
     if (!modalAppeared) {
-      return;
+      return [];
     }
 
     await expect(this.page.getByText('Plusieurs structures sont')).toBeVisible();
 
-    // Sélection de la structure (bouton dynamique)
-    const structureButton = this.page.getByRole('button', { name: new RegExp(structureName, 'i') });
-    await expect(structureButton).toBeVisible();
+    // Structures proposées au compte : nom en gras, « Code : … » en dessous
+    const items = this.page.locator('button.hi-item');
+    await expect(items.first()).toBeVisible();
+    const structures: { code: string; name: string }[] = [];
+    for (const item of await items.all()) {
+      const name = (await item.locator('strong').innerText()).trim();
+      const shown = (await item.locator('small').innerText()).replace(/^\s*Code\s*:\s*/i, '').trim();
+      structures.push({ code: shown, name });
+    }
+
+    // Sélection de la structure par son code (comme l'utilisateur dans la liste)
+    const structureButton = items.filter({ has: this.page.locator('small', { hasText: new RegExp(`^\\s*Code\\s*:\\s*${code}\\s*$`, 'i') }) });
+    await expect(structureButton, `Structure de code « ${code} » proposée à la connexion`).toHaveCount(1);
     await structureButton.click();
 
     // Validation
     const validateButton = this.page.getByRole('button', { name: 'Valider et continuer' });
     await expect(validateButton).toBeVisible();
     await validateButton.click();
+    return structures;
   }
 }

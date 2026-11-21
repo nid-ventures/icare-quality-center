@@ -76,7 +76,7 @@ export class ConsultationPrenatalDataGenerator {
 
     private static readonly examensCliniquesList = [
         { code: 'muqueuses', label: 'Muqueuses' },
-        { code: 'apparance', label: 'Apparance' }
+        { code: 'appearance', label: 'Apparence' }
     ];
 
     private static readonly bandeletteTestsList = [

@@ -2,6 +2,7 @@
 import { type Page, type Locator, expect } from '@playwright/test';
 import { ConsultationPage } from './consultation.page';
 import { ConsultationDentaireData } from '../generator/consultation-dentaire-data-generator';
+import { confirmSave } from '../shared/confirm-save';
 
 export class ConsultationDentairePage extends ConsultationPage {
     private dentaireHeading: Locator;
@@ -189,7 +190,7 @@ export class ConsultationDentairePage extends ConsultationPage {
         await expect(updateButton).toBeEnabled({ timeout: 10000 });
         await updateButton.click();
         await expect(this.confirmButton).toBeVisible({ timeout: 10000 });
-        await this.confirmButton.click();
+        await confirmSave(this.page, this.confirmButton);
     }
 
     async deleteConsultation() {

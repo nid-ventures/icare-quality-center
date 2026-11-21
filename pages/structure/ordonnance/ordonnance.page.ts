@@ -1,6 +1,7 @@
 // pages/structure/ordonnance/ordonnance.page.ts
 import { type Page, type Locator, expect } from '@playwright/test';
 import { openFromDashboard } from '../patient/care-pathway.page';
+import { confirmSave } from '../shared/confirm-save';
 
 export interface OrdonnanceData {
   title: string;
@@ -104,7 +105,8 @@ export class OrdonnancePage {
    */
   async fillOrdonnanceForm(data: OrdonnanceData) {
     await this.selectFirstNgOption(this.prescripteurSelect);
-    await this.titreInput.fill(data.title);
+    // Titre masqué depuis le 2026-11-20 (« Ordonnance jj/mm/aaaa » par défaut)
+    if (await this.titreInput.isVisible()) await this.titreInput.fill(data.title);
     await this.medicamentInput.fill(data.medicationName);
     await this.posologieInput.fill(data.posologie);
     await this.remarquesInput.fill(data.remarques);
@@ -114,7 +116,7 @@ export class OrdonnancePage {
   async submitOrdonnance() {
     await this.enregistrerOrdonnanceButton.click();
     await expect(this.saveConfirmHeading).toBeVisible();
-    await this.confirmButton.click();
+    await confirmSave(this.page, this.confirmButton);
     await expect(this.ordonnanceSavedToast).toBeVisible();
   }
 

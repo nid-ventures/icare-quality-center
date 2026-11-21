@@ -1,4 +1,5 @@
 import { type Page, type Locator, expect } from '@playwright/test';
+import { confirmSave } from '../shared/confirm-save';
 
 /**
  * Ouvre depuis le dashboard médical une page du patient (`/<route>/:patientId`). Le raccourci
@@ -56,8 +57,10 @@ export class CarePathwayPage {
   async start() {
     await this.startButton.click();
     // "Démarrer" ouvre une fenêtre de confirmation avant l'enregistrement du parcours.
-    await this.confirmButton().click();
-    await this.page.waitForURL('**/patient/patient-care-pathway-detail/**', { timeout: 20000 });
+    // Réponse du serveur vérifiée (erreur = échec explicite), puis ouverture du détail : un parcours
+    // à 4 étapes avec tous les actes peut être long à créer
+    await confirmSave(this.page, this.confirmButton(), 'Démarrage du parcours');
+    await this.page.waitForURL('**/patient/patient-care-pathway-detail/**', { timeout: 60000 });
     await this.expectDetailLoaded();
   }
 
@@ -68,7 +71,7 @@ export class CarePathwayPage {
   async expectDetailLoaded() {
     // Le détail charge le parcours, ses étapes et ses actes : plus de 5 s quand le backend est chargé
     await expect(this.detailHeading).toBeVisible({ timeout: 30000 });
-    await expect(this.page.getByRole('button', { name: 'Étape 1', exact: true })).toBeVisible();
+    await expect(this.page.getByRole('button', { name: 'Étape 1', exact: true })).toBeVisible({ timeout: 30000 });
     await expect(this.page.getByRole('heading', { name: /Actes médicaux prévus/ })).toBeVisible();
   }
 

@@ -1,6 +1,7 @@
 // pages/structure/consultation/consultation.page.ts
 import { type Page, type Locator, expect } from '@playwright/test';
 import { ConsultationData } from '../generator/consultation-standard-data-generator';
+import { confirmSave } from '../shared/confirm-save';
 
 export class ConsultationPage {
   // Onglet Consultation (à adapter selon votre application)
@@ -12,11 +13,13 @@ export class ConsultationPage {
   newConsultationButton: Locator;
   filterByTypeText: Locator;
 
-  // Modal Nouvelle consultation
-  newConsultationModalHeading: Locator;
-  specialtySelect: Locator;
-  consultationTypeSelect: Locator;
-  createConsultationButton: Locator;
+  // Bandeau "Nouvelle consultation" (spécialités en pastilles, types en boutons, recherche)
+  newConsultationBar: Locator;
+  specialtyPills: Locator;
+  typeChips: Locator;
+  typeSearchInput: Locator;
+  /** Rappel du type choisi pendant la saisie, avec son bouton "Annuler" */
+  currentTypeBar: Locator;
   cancelButton: Locator;
 
   // Formulaire consultation médicale
@@ -44,15 +47,17 @@ export class ConsultationPage {
 
     // Liste des consultations
     this.consultationsHeading = page.getByRole('heading', { name: 'Liste des consultations' });
-    this.newConsultationButton = page.getByRole('button', { name: /^\W*Nouvelle consultation/ });
+    // Plus de bouton ni de fenêtre : le bandeau "Nouvelle consultation" est affiché sur la page
+    this.newConsultationButton = page.locator('.new-consultation-bar').filter({ hasText: 'Nouvelle consultation' });
     this.filterByTypeText = page.locator('.consultation-filter ng-select');
 
-    // Modal Nouvelle consultation
-    this.newConsultationModalHeading = page.getByRole('heading', { name: 'Nouvelle consultation' });
-    this.specialtySelect = page.locator('ng-select').filter({ hasText: 'Sélectionner une spécialité' });
-    this.consultationTypeSelect = page.locator('ng-select').filter({ hasText: 'Sélectionner un type' });
-    this.createConsultationButton = page.getByRole('button', { name: /^\W*Créer la consultation/ });
-    this.cancelButton = page.getByRole('button', { name: /^\W*Annuler/ });
+    // Bandeau Nouvelle consultation
+    this.newConsultationBar = this.newConsultationButton;
+    this.specialtyPills = this.newConsultationBar.locator('.ncb-pills .speciality-pill');
+    this.typeChips = this.newConsultationBar.locator('.ncb-types .type-chip');
+    this.typeSearchInput = this.newConsultationBar.getByRole('textbox', { name: 'Rechercher un type de consultation' });
+    this.currentTypeBar = page.locator('.current-type-bar');
+    this.cancelButton = this.currentTypeBar.getByRole('button', { name: /Annuler/ });
 
     // Formulaire consultation médicale
     this.medicalConsultationHeading = page.getByRole('heading', { name: /^\W*Consultation Médicale/ });
@@ -95,60 +100,49 @@ export class ConsultationPage {
   }
 
   /**
-   * Ouvre le modal de nouvelle consultation
+   * Affiche le bandeau "Nouvelle consultation" (il remplace l'ancienne fenêtre : rien à ouvrir).
    */
   async openNewConsultationModal() {
-    // Le loader plein écran d'un chargement précédent peut encore rendre ce bouton instable.
+    // Le loader plein écran d'un chargement précédent peut encore masquer le bandeau.
     await this.page.locator('app-loader .backdrop.full-screen').waitFor({ state: 'hidden', timeout: 5000 }).catch(() => {});
-    await this.newConsultationButton.click();
-    await expect(this.newConsultationModalHeading).toBeVisible();
+    await expect(this.newConsultationBar).toBeVisible();
   }
 
   /**
-   * Remplit la première partie du formulaire (spécialité et type)
+   * Choisit la spécialité (pastille) puis le type (bouton). Une spécialité à type unique
+   * (pédiatrie, dentiste…) ouvre directement le formulaire, sans bouton de type.
    */
   async fillConsultationBasics(data: { specialty: string; consultationType: string }) {
-    await this.selectAndVerify(this.specialtySelect, data.specialty, 'spécialité');
-    await this.selectAndVerify(this.consultationTypeSelect, data.consultationType, 'type de consultation');
-  }
-
-  private async selectAndVerify(ngSelect: Locator, value: string, fieldName: string) {
-    await ngSelect.click();
-    const panel = this.page.locator('.ng-dropdown-panel:visible');
-    await panel.waitFor({ state: 'visible', timeout: 5000 });
-    const options = this.page.locator('.ng-dropdown-panel .ng-option');
-
-    // Normaliser la valeur recherchée (supprimer les espaces superflus)
-    const normalizedValue = value.replace(/\s+/g, ' ').trim();
-
-    let optionFound = false;
-    const optionCount = await options.count();
-    for (let i = 0; i < optionCount; i++) {
-      const option = options.nth(i);
-      const text = await option.textContent();
-      const normalizedText = text?.replace(/\s+/g, ' ').trim();
-      if (normalizedText?.toLowerCase() === normalizedValue.toLowerCase()) {
-        await option.click();
-        optionFound = true;
-        break;
-      }
+    const pill = this.specialtyPills.filter({ hasText: exactLabel(data.specialty, true) });
+    await expect(pill, `Spécialité "${data.specialty}" proposée`).toHaveCount(1);
+    await pill.click();
+    const chip = this.typeChips.filter({ hasText: exactLabel(data.consultationType) });
+    // Formulaire ouvert directement (type unique) ou boutons des types de la spécialité
+    await expect(this.currentTypeBar.or(chip).first()).toBeVisible();
+    if (!await this.currentTypeBar.isVisible()) {
+      await expect(chip, `Type "${data.consultationType}" proposé`).toHaveCount(1);
+      await chip.click();
     }
-
-    if (!optionFound) {
-      const allTexts = await options.allTextContents();
-      throw new Error(`Option "${value}" introuvable dans ${fieldName}. Trouvé : ${JSON.stringify(allTexts)}`);
-    }
-
-    await this.page.locator('.ng-dropdown-panel:visible').waitFor({ state: 'hidden', timeout: 3000 });
-    await expect(ngSelect).toContainText(value, { ignoreCase: true, timeout: 3000 });
   }
 
   /**
-   * Créer la consultation (bouton "Créer la consultation") et attend le formulaire détaillé
+   * Le formulaire du type choisi est ouvert : plus de bouton "Créer la consultation", le choix
+   * du type suffit ; le rappel du type reste affiché pendant la saisie.
    */
   async createConsultation() {
-    await this.createConsultationButton.click();
-    // await expect(this.medicalConsultationHeading).toBeVisible();
+    await expect(this.currentTypeBar).toBeVisible();
+  }
+
+  /** Recherche un type de consultation dans le bandeau (sans tenir compte des accents). */
+  async searchConsultationType(term: string) {
+    await this.typeSearchInput.fill(term);
+  }
+
+  /** Ferme le formulaire en cours (bouton "Annuler" du rappel du type) : le bandeau revient. */
+  async cancelNewConsultation() {
+    await this.cancelButton.click();
+    await expect(this.currentTypeBar).toBeHidden();
+    await expect(this.newConsultationBar).toBeVisible();
   }
 
   /**
@@ -172,7 +166,7 @@ export class ConsultationPage {
     // Textes
     await this.reportInput.fill(data.report);
     await this.summaryInput.fill(data.summary);
-    await this.prescriptionInput.fill(data.prescription);
+    // « Ordonnance de la consultation » : plus proposée à la création (ordonnances via les prescriptions)
 
     // Actes médicaux (sélection multiple)
     for (const act of data.acts) {
@@ -188,13 +182,23 @@ export class ConsultationPage {
     }
   }
 
+  /** Noms des `count` premiers actes à facturer proposés par la structure (liste refermée ensuite). */
+  async availableActs(count: number): Promise<string[]> {
+    await this.actsSelect.click();
+    const actsPanel = this.page.locator('.ng-dropdown-panel:visible');
+    await actsPanel.locator('.ng-option:not(.ng-optgroup)').first().waitFor({ state: 'visible', timeout: 15000 });
+    const names = (await actsPanel.locator('.ng-option:not(.ng-optgroup)').allInnerTexts()).map(t => t.trim()).filter(Boolean);
+    await this.page.keyboard.press('Escape');
+    return [...new Set(names)].slice(0, count);
+  }
+
   /**
    * Sauvegarde la consultation et confirme la modale
    */
   async saveConsultation() {
     await this.saveConsultationButton.click();
     await expect(this.confirmButton).toBeVisible();
-    await this.confirmButton.click();
+    await confirmSave(this.page, this.confirmButton);
   }
 
   /**
@@ -209,8 +213,16 @@ export class ConsultationPage {
    */
   async filterByConsultationType(type: string) {
     const filterSelect = this.page.locator('app-consultations').getByRole('textbox');
-    await filterSelect.click();
-    await this.page.getByRole('option', { name: type.toUpperCase() }).click();
+    const option = this.page.getByRole('option', { name: type.toUpperCase() });
+    // Les types du filtre arrivent avec le chargement de la liste : une liste ouverte trop tôt est
+    // vide ; elle est alors refermée puis rouverte
+    for (let attempt = 1; ; attempt++) {
+      await filterSelect.click();
+      if (await option.waitFor({ state: 'visible', timeout: 10000 }).then(() => true, () => false) || attempt >= 3) break;
+      await this.page.keyboard.press('Escape');
+      await this.page.waitForTimeout(1000);
+    }
+    await option.click();
   }
   /**
    * Sélectionne la première consultation dans la liste (filtre préalable possible)
@@ -242,7 +254,8 @@ export class ConsultationPage {
   async fillUpdatedForm(data: Partial<ConsultationData>) {
     if (data.report) await this.reportInput.fill(data.report);
     if (data.summary) await this.summaryInput.fill(data.summary);
-    if (data.prescription) await this.prescriptionInput.fill(data.prescription);
+    // Affichée en modification seulement si la consultation contient déjà une ordonnance
+    if (data.prescription && await this.prescriptionInput.isVisible()) await this.prescriptionInput.fill(data.prescription);
     if (data.acts && data.acts.length > 0) {
       // Pour les actes, il faut peut-être d'abord supprimer ceux existants
       // Ici on suppose qu'on peut en ajouter d'autres (à adapter selon l'UI)
@@ -261,13 +274,42 @@ export class ConsultationPage {
   }
 
   /**
+   * Consultation rouverte : chaque valeur attendue est restituée (constantes, compte-rendu,
+   * synthèse) et chaque acte choisi figure parmi les actes sélectionnés.
+   */
+  async expectSavedValues(data: Partial<ConsultationData>) {
+    await expect(this.reportInput).toBeVisible({ timeout: 15000 });
+    const fields: [string, Locator, string | undefined][] = [
+      ['Poids', this.weightInput, data.weight],
+      ['Taille', this.heightInput, data.height],
+      ['Température', this.temperatureInput, data.temperature],
+      ['Tension', this.tensionInput, data.tension],
+      ['Pouls', this.pulseInput, data.pulse],
+      ['Compte-rendu', this.reportInput, data.report],
+      ['Synthèse', this.summaryInput, data.summary],
+    ];
+    for (const [label, input, value] of fields) {
+      if (value === undefined) continue;
+      // Nombres : 37 et 37.0 sont la même valeur
+      if (/^\d+([.,]\d+)?$/.test(value)) {
+        await expect.poll(async () => Number((await input.inputValue()).replace(',', '.')), label).toBe(Number(value.replace(',', '.')));
+      } else {
+        await expect(input, label).toHaveValue(value);
+      }
+    }
+    for (const act of data.acts ?? []) {
+      await expect(this.page.locator('.ng-value').filter({ hasText: act }).first(), `Acte "${act}" enregistré`).toBeVisible();
+    }
+  }
+
+  /**
    * Sauvegarde la modification (bouton "Mettre à jour")
    */
   async updateConsultation() {
     const updateButton = this.page.getByRole('button', { name: /^\W*Mettre à jour la/ });
     await updateButton.click();
     await expect(this.confirmButton).toBeVisible();
-    await this.confirmButton.click();
+    await confirmSave(this.page, this.confirmButton);
   }
 
   /**
@@ -299,4 +341,10 @@ export class ConsultationPage {
       .first();
     await firstConsultationButton.click();
   }
+}
+
+/** Libellé exact (casse ignorée), suivi éventuellement du nombre de types affiché sur la pastille. */
+export function exactLabel(label: string, withCount = false): RegExp {
+  const escaped = label.replace(/\s+/g, ' ').trim().replace(/[.*+?^${}()|[\]\\]/g, '\\$&').replace(/ /g, '\\s+');
+  return new RegExp(`^\\s*${escaped}\\s*${withCount ? '\\d*\\s*' : ''}$`, 'i');
 }

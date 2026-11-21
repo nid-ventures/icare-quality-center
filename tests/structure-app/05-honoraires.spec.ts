@@ -10,8 +10,13 @@ import { BillingInvoicePage } from '../../pages/structure/billing/billing-invoic
 import { BillingListPatientPage } from '../../pages/structure/billing/billing-list.page';
 import { createDossierPatient, DOSSIER_SETUP_TIMEOUT, type DossierPatient } from '../../fixtures/dossier-patient';
 import {
-  ensureHonorairePrerequisites, billActForMedecin, HONORAIRE_SETUP_TIMEOUT, HONORAIRE_SPECIALITY, type HonoraireContext,
+  ensureHonorairePrerequisites, billActForMedecin, HONORAIRE_SETUP_TIMEOUT, honoraireSpeciality, isAdmin, type HonoraireContext,
 } from '../../fixtures/honoraires-setup';
+import { hasModule, withoutModuleReason } from '../../test-data/tenants';
+
+// Module absent de certaines structures (cf. test-data/tenants.ts) : fichier ignoré pour elles
+test.skip(!hasModule('Facturation'), withoutModuleReason('Facturation'));
+test.skip(!hasModule('Honoraires'), withoutModuleReason('Honoraires'));
 
 test.setTimeout(240000);
 
@@ -60,7 +65,7 @@ test.describe('Module Honoraires', () => {
     const profiles = new RemunerationProfilePage(page);
     await portal.enterModule('Administration');
     await profiles.open();
-    expect(await profiles.hasActiveProfile(HONORAIRE_SPECIALITY, ctx.act), `Profil actif ${HONORAIRE_SPECIALITY} / ${ctx.act}`).toBeTruthy();
+    expect(await profiles.hasActiveProfile(honoraireSpeciality(), ctx.act), `Profil actif ${honoraireSpeciality()} / ${ctx.act}`).toBeTruthy();
   });
 
   test("Créer un relevé d'honoraires pour un médecin", async ({ page }) => {
@@ -292,7 +297,7 @@ test.describe('Module Honoraires', () => {
       await portal.enterModule('Administration');
       const profiles = new RemunerationProfilePage(page);
       await profiles.open();
-      const active = await profiles.activeProfiles(HONORAIRE_SPECIALITY);
+      const active = await profiles.activeProfiles(honoraireSpeciality());
       const found = active.find(p => p.act.toUpperCase() === ctx.act.toUpperCase());
       expect(found, `Profil actif de "${ctx.act}"`).toBeDefined();
       rule = { ...found!, category: ctx.category };
@@ -302,10 +307,10 @@ test.describe('Module Honoraires', () => {
       otherRule = active.find(p => p.act !== found!.act && (wantRate ? p.rate !== null : p.rate === null && p.amount !== null));
       if (!otherRule) {
         // Tous les actes de la spécialité peuvent déjà avoir un profil (du même type) : pas de second profil
-        const proposal = await profiles.tryFirstProposition(HONORAIRE_SPECIALITY);
+        const proposal = await profiles.tryFirstProposition(honoraireSpeciality());
         if (!proposal) return;
         const isoShift = (days: number) => new Date(Date.now() + days * 86400000).toISOString().slice(0, 10);
-        await profiles.create({ speciality: HONORAIRE_SPECIALITY, act: proposal.act, ...(wantRate ? { coverage: '20' } : { mount: '3000' }), startDate: isoShift(-730), endDate: isoShift(730) });
+        await profiles.create({ speciality: honoraireSpeciality(), act: proposal.act, ...(wantRate ? { coverage: '20' } : { mount: '3000' }), startDate: isoShift(-730), endDate: isoShift(730) });
         otherRule = { act: proposal.act, category: proposal.category, rate: wantRate ? 20 : null, amount: wantRate ? null : 3000 };
       }
     });
@@ -433,7 +438,7 @@ test.describe('Module Honoraires', () => {
     });
 
     test("Deuxième règle de rémunération (montant fixe ou taux) : honoraire conforme", async ({ page }) => {
-      test.skip(!otherRule, `Aucun autre acte de la spécialité "${HONORAIRE_SPECIALITY}" disponible pour un profil de l'autre type`);
+      test.skip(!otherRule, `Aucun autre acte de la spécialité "${honoraireSpeciality()}" disponible pour un profil de l'autre type`);
       await bill(page, otherRule!, 7000);
       const { rows } = await search(page);
       const row = rows.find(r => r.act.toUpperCase().includes(otherRule!.act.toUpperCase()));
@@ -448,7 +453,7 @@ test.describe('Module Honoraires', () => {
   // ======================================================================
   test.describe('Relevés d\'un médecin désactivé', () => {
     // Les soignants ne peuvent pas être créés depuis l'application (rôle soignant non proposé) : un
-    // médecin de pédiatrie existant est désactivé le temps du test, puis toujours réactivé.
+    // soignant existant de la spécialité des honoraires (jamais l'administrateur) est désactivé le temps du test, puis toujours réactivé.
     test.describe.configure({ mode: 'serial' });
     let patient: DossierPatient;
     let medecin = '';
@@ -477,14 +482,25 @@ test.describe('Module Honoraires', () => {
       await refreshCaches(page);
     }
 
-    test('Préparer : relevé d\'un médecin de pédiatrie', async ({ page }) => {
+    test('Préparer : relevé d\'un médecin de la spécialité des honoraires', async ({ page }) => {
       const createPage = new CreateHonorairePage(page);
-      await test.step('Choisir un médecin de pédiatrie (autre que celui des autres tests si possible)', async () => {
+      await test.step(`Choisir un médecin de ${honoraireSpeciality()} (autre que celui des autres tests si possible)`, async () => {
         await new PortalPage(page).enterModule('Honoraires');
         await createPage.gotoViaMenu();
-        const pediatres = (await createPage.listMedecins()).filter(m => /pédiatrie/i.test(m.specialite));
-        medecin = (pediatres.find(m => m.nom !== ctx.medecin) ?? pediatres[0])?.nom ?? '';
-        expect(medecin, 'Un médecin de pédiatrie').toBeTruthy();
+        const pediatres = (await createPage.listMedecins()).filter(m => new RegExp(honoraireSpeciality(), 'i').test(m.specialite) && !isAdmin(m.nom));
+        expect(pediatres.length, `Un médecin de ${honoraireSpeciality()} autre que l'administrateur`).toBeGreaterThan(0);
+        // Un compte abonné (application iCare) ne peut pas être désactivé (bouton grisé) : seul un
+        // médecin dont l'état peut changer est retenu, de préférence autre que celui des autres tests
+        const candidates = [...pediatres].sort((a, b) => Number(a.nom === ctx.medecin) - Number(b.nom === ctx.medecin));
+        await new PortalPage(page).enterModule('Administration');
+        const accounts = new AccountListPage(page);
+        await accounts.goto();
+        await accounts.expectListLoaded();
+        for (const candidate of candidates) {
+          const login = await accounts.loginOf(candidate.nom, 'Actif').catch(() => '');
+          if (login && await accounts.rowButton(login, 1).isEnabled()) { medecin = candidate.nom; break; }
+        }
+        test.skip(!medecin, `Aucun médecin de ${honoraireSpeciality()} dont le compte peut être désactivé (comptes abonnés)`);
       });
       await test.step(`Facturer un acte de ${medecin} et créer son relevé`, async () => {
         await new PortalPage(page).enterModule('Facturation');
@@ -503,8 +519,11 @@ test.describe('Module Honoraires', () => {
     });
 
     test('Médecin désactivé : la liste des relevés reste affichée, avec son relevé', async ({ page }) => {
+      test.skip(!medecin, 'Aucun médecin dont le compte peut être désactivé');
+      let deactivated = false;
       try {
         await test.step(`Désactiver ${medecin}`, async () => setDoctorActive(page, false));
+        deactivated = true;
         await test.step('La liste des relevés s\'affiche, avec le relevé du médecin désactivé', async () => {
           await new PortalPage(page).enterModule('Honoraires');
           // Soignants en cache (actifs seulement) rafraîchis par loadconfigs après un chargement de
@@ -526,7 +545,8 @@ test.describe('Module Honoraires', () => {
           expect.soft(detail.text, 'Détail consultable').toContain(reference);
         });
       } finally {
-        await test.step(`Réactiver ${medecin}`, async () => setDoctorActive(page, true));
+        // Réactivé seulement s'il a été désactivé : sinon l'erreur de la réactivation masquerait la vraie
+        if (deactivated) await test.step(`Réactiver ${medecin}`, async () => setDoctorActive(page, true));
       }
     });
   });

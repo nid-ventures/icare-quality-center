@@ -286,8 +286,20 @@ export class BillableBillingReportingPage {
     await this.page.waitForTimeout(300);
   }
 
+  /** Réponse de la recherche d'actes (POST /billableacts/search) dont le corps contient toutes les `values`. */
+  private searchResponse(values: string[] = []) {
+    return this.page.waitForResponse(r => /\/billableacts\/search/.test(r.url()) && r.request().method() === 'POST'
+      && values.every(v => (r.request().postData() ?? '').includes(v)), { timeout: 30000 });
+  }
+
+  /**
+   * Réinitialiser relance une recherche sans filtre, jamais annulée : attendre sa réponse, sinon elle
+   * peut arriver après la recherche suivante et réafficher tous les actes.
+   */
   async reset() {
+    const reloaded = this.searchResponse().catch(() => null);
     await this.reinitialiserButton.click();
+    await reloaded;
     await this.page.waitForTimeout(300);
   }
 
@@ -325,7 +337,10 @@ export class BillableBillingReportingPage {
       if (key !== 'status' && value) await inputs[key as keyof typeof inputs].fill(value);
     }
     if (criteria.status) await this.selectStatus(criteria.status);
+    const values = Object.entries(criteria).filter(([key, value]) => key !== 'status' && value).map(([, value]) => value as string);
+    const searched = this.searchResponse(values);
     await this.rechercherButton.click();
+    await searched;
     await expect(this.rows.first().or(this.emptyRow)).toBeVisible({ timeout: 15000 });
     await this.page.waitForTimeout(1000);
     return this.readRows();
@@ -501,4 +516,68 @@ export class PrestationsReportingPage {
 
 function normalize(value: string): string {
   return value.normalize('NFD').replace(/[\u0300-\u036f]/g, '').replace(/\s+/g, ' ').trim().toUpperCase();
+}
+
+/**
+ * Reporting > Parcours de soins (`/my-space/reporting/parcours`, `CarePathwaysReportingComponent`) :
+ * période (sur la date de début du parcours), filtres type / praticien (relus sur le serveur), statut /
+ * suivi / patient (appliqués à l'écran) et liste paginée des parcours, en cours ou archivés (colonne
+ * « Date de fin prévue » : date de clôture, ou date prévue de la dernière étape). Les tableaux de bord (indicateurs,
+ * statistiques) ont été retirés de l'app le 2026-11-16. Données de `GET /careplans/reporting`.
+ */
+export class CarePathwaysReportingPage {
+  readonly heading: Locator;
+  readonly exportButton: Locator;
+  readonly loadingState: Locator;
+  readonly errorState: Locator;
+  readonly emptyState: Locator;
+  readonly listCount: Locator;
+  readonly list: Locator;
+  readonly rows: Locator;
+
+  constructor(private readonly page: Page) {
+    this.heading = page.getByRole('heading', { name: 'Parcours de soins', level: 1 });
+    this.exportButton = page.locator('.cpr-header').getByRole('button', { name: /Exporter/ });
+    this.loadingState = page.locator('.cpr-state').filter({ hasText: 'Chargement des parcours' });
+    this.errorState = page.locator('.cpr-state.cpr-error');
+    this.emptyState = page.locator('.cpr-state').filter({ hasText: 'Aucun parcours pour ces critères.' });
+    this.listCount = page.locator('.cpr h2').filter({ hasText: /^\s*Parcours\b/ }).locator('.cpr-count');
+    this.list = page.locator('#cpr-list');
+    this.rows = this.list.locator('table.cpr-list tbody tr');
+  }
+
+  /** Bouton de période ("Ce mois", "3 mois", "12 mois", "Cette année", "Tout", "Dates"). */
+  period(label: string): Locator {
+    return this.page.locator('.cpr-periods').getByRole('button', { name: label, exact: true });
+  }
+
+  /** Champ de filtre d'après son libellé (Type de parcours, Praticien, Statut, Suivi, Patient). */
+  filter(label: string): Locator {
+    return this.page.locator('.cpr-filters div').filter({ has: this.page.locator('.cpr-label', { hasText: new RegExp(`^\\s*${label}\\s*$`) }) })
+      .last().locator('ng-select, select, input').first();
+  }
+
+  /** Attend la fin du chargement : données, liste vide ou erreur. */
+  async waitLoaded() {
+    await expect(this.loadingState).toBeHidden({ timeout: 30000 });
+    await expect(this.errorState.or(this.emptyState).or(this.list).first()).toBeVisible({ timeout: 15000 });
+  }
+
+  /** Choisit une période et attend le rechargement. */
+  async choosePeriod(label: string) {
+    await this.period(label).click();
+    await expect(this.period(label)).toHaveClass(/active/);
+    await this.waitLoaded();
+  }
+
+  /** Badges de statut ("En cours" / "Archivé") des lignes de la page affichée. */
+  statusBadges(): Locator {
+    return this.rows.locator('.cpr-badge');
+  }
+
+  /** Nombre de parcours de la liste (badge du titre "Parcours"), 0 si la liste est vide. */
+  async listTotal(): Promise<number> {
+    if (await this.emptyState.isVisible()) return 0;
+    return Number(((await this.listCount.textContent()) ?? '').trim()) || 0;
+  }
 }

@@ -1,4 +1,5 @@
 import { type Page, type Locator, expect } from '@playwright/test';
+import { confirmSave } from '../shared/confirm-save';
 
 /**
  * Description d'un champ de formulaire de consultation, repéré par son formControlName.
@@ -190,15 +191,57 @@ export class ConsultationFormPage {
     await this.confirm();
   }
 
+  /**
+   * Confirme et attend la réponse du serveur (création, mise à jour ou suppression) : sans cette
+   * attente, un rechargement ou une navigation juste après coupait la requête (consultation jamais créée).
+   */
   private async confirm() {
     const confirm = this.page.getByRole('button', { name: /^\W*Confirmer$/ }).last();
     await expect(confirm).toBeVisible({ timeout: 10000 });
-    await confirm.click();
+    await confirmSave(this.page, confirm, 'Consultation');
     await expect(confirm).toBeHidden({ timeout: 20000 });
   }
 
-  /** Vérifie, après réouverture de la consultation, que chaque champ a conservé sa valeur. */
-  async expectValues(fields: FieldSpec[], filled: FilledValues) {
+  /**
+   * Relevé de toutes les valeurs du formulaire (hors gestionnaire de prescriptions) : champ texte /
+   * date / nombre, case cochée, option de liste, libellés d'un ng-select. Comparé avant / après un
+   * enregistrement pour prouver qu'aucune donnée n'a été perdue ni modifiée. `exclude` : sélecteur des
+   * zones vérifiées à part (ex. fiches foetus, dont l'ordre d'affichage n'est pas stable).
+   */
+  async snapshot(exclude = ''): Promise<Record<string, string>> {
+    await expect(this.root.locator('[formcontrolname]').first()).toBeAttached({ timeout: 15000 });
+    const entries = await this.root.locator('[formcontrolname]').evaluateAll((els, excluded) => els
+      // Zone masquée ([hidden]) : doublon d'un champ affiché ailleurs (ex. second « Consultant » de la
+      // dentaire, même contrôle), dont le libellé n'est pas tenu à jour
+      .filter(e => !e.closest('app-prescription-manager') && !e.closest('[hidden]') && !(excluded && e.closest(excluded)))
+      .map(e => {
+        const name = e.getAttribute('formcontrolname') ?? '';
+        const text = (s: string | null | undefined) => (s ?? '').replace(/\s+/g, ' ').trim();
+        if (e.tagName === 'NG-SELECT') {
+          // Valeurs triées : l'ordre d'affichage d'une liste multiple peut changer après enregistrement
+          return [name, [...e.querySelectorAll('.ng-value-label')].map(v => text(v.textContent)).sort().join(' | ')];
+        }
+        if (e instanceof HTMLInputElement && (e.type === 'radio' || e.type === 'checkbox')) {
+          return [`${name}=${e.value}`, e.checked ? 'coché' : ''];
+        }
+        if (e instanceof HTMLSelectElement) return [name, text(e.selectedOptions[0]?.textContent)];
+        return [name, (e as HTMLInputElement).value ?? text(e.textContent)];
+      }), exclude);
+    const values: Record<string, string> = {};
+    for (const [key, value] of entries) {
+      let k = key; let n = 2;
+      while (k in values) k = `${key}#${n++}`;
+      values[k] = value;
+    }
+    return values;
+  }
+
+  /**
+   * Vérifie, après réouverture de la consultation, que chaque champ a conservé sa valeur.
+   * `exact` : une liste multiple contient exactement les valeurs attendues (ni perdue, ni en trop,
+   * ni en double).
+   */
+  async expectValues(fields: FieldSpec[], filled: FilledValues, { exact = false }: { exact?: boolean } = {}) {
     for (const field of fields) {
       const expected = filled[field.name];
       const control = this.control(field.name);
@@ -233,6 +276,10 @@ export class ConsultationFormPage {
         case 'multiselect':
           for (const label of expected as string[]) {
             await expect(control.first().locator('.ng-value').filter({ hasText: new RegExp(escapeRegExp(label), 'i') }), `Liste "${field.name}" : ${label}`).toHaveCount(1);
+          }
+          if (exact) {
+            await expect(control.first().locator('.ng-value'), `Liste "${field.name}" : exactement ${(expected as string[]).length} valeur(s)`)
+              .toHaveCount((expected as string[]).length);
           }
           break;
       }

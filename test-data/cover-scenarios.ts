@@ -24,6 +24,22 @@ export const ACTS = {
   chambre: { category: 'ACTE DE CHAMBRE', act: 'CHAMBRE CATÉGORIE 1' },
 } satisfies Record<string, BillableAct>;
 
+/**
+ * Acte du référentiel commun à toutes les structures (domaine et code) : chaque structure n'en
+ * active qu'une partie ; structure-data.setup.ts ajoute ceux des scénarios qui lui manquent.
+ */
+export const ACT_REFS: Record<keyof typeof ACTS, { type: string; code: number }> = {
+  cardio: { type: 'CONSULTATION', code: 1 },
+  uro: { type: 'CONSULTATION', code: 5 },
+  echo: { type: 'IMAGERIEECHO', code: 1 },
+  accouchement: { type: 'MEDICALBILLABLE', code: 2 },
+  visite: { type: 'VISITE', code: 1 },
+  pharmacie: { type: 'PHARMACIE', code: 1 },
+  chirurgie: { type: 'CHIRURGIEBILLABLE', code: 31 },
+  glycemie: { type: 'ANALYSE', code: 278 },
+  chambre: { type: 'HOSPITALISATIONROOM', code: 1 },
+};
+
 /** Acte à facturer : montant (journalier pour une chambre, sur `days` jours). */
 export type InvoiceLine = BillableAct & { amount: number; days?: number };
 
@@ -47,6 +63,8 @@ export type CoverScenario = {
 };
 
 export const INSURER = 'AMSA ASSURANCE (ASSURANCE)';
+/** Assureur du référentiel (code et type) ajouté comme garant de la structure s'il ne l'est pas. */
+export const INSURER_REF = { code: '4', type: 2 };
 
 const line = (act: BillableAct, amount: number, days?: number): InvoiceLine => ({ ...act, amount, days });
 

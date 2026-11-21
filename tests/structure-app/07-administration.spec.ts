@@ -19,6 +19,8 @@ import { PortalPage } from '../../pages/structure/portal/portal.page';
 import { PatientPage } from '../../pages/structure/patient/patient.page';
 import { PatientCarePage } from '../../pages/structure/patient/patient-care.page';
 import { createDossierPatient, DOSSIER_SETUP_TIMEOUT, type DossierPatient } from '../../fixtures/dossier-patient';
+import { hasModule, tenant, withoutModuleReason } from '../../test-data/tenants';
+import { ensureFreshAdminSession } from '../../fixtures/admin-login';
 
 // Libellé réel du rôle non-soignant dans le sélecteur de rôles
 const NON_CAREGIVER_ROLE = 'HI-ADMINISTRATOR';
@@ -89,6 +91,19 @@ test.describe('Module Administration', () => {
         const row = listPage.getRowByLogin(user.login);
         await expect(row).toContainText(updated.lastName);
         await expect(row).toContainText(updated.firstName);
+      });
+
+      await test.step("Rouvrir l'utilisateur après rechargement : identité enregistrée, login inchangé", async () => {
+        await page.reload();
+        const again = new AccountListPage(page);
+        await again.searchByLogin(user.login);
+        await again.openUpdateModal(user.login);
+        const form = new AccountCreateUpdatePage(page, 'update');
+        await form.expectOpen();
+        await expect(form.form.locator('#firstName'), 'Prénom').toHaveValue(updated.firstName);
+        await expect(form.form.locator('#lastName'), 'Nom').toHaveValue(updated.lastName);
+        await expect(form.form.locator('#username'), 'Login inchangé').toHaveValue(user.login);
+        await form.close();
       });
     });
 
@@ -439,7 +454,7 @@ test.describe('Module Administration', () => {
         'Modules de la structure',
         'Modules & Privilèges',
         'Configuration de consentement',
-        'Configuration de facture',
+        'Configuration des documents',
         'Garants',
         'Actes',
         'Rémunération médecin',
@@ -458,6 +473,8 @@ test.describe('Module Administration', () => {
         originalName = await configPage.getHiDetailsName();
         await configPage.fillHiDetailsName(`${originalName} QA`);
         await configPage.ensureHiDetailsEmailFilled('qa-structure@icaresenegal.com');
+        // Pays et téléphone obligatoires pour que la confirmation s'affiche (fiche parfois incomplète)
+        await new StructureSettingsPage(page).completeRequiredDetails();
       });
 
       await test.step('Enregistrer : la confirmation apparaît, on l\'annule', async () => {
@@ -534,10 +551,17 @@ test.describe('Module Administration', () => {
     let spareInsurer = '';
     const CONTACT = { contact: 'Awa QA Garant', phone: '771234567', email: 'garant.qa@example.com' };
     const digits = (text: string) => text.replace(/\D/g, '');
+    // Un garant ne se supprime pas (désactivation seulement) : à force de lancements, tous les
+    // assureurs du référentiel peuvent déjà être garants. Le groupe est alors ignoré, avec la raison.
+    let noFreeInsurer = '';
 
     test.beforeAll(async ({ browser }) => {
       test.setTimeout(DOSSIER_SETUP_TIMEOUT);
       patient = await createDossierPatient(browser);
+    });
+
+    test.beforeEach(() => {
+      test.skip(!!noFreeInsurer, noFreeInsurer);
     });
 
     async function openGarants(page: Page) {
@@ -561,14 +585,16 @@ test.describe('Module Administration', () => {
     test("Choisir deux assureurs qui ne sont pas encore garants de la structure", async ({ page }) => {
       const garants = await openGarants(page);
       const proposed = (await garants.proposedInsurers()).filter(n => !/^Sélectionnez$/i.test(n));
-      expect(proposed.length, 'Assureurs proposés').toBeGreaterThan(0);
       const free: string[] = [];
       for (const candidate of [...proposed].reverse()) {
         await garants.search({ assureur: candidate });
         if ((await garants.rows()).length === 0) free.push(candidate);
         if (free.length === 2) break;
       }
-      expect(free.length, 'Deux assureurs libres').toBe(2);
+      if (free.length < 2) {
+        noFreeInsurer = `Moins de deux assureurs du référentiel ne sont pas encore garants de ${tenant.name} (${free.length} libre(s)) : un garant ne se supprime pas, l'ajout n'est plus testable`;
+        test.skip(true, noFreeInsurer);
+      }
       [insurer, spareInsurer] = free;
     });
 
@@ -727,18 +753,24 @@ test.describe('Module Administration', () => {
       return acts;
     }
 
-    /** Actes proposés en facturation pour la catégorie donnée (fenêtre "Ajouter un acte", sans enregistrer). */
-    async function billingActs(page: Page, category: string): Promise<string[]> {
-      return (await openBilling(page).then(invoice => invoice.proposedActs(category))).map(a => a.toUpperCase());
+    /**
+     * Actes de la catégorie donnée proposés en facturation quand on cherche `act` par son nom
+     * (fenêtre "Ajouter des actes", sans enregistrer ; la recherche couvre toutes les catégories).
+     */
+    async function billingActs(page: Page, category: string, act: string): Promise<string[]> {
+      return (await openBilling(page).then(invoice => invoice.proposedActs(category, act))).map(a => a.toUpperCase());
     }
 
     /** Facturation du patient dédié, référentiels de session rechargés (actes de la structure). */
     async function openBilling(page: Page): Promise<BillingInvoicePage> {
       await new PortalPage(page).enterModule('Facturation');
       await page.waitForURL('**/billing/billings-create');
-      const loaded = page.waitForResponse(r => r.url().includes('/modules/loadconfigs'), { timeout: 30000 });
+      // Rechargement des référentiels de session (actes) ; attente tolérante : si la réponse a été
+      // manquée, l'acte absent sera signalé par la vérification qui suit, plus parlante
+      const loaded = page.waitForResponse(r => r.url().includes('/modules/loadconfigs'), { timeout: 30000 }).catch(() => null);
       await page.reload();
       await loaded;
+      await page.waitForURL('**/billing/billings-create');
       const invoice = new BillingInvoicePage(page);
       await invoice.searchPatientByIdentifier(patient.identifier);
       await invoice.selectFirstSearchResult();
@@ -852,16 +884,18 @@ test.describe('Module Administration', () => {
     });
 
     test("L'acte ajouté est proposé en facturation", async ({ page }) => {
-      expect(await billingActs(page, listed.type)).toContain(listed.nom);
+      test.skip(!hasModule('Facturation'), withoutModuleReason('Facturation'));
+      expect(await billingActs(page, listed.type, listed.nom)).toContain(listed.nom);
     });
 
     test("Désactiver un acte non utilisé : il n'est plus proposé en facturation, puis le réactiver", async ({ page }) => {
+      test.skip(!hasModule('Facturation'), withoutModuleReason('Facturation'));
       let acts = await openActs(page);
       await acts.search({ nom: listed.nom });
       expect(await acts.toggle(listed.nom)).toMatch(/réussi/i);
       await acts.search({ nom: listed.nom, etat: 'Inactif' });
       expect((await acts.rows())[0]?.statut, 'Acte désactivé').toBe('Inactif');
-      expect(await billingActs(page, listed.type), 'Plus proposé en facturation').not.toContain(listed.nom);
+      expect(await billingActs(page, listed.type, listed.nom), 'Plus proposé en facturation').not.toContain(listed.nom);
 
       await new PortalPage(page).enterModule('Administration');
       acts = await openActs(page);
@@ -869,7 +903,7 @@ test.describe('Module Administration', () => {
       expect(await acts.toggle(listed.nom)).toMatch(/réussi/i);
       await acts.search({ nom: listed.nom, etat: 'Actif' });
       expect((await acts.rows())[0]?.statut, 'Acte réactivé').toBe('Actif');
-      expect(await billingActs(page, listed.type), 'De nouveau proposé').toContain(listed.nom);
+      expect(await billingActs(page, listed.type, listed.nom), 'De nouveau proposé').toContain(listed.nom);
     });
 
     /** Bascule l'état de l'acte depuis Administration › Actes ; renvoie le message et le statut affiché ensuite. */
@@ -950,6 +984,7 @@ test.describe('Module Administration', () => {
     // active et ferait apparaître des médecins d'une autre spécialité dans les relevés d'honoraires.
     test.afterAll(async ({ browser }) => {
       if (!act) return;
+      await ensureFreshAdminSession(browser);
       const context = await browser.newContext({ baseURL: process.env.BASE_URL, storageState: ADMIN_STORAGE_STATE, viewport: null, ignoreHTTPSErrors: true });
       const page = await context.newPage();
       try {
@@ -1223,6 +1258,19 @@ test.describe('Module Administration', () => {
       await consents.save();
     }
 
+    test('Préparer : une configuration pour chaque profil (créée si absente)', async ({ page }) => {
+      // Les données de référence peuvent changer : le test crée lui-même les configurations
+      // manquantes (type et mode imposés par le profil, texte par défaut de l'application)
+      for (const profil of ['CAREGIVER', 'HI_ADMINISTRATOR', 'MEDICAL_SECRETAIRE', 'PATIENT']) {
+        const consents = await openConsents(page);
+        if ((await consents.rows()).some(r => r.profil === profil)) continue;
+        await test.step(`Créer la configuration ${profil}`, async () => {
+          await consents.chooseProfile(profil);
+          await consents.save();
+        });
+      }
+    });
+
     test('Liste : une configuration par profil, aucun profil libre', async ({ page }) => {
       const consents = await openConsents(page);
       const rows = await consents.rows();
@@ -1349,6 +1397,16 @@ test.describe('Module Administration', () => {
       return new StructureSettingsPage(page);
     }
 
+    /**
+     * Administration relance le chargement des configurations 2 s après son ouverture
+     * (my-space.component) et réécrit alors le cache `refdatahi` lu par l'impression des factures.
+     * Un enregistrement fait avant cette réponse est écrasé par l'ancienne valeur : on attend ce
+     * rafraîchissement avant d'enregistrer. À appeler avant (ou juste après) l'entrée dans le module.
+     */
+    function configRefresh(page: Page) {
+      return page.waitForResponse(r => /\/modules\/loadconfigs/.test(r.url()), { timeout: 10000 }).catch(() => null);
+    }
+
     /** Imprime la première facture patient et renvoie son texte et son HTML. */
     async function printFirstInvoice(page: Page) {
       const portal = new PortalPage(page);
@@ -1380,6 +1438,8 @@ test.describe('Module Administration', () => {
       await settings.openDetails();
       const original = await settings.readDetails();
       await settings.enableDetails();
+      // Fiche incomplète possible (serveur partagé) : champs obligatoires vides remplis, sans enregistrer
+      await settings.completeRequiredDetails();
       await expect(settings.detailsSave, 'Formulaire valide').toBeEnabled();
       await test.step('Nom vide refusé', async () => {
         await settings.fillDetails({ name: '' });
@@ -1400,6 +1460,8 @@ test.describe('Module Administration', () => {
       const settings = await openSettings(page);
       await settings.openDetails();
       await settings.enableDetails();
+      // Fiche incomplète possible (serveur partagé) : sans cela "Enregistrer" reste grisé quel que soit le logo
+      await settings.completeRequiredDetails();
       const error = (text: string) => settings.details.getByText(text);
       await test.step('Fichier PDF refusé', async () => {
         await settings.logoInput.setInputFiles({ name: 'logo.pdf', mimeType: 'application/pdf', buffer: Buffer.from('%PDF-1.4 test') });
@@ -1441,9 +1503,18 @@ test.describe('Module Administration', () => {
     });
 
     test('Enregistrer les détails : sans déconnexion, affichés et imprimés sur les factures', async ({ page }) => {
+      test.skip(!hasModule('Facturation'), withoutModuleReason('Facturation'));
       test.setTimeout(Math.max(test.info().timeout, 600000));
+      // Le module vient d'être ouvert (beforeEach) : attendre son rafraîchissement des configurations,
+      // qui sinon peut remettre l'ancienne fiche en cache après l'enregistrement
+      const refreshed = configRefresh(page);
       let settings = await openSettings(page);
       await settings.openDetails();
+      await refreshed;
+      // Fiche incomplète : l'enregistrer obligerait à écrire des valeurs de test dans des champs
+      // que ce test ne remet pas (serveur partagé) ; le test est alors ignoré
+      const missing = await settings.missingRequiredDetails();
+      test.skip(missing.length > 0, `Fiche de ${tenant.name} incomplète (${missing.join(', ')} vide) : enregistrement non testé`);
       const original = await settings.readDetails();
       const changed = { name: `${original.name} QA`, primaryStreet: `Rue QA ${stamp}`, postalCode: `QA${stamp}` };
       try {
@@ -1494,15 +1565,19 @@ test.describe('Module Administration', () => {
     });
 
     test('Enregistrer la configuration de facture : sans déconnexion, appliquée aux factures imprimées', async ({ page }) => {
+      test.skip(!hasModule('Facturation'), withoutModuleReason('Facturation'));
       test.setTimeout(Math.max(test.info().timeout, 600000));
+      // Le module vient d'être ouvert (beforeEach) : son rafraîchissement des configurations est en attente
+      const refreshed = configRefresh(page);
       let settings = await openSettings(page);
       await settings.openInvoice();
+      await refreshed;
       // La police enregistrée n'est pas réaffichée par le formulaire : elle est lue dans la session
       const saved = await page.evaluate(() => JSON.parse(localStorage.getItem('refdatahi') ?? '{}'));
       const original = { ...(await settings.readInvoice()), policy: saved.policy || 'Calibri' };
-      const changed = { policy: 'Arial', color: '#1a5276', header: `En-tête QA ${stamp}`, footer: `Pied de page QA ${stamp}` };
+      const changed = { policy: 'Arial', color: '#1a5276', titleColor: '#7b241c', header: `En-tête QA ${stamp}`, footer: `Pied de page QA ${stamp}` };
       try {
-        await test.step('Modifier police, couleur, en-tête et pied de page, enregistrer (sans déconnexion)', async () => {
+        await test.step('Modifier police, couleurs du texte et des titres, en-tête et pied de page, enregistrer (sans déconnexion)', async () => {
           await settings.enableInvoice();
           await settings.fillInvoice(changed);
           await settings.save(settings.invoiceSave);
@@ -1513,34 +1588,36 @@ test.describe('Module Administration', () => {
           const shown = await settings.readInvoice();
           expect.soft(shown.header, 'En-tête').toBe(changed.header);
           expect.soft(shown.footer, 'Pied de page').toBe(changed.footer);
-          expect.soft(shown.color, 'Couleur').toBe(changed.color);
+          expect.soft(shown.color, 'Couleur du texte').toBe(changed.color);
+          expect.soft(shown.titleColor, 'Couleur des titres et tableaux').toBe(changed.titleColor);
           expect.soft(shown.policy, 'Police réaffichée').toBe(changed.policy);
         });
-        await test.step('La facture imprimée applique en-tête, pied de page, police et couleur', async () => {
+        await test.step('La facture imprimée applique en-tête, pied de page, police et les deux couleurs', async () => {
           const { text, html } = await printFirstInvoice(page);
           expect.soft(text, 'En-tête imprimé').toContain(changed.header);
           expect.soft(text, 'Pied de page imprimé').toContain(changed.footer);
           expect.soft(html, 'Police').toMatch(/font-family:\s*Arial/);
-          expect.soft(html.toLowerCase(), 'Couleur').toMatch(/#1a5276|rgb\(26,\s*82,\s*118\)/);
+          expect.soft(html.toLowerCase(), 'Couleur du texte').toMatch(/#1a5276|rgb\(26,\s*82,\s*118\)/);
+          // Titre de la facture et en-tête du tableau
+          expect.soft(html.toLowerCase(), 'Couleur des titres et tableaux').toMatch(/#7b241c|rgb\(123,\s*36,\s*28\)/);
         });
       } finally {
         await test.step("Remettre les valeurs d'origine", async () => {
+          const refreshedAgain = configRefresh(page);
           await new PortalPage(page).enterModule('Administration').catch(() => {});
           await page.waitForURL('**/my-space/configuration').catch(() => {});
           settings = await openSettings(page);
           await settings.openInvoice();
-          const now = await page.evaluate(() => JSON.parse(localStorage.getItem('refdatahi') ?? '{}'));
-          const current = { ...(await settings.readInvoice()), policy: now.policy || 'Calibri' };
-          if (JSON.stringify(current) !== JSON.stringify(original)) {
-            await settings.enableInvoice();
-            await settings.fillInvoice(original);
-            await settings.save(settings.invoiceSave);
-            settings = await openSettings(page);
-            await settings.openInvoice();
-          }
+          await refreshedAgain;
+          // Toujours réenregistrer : le formulaire est rempli depuis le cache, qui a pu être périmé
+          await settings.enableInvoice();
+          await settings.fillInvoice(original);
+          await settings.save(settings.invoiceSave);
+          settings = await openSettings(page);
+          await settings.openInvoice();
           const restored = await settings.readInvoice();
-          expect({ header: restored.header, footer: restored.footer, color: restored.color }, "Valeurs d'origine")
-            .toEqual({ header: original.header, footer: original.footer, color: original.color });
+          expect({ header: restored.header, footer: restored.footer, color: restored.color, titleColor: restored.titleColor }, "Valeurs d'origine")
+            .toEqual({ header: original.header, footer: original.footer, color: original.color, titleColor: original.titleColor });
         });
       }
     });

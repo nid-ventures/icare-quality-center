@@ -4,6 +4,7 @@ import { PatientPage } from '../pages/structure/patient/patient.page';
 import { DossierSearchPage } from '../pages/structure/patient/dossier-search.page';
 import { PatientDataGenerator } from '../pages/structure/generator/data-generator';
 import { ADMIN_STORAGE_STATE } from '../test-data/structure-users';
+import { ensureFreshAdminSession } from './admin-login';
 
 export type DossierPatient = { identifier: string; firstName: string; lastName: string };
 
@@ -15,7 +16,13 @@ const SEX_CODES = { FEMME: '1', HOMME: '2' } as const;
  * renvoie son identifiant. Par défaut une FEMME : nécessaire pour les consultations prénatales et
  * de planification familiale ; HOMME pour les parcours de soins ciblés par sexe.
  */
-export async function createDossierPatient(browser: Browser, sex: keyof typeof SEX_CODES = 'FEMME'): Promise<DossierPatient> {
+export async function createDossierPatient(
+  browser: Browser,
+  sex: keyof typeof SEX_CODES = 'FEMME',
+  // Valeurs imposées (ex. date de naissance pour un parcours limité en âge)
+  overrides: Partial<ReturnType<typeof PatientDataGenerator.generate>> = {},
+): Promise<DossierPatient> {
+  await ensureFreshAdminSession(browser);
   const context = await browser.newContext({
     baseURL: process.env.BASE_URL,
     storageState: ADMIN_STORAGE_STATE,
@@ -27,7 +34,7 @@ export async function createDossierPatient(browser: Browser, sex: keyof typeof S
   try {
     const portal = new PortalPage(page);
     const patientPage = new PatientPage(page);
-    const data = { ...PatientDataGenerator.generate(), sex: SEX_CODES[sex] };
+    const data = { ...PatientDataGenerator.generate(), sex: SEX_CODES[sex], ...overrides };
 
     await portal.goto();
     await portal.enterModule('Base patients');

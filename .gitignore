@@ -6,14 +6,17 @@
 .env.test
 
 # Allure
-/allure-results/
+/allure-results*/
 /allure-report/
 
 # Playwright
 node_modules/
-/test-results/
-/playwright-report/
+/test-results*/
+/playwright-report*/
 /blob-report/
 /playwright/.cache/
 /playwright/.auth
 .claude/
+
+# Rapports Lighthouse (npm run perf:lighthouse)
+lighthouse-reports/

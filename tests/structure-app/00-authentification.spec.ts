@@ -159,6 +159,33 @@ test.describe('Module Authentification & pages publiques', () => {
   });
 
   // ======================================================================
+  // Session expirée : une réponse 401 du serveur renvoie à la connexion par un rechargement complet
+  // (une navigation interne gardait l'écran quitté, fond de fenêtre compris, et bloquait les clics)
+  // ======================================================================
+  test.describe('Session expirée', () => {
+    test('Une réponse 401 recharge la page de connexion, utilisable sans recharger', async ({ portal, page }) => {
+      await test.step('Le serveur répond 401 à la liste des patients', async () => {
+        await page.route(url => url.pathname.includes('/patients/getAll'), route =>
+          route.fulfill({ status: 401, contentType: 'application/json', body: '{"message":"Unauthorized"}' }));
+      });
+      await test.step('Ouvrir Base patients : retour à la connexion par un rechargement complet', async () => {
+        // Rechargement complet = nouvelle requête de document (une navigation Angular n'en fait pas)
+        const reloaded = page.waitForRequest(r => r.isNavigationRequest() && r.resourceType() === 'document' && /\/auth\/login/.test(r.url()), { timeout: 30000 });
+        await portal.moduleCard('Base patients').click();
+        await reloaded;
+        await page.waitForURL('**/auth/login**');
+      });
+      await test.step('Page de connexion utilisable : pas de fond de fenêtre bloquant', async () => {
+        await page.unroute(url => url.pathname.includes('/patients/getAll'));
+        await expect(page.getByRole('button', { name: 'Connexion', exact: true })).toBeVisible({ timeout: 15000 });
+        await expect(page.locator('.modal-backdrop')).toHaveCount(0);
+        await page.getByRole('textbox').first().click();
+        await expect(page.getByRole('textbox').first()).toBeFocused();
+      });
+    });
+  });
+
+  // ======================================================================
   // Politique de confidentialité & CGU (connecté)
   // ======================================================================
   test.describe('Politique de confidentialité et CGU', () => {
