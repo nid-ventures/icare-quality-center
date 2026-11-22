@@ -9,6 +9,7 @@ import { PrescriptionManagerPage } from '../../pages/structure/consultation/pres
 import { fillAllFields, keptFieldsDiff, type FieldSnapshot } from '../../pages/structure/shared/fill-all-fields';
 import { isoDate } from '../../test-data/consultation-fields';
 import { renewSessionIfExpiring } from '../../fixtures/admin-login';
+import { UnsavedDialog } from '../../pages/structure/shared/unsaved-dialog';
 
 test.setTimeout(300000);
 
@@ -220,7 +221,15 @@ async function realizeAllActs(page: Page, patient: DossierPatient, pathway: stri
         await goToStep(page, step);
         const retry = (await openDomain(page, domain)).locator('.acc-item').nth(i);
         if (await retry.locator('.acc-item-badge').count() > 0) throw error;
-        verify = await realize(await reopen(), title, reopen);
+        const body = await reopen();
+        // La saisie interrompue est proposée à la réouverture (« MODIFICATIONS NON ENREGISTRÉES ») :
+        // supprimée, l'acte est refait en entier
+        const recovered = new UnsavedDialog(page);
+        if (await recovered.root.waitFor({ state: 'visible', timeout: 5000 }).then(() => true, () => false)) {
+          await recovered.expectOpen(/MODIFICATIONS NON ENREGISTRÉES/);
+          await recovered.answer(/Les supprimer/);
+        }
+        verify = await realize(body, title, reopen);
       }
       await expect(async () => {
         const again = await openDomain(page, domain);

@@ -11,6 +11,7 @@ import { ConsultationStandardDataGenerator, type ConsultationData } from '../../
 import { prenatalFields, planificationFields, pediatricFields, dentalFields, isoDate } from '../../test-data/consultation-fields';
 import { clearPrefilledConsultant } from '../../pages/structure/shared/consultant';
 import { UnsavedDialog, DraftBanner } from '../../pages/structure/shared/unsaved-dialog';
+import { structureApi } from '../../fixtures/structure-api';
 
 test.setTimeout(240000);
 
@@ -647,7 +648,6 @@ test.describe('Module Dossier médical — Consultations', () => {
   test.describe('Consultation non enregistrée — avertissement et brouillon', () => {
     const leave = (page: Page) => page.locator('.patient-header .btn-back').click();
     const LEAVE_TITLE = /CONSULTATION NON ENREGISTRÉE/;
-    const listed = (page: Page) => page.locator('app-consultations').getByRole('button', { name: /Consultation/ });
     const todayFr = () => new Date().toLocaleDateString('fr-FR', { day: '2-digit', month: '2-digit', year: 'numeric' });
 
     type Entry = {
@@ -659,16 +659,27 @@ test.describe('Module Dossier médical — Consultations', () => {
       img: FilledValues;
     };
 
-    /** Nombre de consultations de la liste, relu jusqu'à ce qu'il ne bouge plus (liste chargée). */
+    /**
+     * Nombre de consultations du patient relu sur le serveur (GET /medical/stats) : la liste affichée
+     * peut venir du cache de l'application (voulu), y compris après un rechargement de la page.
+     */
+    let apiBase = '';
+    let patientId = '';
     async function stableCount(page: Page): Promise<number> {
-      let previous = -1;
-      let count = await listed(page).count();
-      while (count !== previous) {
-        previous = count;
-        await page.waitForTimeout(1500);
-        count = await listed(page).count();
+      if (!patientId) {
+        const UUID = /[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}/;
+        const href = await page.locator('a[href*="patient-dashboard/"]').first().getAttribute('href').catch(() => null);
+        patientId = page.url().match(UUID)?.[0] ?? href?.match(UUID)?.[0] ?? '';
+        expect(patientId, 'Identifiant du patient (adresse de la page)').not.toBe('');
       }
-      return count;
+      if (!apiBase) {
+        const other = await page.context().newPage();
+        try { apiBase = (await structureApi(other)).base; } finally { await other.close(); }
+      }
+      const session = await page.evaluate(() => ({ token: localStorage.getItem('access_token') ?? '', hiCode: localStorage.getItem('x_hi_code') ?? '' }));
+      const res = await page.request.get(`${apiBase}/medical/stats?patientId=${patientId}`, { headers: { Authorization: `Bearer ${session.token}`, 'X-HI-CODE': session.hiCode } });
+      expect(res.ok(), 'Statistiques du dossier lues sur le serveur').toBeTruthy();
+      return Number((await res.json()).result?.consultations ?? 0);
     }
 
     /**
@@ -677,18 +688,23 @@ test.describe('Module Dossier médical — Consultations', () => {
      * venait d'être enregistrée). En arrivant depuis le tableau de bord, la liste est remplie par
      * /medical/stats ; après un rechargement de la page, par /medical/consultations.
      */
-    const listLoaded = (page: Page) => page.waitForResponse(r => /\/medical\/(consultations\?|stats)/.test(r.url()) && r.request().method() === 'GET' && r.ok(), { timeout: 30000 });
+    // La réponse peut aussi venir du cache de l'application (aucun appel réseau) : on l'attend un temps
+    // limité, puis on attend l'affichage de la liste (.consultation-list, présente une fois le chargement fini).
+    const listLoaded = (page: Page) => page.waitForResponse(r => /\/medical\/(consultations\?|stats)/.test(r.url()) && r.request().method() === 'GET' && r.ok(), { timeout: 10000 }).catch(() => null);
+    const listShown = (page: Page) => expect(page.locator('app-consultations .consultation-list'), 'Liste des consultations chargée').toBeVisible({ timeout: 30000 });
 
     async function reloadList(page: Page) {
       const loaded = listLoaded(page);
       await page.reload();
       await loaded;
+      await listShown(page);
     }
 
     async function openConsultationsLoaded(page: Page) {
       const loaded = listLoaded(page);
       const consultationPage = await openConsultations(page, patient);
       await loaded;
+      await listShown(page);
       return consultationPage;
     }
 
@@ -801,6 +817,7 @@ test.describe('Module Dossier médical — Consultations', () => {
           await expect(banner.root, 'Plus de brouillon').toHaveCount(0);
         });
         await test.step('Rouvrir la consultation : chaque champ et chaque prescription conformes à la saisie', async () => {
+          await new PortalPage(page).openMenu('Dossiers patients', '**/patient/patients');
           const saved = await openExistingConsultation(page, patient, def);
           const form = new ConsultationFormPage(page, saved);
           const v1 = def.fields(1);
@@ -819,6 +836,7 @@ test.describe('Module Dossier médical — Consultations', () => {
           await prescriptions.expectMedicationRow(entry.med.medicationName, { nom: entry.med.medicationName, posologie: entry.med.posologie, duree: '5 jours', recommandations: entry.med.recommandations });
           await prescriptions.expectLaboratorySummary(entry.lab);
           await prescriptions.expectImagingSummary(entry.img);
+          await form.activate(def.probe);
           await prescriptions.expectMedicationForm(entry.med);
         });
         await test.step('Nettoyage : supprimer la consultation', async () => {
