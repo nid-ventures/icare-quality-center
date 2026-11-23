@@ -14,7 +14,7 @@ import { isoDate, prenatalFields, planificationFields, pediatricFields, dentalFi
 import { tenant, hasModule, withoutModuleReason } from '../../test-data/tenants';
 import { ACTS } from '../../test-data/cover-scenarios';
 import { confirmSave } from '../../pages/structure/shared/confirm-save';
-import { billableActRows, expectBillableActsInDb } from '../../fixtures/billable-acts-db';
+import { billableActRows, expectBillableActsInDb, withoutMedicalAct } from '../../fixtures/billable-acts-db';
 
 // Module absent de certaines structures (cf. test-data/tenants.ts) : fichier ignoré pour elles
 test.skip(!hasModule('Facturation'), withoutModuleReason('Facturation'));
@@ -645,9 +645,14 @@ test.describe('Module Facturation — Actes à facturer depuis le dossier médic
    * null and patient_id = ? ». Cela supprimait tous les actes du patient ajoutés depuis une facture
    * (« Ajouter des actes »), facturés compris : la facture gardait son montant mais perdait sa ligne.
    * Le code est commun à tous les actes médicaux : consultation standard et vaccination.
-   * Correctif déployé en local seulement (21/11) : sur dev et test, l'anomalie est attendue.
+   * Correctifs selon la branche du backend testé (BACKEND=dev|test ; en local, dev par défaut) :
+   * - c887687 (actes ajoutés depuis une facture gardés) : dans dev, et dans test par 9c3f9e7 (23/11) ;
+   * - actes décochés (liste vide prise en compte, modification sans acte enregistrée) : PR #3, dans dev
+   *   seulement. Sans BACKEND hors local, les anomalies sont attendues.
    */
-  const FIX_DEPLOYED = (process.env.TEST_ENV ?? '') === 'local';
+  const BACKEND = process.env.BACKEND ?? ((process.env.TEST_ENV ?? '') === 'local' ? 'dev' : '');
+  const FIX_DEPLOYED = BACKEND === 'dev' || BACKEND === 'test';
+  const UNCHECK_FIX_DEPLOYED = BACKEND === 'dev';
   const ANOMALY = "Anomalie : modifier un acte médical supprime les actes du patient ajoutés depuis une facture (correctif c887687 non déployé)";
   for (const variant of ['Consultation standard', 'Vaccination'] as const) {
     test.describe(`Non-régression — modifier une ${variant.toLowerCase()} garde les actes ajoutés depuis une facture`, () => {
@@ -842,15 +847,25 @@ test.describe('Module Facturation — Actes à facturer depuis le dossier médic
         });
         await test.step("Base : la ligne facturée de l'acte ajouté depuis la facture existe toujours", async () => {
           const rows = await billableActRows(patient.identifier);
-          if (rows) expect(rows.filter(r => r.medical_act_id == null && !!r.invoice_id), 'Ligne billable_act facturée sans acte médical').toHaveLength(1);
+          if (rows) expect(rows.filter(r => withoutMedicalAct(r) && !!r.invoice_id), 'Ligne billable_act facturée sans acte médical').toHaveLength(1);
         });
       });
 
       test(`Actes à facturer : l'acte retiré de la ${variant.toLowerCase()} n'y est plus, l'acte gardé y est toujours`, async ({ portal, page }) => {
+        // Non-régression 0047d48 (backend test, 23/11) : l'acte retiré d'une vaccination était seulement
+        // détaché (medical_act_id NULL) et restait à facturer comme acte orphelin
         const invoicePage = await openBilling(portal, page);
         expect(await invoicePage.showPendingAct(kept, true), `"${kept}" toujours à facturer`).not.toBeNull();
         expect(await invoicePage.showPendingAct(removed, true), `"${removed}" retiré : plus à facturer`).toBeNull();
         await expect.poll(async () => (await invoicePage.counters()).toBill, { message: `2 actes à facturer (${kept}, ${PENDING_FROM_INVOICE.act})` }).toBe(2);
+        await test.step("Base : pas de ligne orpheline ; les actes ajoutés depuis la facture (facturé, en attente) sont gardés", async () => {
+          const rows = await billableActRows(patient.identifier);
+          if (!rows) return;
+          const fromInvoice = rows.filter(r => withoutMedicalAct(r));
+          expect.soft(fromInvoice.filter(r => !!r.invoice_id), 'Ligne ajoutée depuis la facture, facturée').toHaveLength(1);
+          expect.soft(fromInvoice.filter(r => !r.invoice_id), `Sans acte médical non facturées : seulement "${PENDING_FROM_INVOICE.act}" (pas d'orpheline) : ${JSON.stringify(fromInvoice)}`).toHaveLength(1);
+          expect.soft(rows.filter(r => !withoutMedicalAct(r) && !r.invoice_id), `"${kept}" seul rattaché à l'acte médical`).toHaveLength(1);
+        });
       });
     });
   }
@@ -1216,6 +1231,8 @@ test.describe('Module Facturation — Actes à facturer depuis le dossier médic
         });
 
         test('Facturer un acte puis tout décocher : le facturé reste (facture inchangée), les autres ne sont plus à facturer', async ({ portal, page }) => {
+          // Non-régression 7b623fac (frontend, 23/11) : en prénatale et planification familiale, l'acte facturé
+          // repartait sans identifiant ; le backend test supprimait alors sa ligne (facture au détail vide)
           await test.step(`Facturer "${attached[0]}"`, async () => {
             const invoicePage = await openBilling(portal, page);
             await invoicePage.setActAmount(attached[0], 3500);
@@ -1246,7 +1263,7 @@ test.describe('Module Facturation — Actes à facturer depuis le dossier médic
       }
 
       test("Tout décocher : plus aucun acte à facturer, aucun acte sur l'acte médical rouvert", async ({ portal, page }) => {
-        test.fail(kind.emptyIgnoredBefore && !FIX_DEPLOYED, "Anomalie : une liste d'actes à facturer vide est ignorée à la modification (actes décochés toujours à facturer)");
+        test.fail((kind.emptyIgnoredBefore || BACKEND === 'test') && !UNCHECK_FIX_DEPLOYED, "Anomalie : une liste d'actes à facturer vide est ignorée à la modification (actes décochés toujours à facturer)");
         attached = [];
         await edit(portal, page, 'all', true);
         await expectPending(portal, page);
@@ -1255,7 +1272,9 @@ test.describe('Module Facturation — Actes à facturer depuis le dossier médic
       // Une consultation sans acte à facturer perdait ses modifications (transaction effacée par le
       // traitement des ordonnances avant écriture ; corrigé avec la même livraison backend)
       test("Sans aucun acte à facturer, modifier un champ : modification enregistrée", async ({ portal, page }) => {
-        test.fail(kind.label.startsWith('Consultation') && !FIX_DEPLOYED, "Anomalie : la modification d'une consultation sans acte à facturer n'est pas enregistrée");
+        // Backend test : « Tout décocher » ignoré, les actes restent attachés et ce test ne peut pas partir d'une liste vide
+        test.fail(!UNCHECK_FIX_DEPLOYED && (kind.label.startsWith('Consultation') || BACKEND === 'test'),
+          "Anomalie : la modification d'une consultation sans acte à facturer n'est pas enregistrée / actes décochés toujours attachés (backend test)");
         await edit(portal, page, [], true);
         await expectPending(portal, page);
       });

@@ -41,6 +41,12 @@ export async function billableActRows(patientIdentifier: string): Promise<Billab
 }
 
 /**
+ * Ligne sans acte médical : acte ajouté depuis une facture (« Ajouter des actes »). medical_act_id NULL,
+ * ou 0 depuis le backend 9c3f9e7 (23/11, comme en production).
+ */
+export const withoutMedicalAct = (row: BillableActRow) => !row.medical_act_id;
+
+/**
  * Contrôle en base des actes à facturer du patient : aucun acte orphelin (sans acte médical ni
  * facture, non facturé) en dehors de ceux attendus, aucun doublon, et le nombre attendu de lignes
  * rattachées à un acte médical (non facturées / facturées).
@@ -52,8 +58,8 @@ export async function expectBillableActsInDb(
   await test.step(`Base : ${expected.pending} acte(s) à facturer et ${expected.billed} facturé(s) rattachés, sans orphelin ni doublon`, async () => {
     const rows = await billableActRows(patientIdentifier);
     if (!rows) return;
-    const attached = rows.filter(r => r.medical_act_id != null);
-    const orphans = rows.filter(r => r.medical_act_id == null && !r.invoice_id && r.status === 0);
+    const attached = rows.filter(r => !withoutMedicalAct(r));
+    const orphans = rows.filter(r => withoutMedicalAct(r) && !r.invoice_id && r.status === 0);
     expect.soft(orphans.length, `Actes orphelins (sans acte médical ni facture) : ${JSON.stringify(orphans)}`).toBe(expected.orphans ?? 0);
     expect.soft(attached.filter(r => !r.invoice_id).length, 'Lignes rattachées non facturées').toBe(expected.pending);
     expect.soft(attached.filter(r => !!r.invoice_id).length, 'Lignes rattachées facturées').toBe(expected.billed);

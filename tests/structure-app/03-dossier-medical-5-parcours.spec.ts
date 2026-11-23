@@ -355,61 +355,32 @@ test.describe('Module Dossier médical — Parcours de soins paramétrés', () =
     await expect(templates.row(ALL_ACTS.name), 'Étapes inchangées').toContainText(`${ALL_ACTS.steps.length} étape(s) configurée(s)`);
   });
 
-  // Archivage automatique (2026-11-20) : délai en jours après la date de fin prévue, vide = jamais,
-  // modifiable même sur un modèle utilisé ; le backend archive chaque nuit les parcours en retard.
-  test("L'archivage automatique d'un parcours utilisé est paramétrable : affiché dans la liste et sur le parcours en cours", async ({ page }) => {
+  // Archivage automatique : en lecture seule depuis le frontend f167b28c (23/11), en attendant le backend
+  // qui l'enregistre (hi-appmodules-reactor, PR #4) ; à l'enregistrement, la valeur existante repart inchangée.
+  test("L'archivage automatique est en lecture seule : le délai existant reste inchangé à l'enregistrement", async ({ page }) => {
     const templates = await openTemplates(page);
     const delay = templates.modal.locator('[formcontrolname="autoArchiveDelayDays"]');
     const archiveLine = () => templates.row(ALL_ACTS.name).locator('.cpt-row-meta').filter({ hasText: /Archivage automatique/ });
+    const lineBefore = await archiveLine().count() ? (await archiveLine().textContent())?.trim() : null;
 
-    await test.step('Délai de 30 jours enregistré sur le modèle utilisé', async () => {
-      await templates.openEdit(ALL_ACTS.name);
-      await expect(delay, 'Pas de délai par défaut').toHaveValue('');
-      await delay.fill('30');
-      await templates.save();
-      await expect(archiveLine(), 'Délai affiché dans la liste').toHaveText(/Archivage automatique 30 jours après la date de fin prévue/);
-      await expect(templates.row(ALL_ACTS.name), 'Étapes inchangées').toContainText(`${ALL_ACTS.steps.length} étape(s) configurée(s)`);
-      await templates.openEdit(ALL_ACTS.name);
-      await expect(delay, 'Délai relu dans le modèle').toHaveValue('30');
-      await templates.modal.getByRole('button', { name: /Fermer/ }).click();
-    });
-
-    await test.step("Parcours en cours de la patiente : date d'archivage automatique affichée", async () => {
-      await openPatientFile(page, patient);
-      await page.getByRole('link', { name: new RegExp(`${ALL_ACTS.name}\\s*Voir le parcours`) }).first().click();
-      await page.waitForURL('**/patient/patient-care-pathway-detail/**');
-      await expect(page.locator('.pw-hero')).toBeVisible({ timeout: 20000 });
-      await expect(page.locator('.pw-info-line').filter({ hasText: 'Archivage automatique' }), "Date d'archivage = fin prévue + 30 jours")
-        .toContainText(/après le \d{2}\/\d{2}\/\d{4}/);
-    });
-
-    await test.step('Délai 0 : archivage dès la date de fin prévue passée', async () => {
-      const again = await openTemplates(page);
-      await again.openEdit(ALL_ACTS.name);
-      await delay.fill('0');
-      await again.save();
-      await expect(archiveLine()).toHaveText(/Archivage automatique dès la date de fin prévue passée/);
-    });
-
-    await test.step('Délai vidé : plus d\'archivage automatique, ligne masquée partout', async () => {
-      await templates.openEdit(ALL_ACTS.name);
-      await delay.fill('');
-      await templates.save();
-      await expect(archiveLine(), 'Ligne masquée dans la liste').toHaveCount(0);
-      await openPatientFile(page, patient);
-      await page.getByRole('link', { name: new RegExp(`${ALL_ACTS.name}\\s*Voir le parcours`) }).first().click();
-      await expect(page.locator('.pw-hero')).toBeVisible({ timeout: 20000 });
-      await expect(page.locator('.pw-info-line').filter({ hasText: 'Archivage automatique' }), 'Ligne masquée sur le parcours').toHaveCount(0);
-    });
+    await templates.openEdit(ALL_ACTS.name);
+    await expect(delay, 'Délai non modifiable sur un modèle existant').toBeDisabled();
+    const valueBefore = await delay.inputValue();
+    await templates.save();
+    await expect(templates.row(ALL_ACTS.name), 'Étapes inchangées').toContainText(`${ALL_ACTS.steps.length} étape(s) configurée(s)`);
+    if (lineBefore) await expect(archiveLine(), 'Ligne d\'archivage inchangée dans la liste').toHaveText(lineBefore);
+    else await expect(archiveLine(), 'Toujours pas d\'archivage automatique').toHaveCount(0);
+    await templates.openEdit(ALL_ACTS.name);
+    await expect(delay, 'Délai relu inchangé').toHaveValue(valueBefore);
+    await templates.modal.getByRole('button', { name: /Fermer/ }).click();
   });
 
-  test("Un délai d'archivage automatique négatif est refusé", async ({ page }) => {
+  test("Un nouveau modèle ne permet pas de saisir de délai d'archivage automatique", async ({ page }) => {
     const templates = await openTemplates(page);
     await templates.openNew();
     const delay = templates.modal.locator('[formcontrolname="autoArchiveDelayDays"]');
-    await delay.fill('-1');
-    await expect(templates.modal.getByText('Le délai ne peut pas être négatif')).toBeVisible();
-    await expect(delay).toHaveClass(/is-invalid/);
+    await expect(delay, 'Délai en lecture seule').toBeDisabled();
+    await expect(delay, 'Vide : pas d\'archivage automatique').toHaveValue('');
     await templates.modal.getByRole('button', { name: /Fermer/ }).click();
   });
 
