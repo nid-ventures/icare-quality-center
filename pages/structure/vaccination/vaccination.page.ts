@@ -146,9 +146,14 @@ export class VaccinationPage {
    * Déplie la première vaccination de la liste (la plus récente en tête de liste).
    */
   async openFirstVaccination() {
-    await expect(this.firstVaccinationHeader).toBeVisible();
+    // La liste se charge après la page (plus tard sous charge ou en mode visuel)
+    await expect(this.firstVaccinationHeader).toBeVisible({ timeout: 20000 });
     await this.firstVaccinationHeader.click();
     await expect(this.vaccinationItemBody).toBeVisible();
+    // Valeurs chargées : le formulaire s'affiche vide puis se remplit ; lu ou modifié avant, il serait
+    // ensuite écrasé (consultant requis : toujours renseigné sur une vaccination enregistrée)
+    const item = this.page.locator('app-vaccination-simple-item').filter({ visible: true }).first();
+    await expect(item.locator('[formcontrolname="caregiverId"] .ng-value').first(), 'Vaccination chargée').toBeVisible({ timeout: 20000 });
   }
 
   /**
