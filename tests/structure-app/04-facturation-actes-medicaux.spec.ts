@@ -888,6 +888,8 @@ test.describe('Module Facturation — Actes à facturer depuis le dossier médic
     acts: 2 | 3;
     /** Liste vide ignorée avant la correction : test « tout décocher » en anomalie hors local. */
     emptyIgnoredBefore: boolean;
+    /** Liste vide déjà prise en compte sur le backend test (vaccination : hi-medicalact 0047d48, 23/11). */
+    emptyFixedOnTest?: boolean;
     create(page: Page, count: number): Promise<string[]>;
     /** Rouvre l'acte médical (dashboard du patient ouvert) ; renvoie la zone de son formulaire. */
     open(page: Page): Promise<Locator>;
@@ -1088,7 +1090,7 @@ test.describe('Module Facturation — Actes à facturer depuis le dossier médic
       },
     }))),
     {
-      label: 'Vaccination', acts: 2, emptyIgnoredBefore: false,
+      label: 'Vaccination', acts: 2, emptyIgnoredBefore: false, emptyFixedOnTest: true,
       async create(page, count) {
         const vaccination = new VaccinationPage(page);
         await vaccination.gotoFromPatientDashboard();
@@ -1164,12 +1166,28 @@ test.describe('Module Facturation — Actes à facturer depuis le dossier médic
       const chipNames = async (zone: Locator) =>
         (await chips(zone).locator('.ng-value-label').allTextContents()).map(t => t.replace(/\s+/g, ' ').trim().toUpperCase()).filter(Boolean).sort();
       const upper = (list: string[]) => list.map(a => a.toUpperCase()).sort();
+      /**
+       * Actes du formulaire une fois stables (3 lectures identiques à 400 ms) : après « Modifier », le
+       * formulaire remet ses actes un peu plus tard ; retirés trop tôt, ils reviennent et partent à
+       * l'enregistrement (constaté en exécution rapide sur la vaccination).
+       */
+      const stableChipNames = async (zone: Locator) => {
+        let last = JSON.stringify(await chipNames(zone));
+        for (let same = 1; same < 3;) {
+          await zone.page().waitForTimeout(400);
+          const now = JSON.stringify(await chipNames(zone));
+          same = now === last ? same + 1 : 1;
+          last = now;
+        }
+        return JSON.parse(last) as string[];
+      };
 
       /** Modifie l'acte médical : retire `remove` (« all » = tous les actes retirables), change un champ si demandé. */
       async function edit(portal: PortalPage, page: Page, remove: string[] | 'all', changeField: boolean) {
         await openDossierOf(portal, page);
         const zone = await kind.open(page);
         await kind.activate(page, zone);
+        await stableChipNames(zone);
         if (remove === 'all') {
           const removable = zone.locator('ng-select[formcontrolname="billableActs"] .ng-value:not(.ng-value-disabled)');
           while (await removable.count() > 0) await removable.first().locator('.ng-value-icon').click();
@@ -1177,7 +1195,7 @@ test.describe('Module Facturation — Actes à facturer depuis le dossier médic
           for (const act of remove) await chipOf(zone, act).locator('.ng-value-icon').click();
         }
         if (billed) await expect(chipOf(zone, billed), `"${billed}" facturé : toujours là, non retirable`).toHaveClass(/ng-value-disabled/);
-        await expect.poll(() => chipNames(zone), { message: 'Actes restants dans le formulaire' }).toEqual(upper(attached));
+        await expect.poll(() => stableChipNames(zone), { message: 'Actes restants dans le formulaire' }).toEqual(upper(attached));
         let filled: FieldSpec | undefined;
         if (changeField) {
           filled = kind.field(++step);
@@ -1189,11 +1207,12 @@ test.describe('Module Facturation — Actes à facturer depuis le dossier médic
           await page.reload();
           await openDossierOf(portal, page);
           const again = await kind.open(page);
-          await expect.poll(() => chipNames(again), { message: 'Actes à facturer de l\'acte médical rouvert', timeout: 20000 }).toEqual(upper(attached));
+          // Champ d'abord : le formulaire est alors chargé, et une liste d'actes vide n'est pas lue trop tôt
           if (filled && 'value' in filled) {
             if (kind.fieldLocator) await expect(kind.fieldLocator(page, again), `Champ "${filled.name}" modifié`).toHaveValue(filled.value as string);
             else await new ConsultationFormPage(page, again).expectValues([filled], { [filled.name]: filled.value as string });
           }
+          await expect.poll(() => stableChipNames(again), { message: 'Actes à facturer de l\'acte médical rouvert', timeout: 20000 }).toEqual(upper(attached));
         });
       }
 
@@ -1263,7 +1282,7 @@ test.describe('Module Facturation — Actes à facturer depuis le dossier médic
       }
 
       test("Tout décocher : plus aucun acte à facturer, aucun acte sur l'acte médical rouvert", async ({ portal, page }) => {
-        test.fail((kind.emptyIgnoredBefore || BACKEND === 'test') && !UNCHECK_FIX_DEPLOYED, "Anomalie : une liste d'actes à facturer vide est ignorée à la modification (actes décochés toujours à facturer)");
+        test.fail((kind.emptyIgnoredBefore || (BACKEND === 'test' && !kind.emptyFixedOnTest)) && !UNCHECK_FIX_DEPLOYED, "Anomalie : une liste d'actes à facturer vide est ignorée à la modification (actes décochés toujours à facturer)");
         attached = [];
         await edit(portal, page, 'all', true);
         await expectPending(portal, page);
@@ -1273,7 +1292,7 @@ test.describe('Module Facturation — Actes à facturer depuis le dossier médic
       // traitement des ordonnances avant écriture ; corrigé avec la même livraison backend)
       test("Sans aucun acte à facturer, modifier un champ : modification enregistrée", async ({ portal, page }) => {
         // Backend test : « Tout décocher » ignoré, les actes restent attachés et ce test ne peut pas partir d'une liste vide
-        test.fail(!UNCHECK_FIX_DEPLOYED && (kind.label.startsWith('Consultation') || BACKEND === 'test'),
+        test.fail(!UNCHECK_FIX_DEPLOYED && (kind.label.startsWith('Consultation') || (BACKEND === 'test' && !kind.emptyFixedOnTest)),
           "Anomalie : la modification d'une consultation sans acte à facturer n'est pas enregistrée / actes décochés toujours attachés (backend test)");
         await edit(portal, page, [], true);
         await expectPending(portal, page);
