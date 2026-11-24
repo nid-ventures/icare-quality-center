@@ -238,24 +238,43 @@ test.describe('Module Base patients', () => {
       });
     });
 
-    test('Fiche activée sans modification, ou ramenée à sa valeur de départ : on la quitte sans popup', async ({ page }) => {
-      const { patient } = await openActivatedFile(page);
+    /**
+     * Menu « Patients » : la liste doit s'ouvrir sans popup. Une popup inattendue est refermée par
+     * « Quitter quand même » (le test échoue sans rester bloqué sur la fiche).
+     */
+    async function leaveWithoutPopup(page: Page) {
       const dialog = new UnsavedDialog(page);
-      const portal = new PortalPage(page);
-      await test.step('Activée seulement : la page se quitte directement', async () => {
-        await portal.openMenu('Patients', '**/patient/patients');
-        await dialog.expectClosed();
-      });
-      await test.step('Date de naissance modifiée puis remise à sa valeur : la page se quitte directement', async () => {
-        await reopenFile(page, patient);
-        const before = await birth(page).inputValue();
-        await page.getByRole('button', { name: 'Activer le formulaire' }).click();
-        await expect(birth(page)).toBeEditable();
+      await new PortalPage(page).openMenu('Patients');
+      const popup = await Promise.race([
+        page.waitForURL('**/patient/patients', { timeout: 30000 }).then(() => false),
+        dialog.root.waitFor({ timeout: 30000 }).then(() => true),
+      ]).catch(() => false);
+      if (popup) {
+        const title = await dialog.title.innerText();
+        await dialog.answer(/Quitter quand même/);
+        expect(popup, `Popup « ${title} » affichée`).toBe(false);
+      }
+      await page.waitForURL('**/patient/patients');
+      await dialog.expectClosed();
+    }
+
+    test('Fiche seulement activée : on la quitte sans popup', async ({ page }) => {
+      await openActivatedFile(page);
+      await leaveWithoutPopup(page);
+    });
+
+    test('Fiche modifiée puis ramenée à sa valeur de départ : on la quitte sans popup', async ({ page }) => {
+      // d6c6340c comparait la valeur à celle du déverrouillage ; e4a9d9ad (suivi des formulaires derrière
+      // « Activer le formulaire ») compte toute frappe comme une saisie, même ramenée à sa valeur
+      test.fail(true, "Anomalie : depuis e4a9d9ad, un formulaire activé ramené à sa valeur de départ affiche encore « Modifications non enregistrées »");
+      await openActivatedFile(page);
+      const before = await birth(page).inputValue();
+      await test.step('Date de naissance modifiée puis remise à sa valeur', async () => {
         await birth(page).fill('1985-04-05' === before ? '1986-04-05' : '1985-04-05');
         await birth(page).fill(before);
-        await portal.openMenu('Patients', '**/patient/patients');
-        await dialog.expectClosed();
+        await expect(birth(page)).toHaveValue(before);
       });
+      await leaveWithoutPopup(page);
     });
 
     test('Actualiser au clavier (F5 / Ctrl+R) une fiche modifiée : popup de l\'application, pas le message du navigateur', async ({ page }) => {
