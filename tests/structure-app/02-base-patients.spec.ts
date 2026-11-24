@@ -8,6 +8,7 @@ import { PatientDataGenerator, type PatientData } from '../../pages/structure/ge
 import { ContactPersonGenerator } from '../../pages/structure/generator/contact-person-generator';
 import { CareDataGenerator } from '../../pages/structure/generator/care-data-generator';
 import { hasModule, withoutModuleReason } from '../../test-data/tenants';
+import { UnsavedDialog } from '../../pages/structure/shared/unsaved-dialog';
 
 // 5 min : la création d'un patient attend la liste des patients (/patients/getAll), qui peut
 // dépasser une minute en local ; multiplié par 6 en mode visuel (SLOWMO) comme dans la configuration
@@ -177,6 +178,148 @@ test.describe('Module Base patients', () => {
         await expect(phones.first()).not.toHaveValue('');
         expect(digits(await phones.nth(0).inputValue()), 'Premier champ').toBe(digits(data.phonePrimary));
         expect(digits(await phones.nth(1).inputValue()), 'Second champ').toBe(digits(data.phoneSecondary));
+      });
+    });
+  });
+
+  // ======================================================================
+  // Saisies non enregistrées (frontend d6c6340c : garde sur toutes les pages, fenêtres, F5)
+  // ======================================================================
+  test.describe('Saisies non enregistrées', () => {
+    const LEAVE = /MODIFICATIONS NON ENREGISTRÉES/;
+    const email = (page: Page) => page.locator('input#email');
+    const birth = (page: Page) => page.locator('input[name="doB"]');
+
+    /** Patient de test, fiche administrative ouverte puis activée ; renvoie l'email enregistré. */
+    async function openActivatedFile(page: Page) {
+      const patient = await createTestPatient(page, true);
+      await expect(birth(page), 'Fiche chargée').not.toHaveValue('', { timeout: 15000 });
+      const saved = await email(page).inputValue();
+      await test.step('Activer le formulaire', async () => {
+        await page.getByRole('button', { name: 'Activer le formulaire' }).click();
+        await expect(email(page)).toBeEditable();
+      });
+      return { patient, saved };
+    }
+
+    async function reopenFile(page: Page, patient: PatientData) {
+      const patientPage = new PatientPage(page);
+      await patientPage.searchByName(patient.firstName, patient.lastName);
+      await patientPage.openPatient(patient.lastName);
+      await page.waitForURL('**/patient/patient-info-administration/**');
+      await new DetailPatientPage(page).checkIfPageLoad();
+      await expect(birth(page), 'Fiche chargée').not.toHaveValue('', { timeout: 15000 });
+    }
+
+    test("Fiche administrative modifiée : quitter la page demande confirmation, « Rester » garde la saisie, « Quitter quand même » l'abandonne", async ({ page }) => {
+      const { patient, saved } = await openActivatedFile(page);
+      const typed = `non.enregistre${Date.now() % 1000000}@example.com`;
+      await email(page).fill(typed);
+      const dialog = new UnsavedDialog(page);
+      const portal = new PortalPage(page);
+      await test.step('Menu « Patients » : popup « Modifications non enregistrées »', async () => {
+        await portal.openMenu('Patients');
+        await dialog.expectOpen(LEAVE, /Elles seront perdues si vous quittez la page/);
+      });
+      await test.step('« Rester sur la page » : fiche toujours ouverte, saisie intacte', async () => {
+        await dialog.answer(/Rester sur la page/);
+        await expect(page).toHaveURL(/patient-info-administration/);
+        await expect(email(page)).toHaveValue(typed);
+      });
+      await test.step('« Quitter quand même » : liste des patients', async () => {
+        await portal.openMenu('Patients');
+        await dialog.expectOpen(LEAVE);
+        await dialog.answer(/Quitter quand même/);
+        await page.waitForURL('**/patient/patients');
+      });
+      await test.step("Fiche rouverte : l'email saisi n'a pas été enregistré", async () => {
+        await reopenFile(page, patient);
+        await expect(email(page)).toHaveValue(saved);
+      });
+    });
+
+    test('Fiche activée sans modification, ou ramenée à sa valeur de départ : on la quitte sans popup', async ({ page }) => {
+      const { patient } = await openActivatedFile(page);
+      const dialog = new UnsavedDialog(page);
+      const portal = new PortalPage(page);
+      await test.step('Activée seulement : la page se quitte directement', async () => {
+        await portal.openMenu('Patients', '**/patient/patients');
+        await dialog.expectClosed();
+      });
+      await test.step('Date de naissance modifiée puis remise à sa valeur : la page se quitte directement', async () => {
+        await reopenFile(page, patient);
+        const before = await birth(page).inputValue();
+        await page.getByRole('button', { name: 'Activer le formulaire' }).click();
+        await expect(birth(page)).toBeEditable();
+        await birth(page).fill('1985-04-05' === before ? '1986-04-05' : '1985-04-05');
+        await birth(page).fill(before);
+        await portal.openMenu('Patients', '**/patient/patients');
+        await dialog.expectClosed();
+      });
+    });
+
+    test('Actualiser au clavier (F5 / Ctrl+R) une fiche modifiée : popup de l\'application, pas le message du navigateur', async ({ page }) => {
+      const { saved } = await openActivatedFile(page);
+      const typed = `non.enregistre${Date.now() % 1000000}@example.com`;
+      await email(page).fill(typed);
+      const dialog = new UnsavedDialog(page);
+      let nativeWarnings = 0;
+      page.on('dialog', d => { if (d.type() === 'beforeunload') nativeWarnings++; });
+      await test.step('F5 : popup « Actualiser la page ? »', async () => {
+        await email(page).press('F5');
+        await dialog.expectOpen(/ACTUALISER LA PAGE/, /Elles seront perdues si vous actualisez la page/);
+      });
+      await test.step('« Rester sur la page » : saisie intacte', async () => {
+        await dialog.answer(/Rester sur la page/);
+        await expect(email(page)).toHaveValue(typed);
+      });
+      await test.step('Ctrl+R puis « Actualiser quand même » : page rechargée sans second message du navigateur', async () => {
+        await email(page).press('Control+r');
+        await dialog.expectOpen(/ACTUALISER LA PAGE/);
+        await Promise.all([page.waitForEvent('load'), dialog.root.getByRole('button', { name: /Actualiser quand même/ }).click()]);
+        await new DetailPatientPage(page).checkIfPageLoad();
+        await expect(birth(page), 'Fiche rechargée').not.toHaveValue('', { timeout: 15000 });
+        await expect(email(page), "Email saisi non enregistré").toHaveValue(saved);
+        expect(nativeWarnings, 'Message natif « Quitter le site ? » du navigateur').toBe(0);
+      });
+    });
+
+    test("Fenêtre « Ajouter personne à contacter » : fermeture confirmée seulement après une saisie", async ({ page }) => {
+      await createTestPatient(page, true);
+      const detail = new DetailPatientPage(page);
+      const dialog = new UnsavedDialog(page);
+      const modal = page.locator('.modal.show').filter({ has: page.getByRole('heading', { name: 'Ajouter personne à contacter' }) });
+      const firstName = page.locator('#ctfirstName');
+      await detail.goToPersonContactTab();
+      await test.step('Sans saisie : « Fermer » ferme la fenêtre directement', async () => {
+        await detail.openAddPersonModal();
+        await modal.getByRole('button', { name: 'Fermer' }).click();
+        await expect(modal).toBeHidden();
+        await dialog.expectClosed();
+      });
+      await test.step('Après saisie, « Fermer » : popup « Saisie non enregistrée »', async () => {
+        await detail.openAddPersonModal();
+        await firstName.fill('Contact non enregistré');
+        await modal.getByRole('button', { name: 'Fermer' }).click();
+        await dialog.expectOpen(/SAISIE NON ENREGISTRÉE/, /Fermer quand même/);
+      });
+      await test.step('« Revenir à la saisie » : fenêtre toujours ouverte, saisie intacte', async () => {
+        await dialog.answer(/Revenir à la saisie/);
+        await expect(modal).toBeVisible();
+        await expect(firstName).toHaveValue('Contact non enregistré');
+      });
+      await test.step('Échap : même popup', async () => {
+        await firstName.press('Escape');
+        await dialog.expectOpen(/SAISIE NON ENREGISTRÉE/);
+        await dialog.answer(/Revenir à la saisie/);
+        await expect(modal).toBeVisible();
+      });
+      await test.step('Croix puis « Fermer sans enregistrer » : fenêtre fermée, aucune personne ajoutée', async () => {
+        await modal.locator('button.close').click();
+        await dialog.expectOpen(/SAISIE NON ENREGISTRÉE/);
+        await dialog.answer(/Fermer sans enregistrer/);
+        await expect(modal).toBeHidden();
+        await expect(page.getByRole('tabpanel', { name: 'Personne à contacter' }).getByText('Aucun enregistrement')).toBeVisible();
       });
     });
   });
