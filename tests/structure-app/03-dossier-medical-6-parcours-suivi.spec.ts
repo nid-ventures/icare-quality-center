@@ -325,7 +325,10 @@ const realizeBilan = (page: Page): Realize => async (body, title, reopen) => {
     test.info().annotations.push({ type: 'Donnée de la structure', description: `${title} : aucune analyse proposée pour ce type de bilan (résultat sans zone d'analyse)` });
   }
   await create.getByRole('button', { name: /^\W*Enregistrer\s*$/ }).click();
-  await expect(success(page)).toBeVisible({ timeout: 20000 });
+  // Message de succès, ou bilan créé déjà affiché à la place du formulaire de création : avec beaucoup
+  // d'analyses (Prénatal : 9), le message peut être manqué alors que le bilan est bien créé (vérifié en
+  // base le 24/11) ; la réouverture ci-dessous ne trouve le résultat que si le bilan existe.
+  await expect(success(page).or(body.locator('app-health-check-care')).first(), 'Bilan créé').toBeVisible({ timeout: 30000 });
 
   const openResult = async (opened: () => Promise<Locator>) => {
     let care: Locator | undefined;

@@ -578,7 +578,11 @@ test.describe('Module Facturation', () => {
       await expect.poll(() => invoicePage.lineCaregivers(), { message: 'Praticien commun repris par chaque acte' }).toEqual([first, first]);
       await invoicePage.setCommonCaregiver(second);
       await expect.poll(() => invoicePage.lineCaregivers(), { message: 'Changement du praticien commun suivi par les actes' }).toEqual([second, second]);
-      await invoicePage.closeAddActModal();
+      await test.step('« Fermer » avec des actes choisis : confirmation ; « Revenir à la saisie » garde les actes', async () => {
+        await invoicePage.closeAddActModalThenGoBack();
+        await expect.poll(() => invoicePage.lineCaregivers(), { message: 'Actes toujours choisis' }).toEqual([second, second]);
+      });
+      await test.step('« Fermer sans enregistrer » : fenêtre fermée', () => invoicePage.closeAddActModal({ expectConfirm: true }));
       await expect.poll(() => invoicePage.counters(), { message: 'Fenêtre fermée sans enregistrer : rien ajouté' }).toEqual(before);
     });
 

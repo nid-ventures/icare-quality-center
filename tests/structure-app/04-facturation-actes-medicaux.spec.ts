@@ -652,7 +652,8 @@ test.describe('Module Facturation — Actes à facturer depuis le dossier médic
    */
   const BACKEND = process.env.BACKEND ?? ((process.env.TEST_ENV ?? '') === 'local' ? 'dev' : '');
   const FIX_DEPLOYED = BACKEND === 'dev' || BACKEND === 'test';
-  const UNCHECK_FIX_DEPLOYED = BACKEND === 'dev';
+  // Actes décochés (PR #3) : en dev, puis en test depuis le 24/11 (9dbd4a7)
+  const UNCHECK_FIX_DEPLOYED = BACKEND === 'dev' || BACKEND === 'test';
   const ANOMALY = "Anomalie : modifier un acte médical supprime les actes du patient ajoutés depuis une facture (correctif c887687 non déployé)";
   for (const variant of ['Consultation standard', 'Vaccination'] as const) {
     test.describe(`Non-régression — modifier une ${variant.toLowerCase()} garde les actes ajoutés depuis une facture`, () => {

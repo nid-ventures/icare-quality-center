@@ -168,14 +168,25 @@ export class RemunerationProfilePage {
 
   /** Lignes du tableau (première page) : textes des colonnes, espaces normalisés. */
   async listRows(): Promise<RemunerationRow[]> {
-    const result: RemunerationRow[] = [];
-    for (const row of await this.rows().all()) {
-      const cell = async (label: string) => ((await row.locator(`td[data-label="${label}"]`).textContent()) ?? '').replace(/\s+/g, ' ').trim();
-      result.push({
-        acte: await cell('Acte'), specialite: await cell('Spécialité'), type: await cell('Type'), taux: await cell('Taux'),
-        montant: await cell('Montant'), debut: await cell('Début'), fin: await cell('Fin'), statut: await cell('Statut'),
-      });
-    }
+    // Lecture en un seul passage, répétée jusqu'à deux lectures identiques : une ligne lue une à une
+    // pouvait disparaître pendant le rafraîchissement de la liste après une recherche.
+    const read = () => this.rows().evaluateAll(trs => trs.map(tr => {
+      const cell = (label: string) => (tr.querySelector(`td[data-label="${label}"]`)?.textContent ?? '').replace(/\s+/g, ' ').trim();
+      return {
+        acte: cell('Acte'), specialite: cell('Spécialité'), type: cell('Type'), taux: cell('Taux'),
+        montant: cell('Montant'), debut: cell('Début'), fin: cell('Fin'), statut: cell('Statut'),
+      };
+    }));
+    let previous = JSON.stringify(await read());
+    let result: RemunerationRow[] = [];
+    await expect.poll(async () => {
+      await this.page.waitForTimeout(400);
+      result = await read();
+      const current = JSON.stringify(result);
+      const stable = current === previous;
+      previous = current;
+      return stable;
+    }, { message: 'Tableau des rémunérations stable', timeout: 15000 }).toBe(true);
     return result;
   }
 
