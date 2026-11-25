@@ -344,6 +344,9 @@ export class HonorairesListPage {
 
     async selectAllSelectableActesDansModal(): Promise<number> {
         const checkboxes = this.page.locator('table.ultra-compact-table tbody tr.selectable input.selection-checkbox-compact');
+        // Résultat de la recherche chargé après le clic : attendre les lignes (lire après 500 ms donnait 0)
+        await expect.poll(() => checkboxes.count(), { message: 'Actes sélectionnables affichés', timeout: 15000 })
+            .toBeGreaterThan(0).catch(() => {});
         const count = await checkboxes.count();
         for (let i = 0; i < count; i++) {
             if (!(await checkboxes.nth(i).isChecked())) {

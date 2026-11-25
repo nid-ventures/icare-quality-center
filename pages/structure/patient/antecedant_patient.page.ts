@@ -162,11 +162,14 @@ export class AntecedentPage {
   // La fiche se réinitialise (verrouillée) à chaque rechargement des antécédents par la page
   // (ngOnChanges) : attendre la fin des chargements avant d'activer.
   await this.page.waitForLoadState('networkidle', { timeout: 15000 }).catch(() => {});
+  // Un rechargement tardif peut encore reverrouiller la fiche après l'activation : la liste des
+  // pathologies ne s'ouvre alors pas. On réactive et on rouvre jusqu'à voir l'option.
   await expect(async () => {
     if (await this.buttonActiver.isVisible().catch(() => false)) await this.buttonActiver.click();
     await expect(this.autresPathologiesTextBox).toBeEnabled({ timeout: 5000 });
+    if (!await this.drepanocytoseOption.isVisible().catch(() => false)) await this.pathologiesTextBox.click({ timeout: 3000 });
+    await expect(this.drepanocytoseOption).toBeVisible({ timeout: 3000 });
   }).toPass({ timeout: 60000 });
-  await this.pathologiesTextBox.click();
   await this.drepanocytoseOption.click();
   await this.cardiopathieOption.click();
   // Ferme le panneau ng-dropdown resté ouvert (ses options interceptent les clics suivants).
