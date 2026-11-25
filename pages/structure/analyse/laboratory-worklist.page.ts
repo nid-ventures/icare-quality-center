@@ -1,6 +1,9 @@
 // pages/structure/analyse/laboratory-worklist.page.ts
 import { type Page, type Locator, expect } from '@playwright/test';
 
+// Libellé affiché par la worklist quand le bilan arrive sans patient (decorate() du frontend)
+export const MISSING_PATIENT = 'Patient non renseigné';
+
 export class LaboratoryWorklistPage {
   private readonly lastNameInput: Locator;
   private readonly firstNameInput: Locator;
@@ -126,8 +129,16 @@ export class LaboratoryWorklistPage {
       return;
     }
     for (let i = 0; i < rows; i++) {
-      await expect(this.tableRows.nth(i).locator('td').nth(1)).toContainText(lastName, { ignoreCase: true });
+      const cell = this.tableRows.nth(i).locator('td').nth(1);
+      // Patient absent de la ligne (anomalie vérifiée à part dans 08) : rien à comparer
+      if ((await cell.innerText()).includes(MISSING_PATIENT)) continue;
+      await expect(cell).toContainText(lastName, { ignoreCase: true });
     }
+  }
+
+  /** Lignes affichées sans patient (« Patient non renseigné »). */
+  async rowsWithoutPatient(): Promise<number> {
+    return this.tableRows.locator('td:nth-child(2)').filter({ hasText: MISSING_PATIENT }).count();
   }
 
   async expectResultsMatchPrescriber(prescriberLabel: string) {

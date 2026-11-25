@@ -864,11 +864,8 @@ test.describe('Module Dossier médical — Consultations', () => {
     }
 
     test("Consultation dentaire : le brouillon garde l'odontogramme", async ({ page }) => {
-      // Lecture du code (b19dc7cb) : le brouillon enregistre le formulaire et les prescriptions, mais
-      // les dents saisies sont dans dentalRecord, hors du formulaire, jusqu'à l'enregistrement.
-      // Constaté le 21/11 : seul l'odontogramme saisi, quitter la page ne prévient pas (formulaire
-      // vierge) et aucun brouillon n'est proposé : la saisie des dents est perdue sans avertissement.
-      test.fail(true, "Anomalie : l'odontogramme seul n'est ni protégé par l'avertissement avant de quitter, ni gardé dans le brouillon");
+      // Les dents saisies sont dans dentalRecord, hors du formulaire : jusqu'à 908d05e5, l'odontogramme
+      // seul n'était ni protégé par l'avertissement avant de quitter, ni gardé dans le brouillon.
       const { root } = await start(page, TYPES.dental);
       const chart = new DentalChartPage(page, root);
       await chart.recordTooth({ number: '11', diagnostic: 'Carie', surfaces: ['O', 'M'], observations: 'Carie brouillon QA' });

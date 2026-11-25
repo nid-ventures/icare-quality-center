@@ -264,9 +264,8 @@ test.describe('Module Base patients', () => {
     });
 
     test('Fiche modifiée puis ramenée à sa valeur de départ : on la quitte sans popup', async ({ page }) => {
-      // d6c6340c comparait la valeur à celle du déverrouillage ; e4a9d9ad (suivi des formulaires derrière
-      // « Activer le formulaire ») compte toute frappe comme une saisie, même ramenée à sa valeur
-      test.fail(true, "Anomalie : depuis e4a9d9ad, un formulaire activé ramené à sa valeur de départ affiche encore « Modifications non enregistrées »");
+      // e4a9d9ad comptait toute frappe comme une saisie, même ramenée à sa valeur ; corrigé par 908d05e5
+      // (valeurs affichées comparées à celles du clic sur « Activer le formulaire »)
       await openActivatedFile(page);
       const before = await birth(page).inputValue();
       await test.step('Date de naissance modifiée puis remise à sa valeur', async () => {
@@ -395,10 +394,8 @@ test.describe('Module Base patients', () => {
     });
 
     test("Une personne à contacter née avant 1970 : sa date de naissance est affichée", async ({ page }) => {
-      // patients-contact-person.component.ts (voirPersonneContacter) : date affichée seulement si
-      // doB > 0 (secondes depuis 1970) ; une date antérieure est enregistrée mais affichée vide, et
-      // une modification de la personne renverrait alors une date vide (1970-01-01).
-      test.fail(true, "Anomalie : date de naissance antérieure à 1970 d'une personne à contacter affichée vide");
+      // Date antérieure à 1970 = horodatage négatif : affichée vide tant que le frontend exigeait doB > 0
+      // (corrigé par 908d05e5 ; une modification aurait renvoyé une date vide).
       const detail = await reloadContacts(page);
       await detail.expectContactDetails(contact);
     });
