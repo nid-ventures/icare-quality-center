@@ -355,6 +355,9 @@ test.describe('Module Reporting', () => {
     });
 
     test('Export réel des consultations du jour : CSV, Excel, PDF et DHIS2', async ({ portal, page }) => {
+      // 4 exports générés par le backend (jusqu'à ~30 s chacun sur un backend chargé) : 30 s pour le
+      // test entier le coupait au 2e export (Excel resté « Export en cours… », 25/11)
+      test.setTimeout(Number(process.env.SLOWMO) > 0 ? 900000 : 300000);
       const reporting = await openReporting(portal, page, 'Consultations');
       const caregiver = created.Consultations?.caregiver ?? '';
       for (const [format, check] of [

@@ -236,6 +236,17 @@ export class PatientCarePage {
     /** Supprime toutes les prises en charge du patient ouvert. */
     async removeAllCovers() {
         const rows = this.page.locator('#pills-prise-en-charge-fill tbody tr').filter({ has: this.page.getByRole('button', { name: 'Action' }) });
+        // Liste chargée après l'ouverture de l'onglet : compter trop tôt (0 ligne) laissait l'ancienne
+        // prise en charge, choisie ensuite à la place de la nouvelle (même garant). Attendre la fin des
+        // chargements puis deux comptes identiques.
+        await this.page.waitForLoadState('networkidle', { timeout: 15000 }).catch(() => {});
+        let previous = -1;
+        await expect.poll(async () => {
+            const count = await rows.count();
+            const stable = count === previous;
+            previous = count;
+            return stable;
+        }, { message: 'Prises en charge du patient chargées', intervals: [700], timeout: 15000 }).toBe(true);
         while (await rows.count() > 0) {
             const before = await rows.count();
             await this.deleteFirstCare();
