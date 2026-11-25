@@ -93,25 +93,16 @@ test.describe('Module Laboratoire & Imagerie (worklists)', () => {
     });
 
     test('Chaque bilan de la worklist affiche son patient', async ({ portal, page }) => {
-      // Constaté le 25/11 (backend test) : des bilans trouvés par la recherche sur le nom du patient
-      // (ex. Dawn Connelly, née en 1956, 6 bilans du 18/11) arrivent sans bloc patient (`person` vide) ;
-      // la worklist affiche alors « Patient non renseigné » (ni nom, ni n° de dossier, ni naissance).
+      // Constaté le 25/11 (backend test) : GET /nid-api/v1/bilans/filtering renvoie `person: null` sur
+      // toutes les lignes (BilanMapper.toDto ne le remplit pas) ; le nom n'est que dans billableActs[],
+      // que la worklist ne lit pas pour le nom : chaque bilan s'affiche « Patient non renseigné ».
       // Écran hors d'usage pour l'instant : module Laboratoire & Imagerie masqué (canAccess: false).
+      test.fail(true, `Anomalie : bilans de la worklist affichés « ${MISSING_PATIENT} » (person absent de /bilans/filtering) — module masqué, sans effet pour les utilisateurs`);
       const worklistPage = new LaboratoryWorklistPage(page);
-      const patientPage = new PatientPage(page);
-      let lastName = '';
-      await test.step('Relever le nom du premier patient de Base patients', async () => {
-        await portal.enterModule('Base patients');
-        await patientPage.gotoPatientsList();
-        lastName = await patientPage.getFirstPatientLastName();
-        expect(lastName).toBeTruthy();
-      });
       await worklistPage.gotoWorklist();
-      await worklistPage.searchByLastName(lastName);
-      const missing = await worklistPage.rowsWithoutPatient();
-      // Anomalie liée aux données : déclarée seulement quand des lignes sans patient sont affichées
-      test.fail(missing > 0, `Anomalie : ${missing} bilan(s) affiché(s) « ${MISSING_PATIENT} » (bloc patient absent de la réponse du backend) — module masqué, sans effet pour les utilisateurs`);
-      expect(missing, `Bilans de « ${lastName} » affichés sans patient`).toBe(0);
+      await expect.poll(() => worklistPage.getRowCount(), { message: 'Des bilans sont listés', timeout: 15000 }).toBeGreaterThan(0);
+      const rows = await worklistPage.getRowCount();
+      expect(await worklistPage.rowsWithoutPatient(), `Bilans affichés sans patient (sur ${rows})`).toBe(0);
     });
 
     test("Sélectionner plusieurs bilans pour l'impression par lot", async ({ portal, page }) => {
