@@ -80,6 +80,8 @@ async function openExistingConsultation(page: Page, patient: DossierPatient, def
   await consultationPage.openFirstConsultation();
   const root = consultationRoot(page, def.editRoot);
   await expect(root, `Formulaire de modification "${def.label}"`).toBeVisible({ timeout: 15000 });
+  // Valeurs chargées : le formulaire s'affiche vide puis se remplit (consultant toujours renseigné)
+  await expect(root.locator('[formcontrolname="caregiverId"] .ng-value').first(), 'Consultation chargée').toBeVisible({ timeout: 20000 });
   return root;
 }
 
@@ -365,6 +367,18 @@ test.describe('Module Dossier médical — Consultations', () => {
         let root = await openExistingConsultation(page, patient, def);
         let form = new ConsultationFormPage(page, root);
         let prescriptions = new PrescriptionManagerPage(page);
+        // Prescriptions chargées après le formulaire : ne pas lire l'état de départ trop tôt
+        await expect.poll(async () => (await prescriptions.snapshot()).Ordonnance.length, { timeout: 20000, message: 'Prescriptions chargées' }).toBeGreaterThan(0);
+        // Champs chargés : le consultant par défaut (utilisateur connecté) s'affiche seul avant les valeurs
+        // enregistrées (tous les champs ont été remplis) ; attendre plusieurs champs remplis et deux
+        // lectures identiques
+        let previous = '';
+        await expect.poll(async () => {
+          const now = JSON.stringify(await form.snapshot());
+          const ready = now === previous && Object.values(JSON.parse(now) as Record<string, string>).filter(Boolean).length > 3;
+          previous = now;
+          return ready;
+        }, { timeout: 30000, intervals: [500], message: 'Consultation chargée (champs remplis, valeurs stables)' }).toBe(true);
         const fieldsBefore = await form.snapshot();
         const prescriptionsBefore = await prescriptions.snapshot();
         await form.activate(def.probe);

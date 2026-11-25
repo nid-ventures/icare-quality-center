@@ -232,8 +232,11 @@ abstract class BillingListPage {
     }
 
     async closeDetailModal(): Promise<void> {
-        await this.detailModal.getByRole('button', { name: /Fermer/ }).click();
-        await expect(this.detailModal).toBeHidden();
+        // Un clic pendant l'animation d'ouverture (modal Bootstrap « fade ») peut être ignoré : on le refait.
+        await expect(async () => {
+            if (await this.detailModal.isVisible()) await this.detailModal.getByRole('button', { name: /Fermer/ }).click({ timeout: 3000 });
+            await expect(this.detailModal).toBeHidden({ timeout: 3000 });
+        }, 'Détail de la facture refermé').toPass({ timeout: 20000 });
     }
 
     async expectPrintButtonVisible(row: Locator = this.firstRow): Promise<void> {

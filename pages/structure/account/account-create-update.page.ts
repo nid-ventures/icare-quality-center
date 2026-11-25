@@ -1,6 +1,7 @@
 // pages/structure/account/account-create-update.page.ts
 import { type Page, type Locator, expect } from '@playwright/test';
 import { AccountData } from '../generator/account-data-generator';
+import { UnsavedDialog } from '../shared/unsaved-dialog';
 
 export type AccountFormMode = 'create' | 'update';
 
@@ -84,8 +85,10 @@ export class AccountCreateUpdatePage {
       throw new Error(`Rôle "${roleName}" introuvable dans le sélecteur. Trouvé : ${JSON.stringify(allTexts)}`);
     }
 
-    // Ferme le panneau (le ng-select multiple ne se ferme pas seul après sélection).
-    await this.page.keyboard.press('Escape');
+    // Ferme le panneau s'il est resté ouvert : Échap sans liste ouverte s'adresse à la fenêtre, qui
+    // demande alors confirmation (« Saisie non enregistrée », frontend e4a9d9ad)
+    if (await this.page.locator('.ng-dropdown-panel').isVisible()) await this.page.keyboard.press('Escape');
+    await expect(this.page.locator('.ng-dropdown-panel')).toBeHidden();
     await expect(this.roleSelect).toContainText(roleName, { ignoreCase: true, timeout: 3000 });
   }
 
@@ -126,8 +129,20 @@ export class AccountCreateUpdatePage {
     }
   }
 
-  async close() {
+  /** « Fermer » ; après une saisie, l'application demande « SAISIE NON ENREGISTRÉE » : on ferme sans enregistrer. */
+  async close(opts: { expectConfirm?: boolean } = {}) {
+    const dialog = new UnsavedDialog(this.page);
     await this.closeButton.click();
+    const confirm = await Promise.race([
+      dialog.root.waitFor({ timeout: 10000 }).then(() => true),
+      this.closeButton.waitFor({ state: 'hidden', timeout: 10000 }).then(() => false),
+    ]).catch(() => false);
+    if (opts.expectConfirm !== undefined) expect(confirm, 'Confirmation « Saisie non enregistrée » à la fermeture').toBe(opts.expectConfirm);
+    if (confirm) {
+      await dialog.expectOpen(/SAISIE NON ENREGISTRÉE/);
+      await dialog.answer(/Fermer sans enregistrer/);
+    }
+    await expect(this.closeButton).toBeHidden();
   }
 
   // ======================== Règles du formulaire ========================

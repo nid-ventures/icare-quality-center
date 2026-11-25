@@ -1,5 +1,6 @@
 // pages/structure/billing/billing-invoice.page.ts
 import { type Page, type Locator, expect } from '@playwright/test';
+import { UnsavedDialog } from '../shared/unsaved-dialog';
 
 /**
  * Page "Nouvelle facture" (`/billing/billings-create`) : la facture tient sur une seule page.
@@ -96,10 +97,34 @@ export class BillingInvoicePage {
         await expect(this.addActHeading).toBeVisible();
     }
 
-    /** Ferme la fenêtre "Ajouter des actes" sans enregistrer. */
-    async closeAddActModal(): Promise<void> {
+    /**
+     * Ferme la fenêtre "Ajouter des actes" sans enregistrer. Avec des actes choisis mais pas ajoutés,
+     * l'application demande confirmation (« SAISIE NON ENREGISTRÉE », frontend e4a9d9ad) :
+     * « Fermer sans enregistrer ». `expectConfirm` vérifie en plus que la confirmation apparaît (true)
+     * ou non (false).
+     */
+    async closeAddActModal(opts: { expectConfirm?: boolean } = {}): Promise<void> {
+        const dialog = new UnsavedDialog(this.page);
         await this.addActModal.locator('.ama-footer').getByRole('button', { name: 'Fermer' }).click();
+        const confirm = await Promise.race([
+            dialog.root.waitFor({ timeout: 10000 }).then(() => true),
+            this.addActHeading.waitFor({ state: 'hidden', timeout: 10000 }).then(() => false),
+        ]).catch(() => false);
+        if (opts.expectConfirm !== undefined) expect(confirm, 'Confirmation « Saisie non enregistrée » à la fermeture').toBe(opts.expectConfirm);
+        if (confirm) {
+            await dialog.expectOpen(/SAISIE NON ENREGISTRÉE/, /actes sélectionnés seront perdus/);
+            await dialog.answer(/Fermer sans enregistrer/);
+        }
         await expect(this.addActHeading).toBeHidden();
+    }
+
+    /** « Fermer » avec des actes choisis, puis « Revenir à la saisie » : la fenêtre reste ouverte. */
+    async closeAddActModalThenGoBack(): Promise<void> {
+        const dialog = new UnsavedDialog(this.page);
+        await this.addActModal.locator('.ama-footer').getByRole('button', { name: 'Fermer' }).click();
+        await dialog.expectOpen(/SAISIE NON ENREGISTRÉE/, /actes sélectionnés seront perdus/);
+        await dialog.answer(/Revenir à la saisie/);
+        await expect(this.addActHeading).toBeVisible();
     }
 
     /** Praticien commun : celui demandé, sinon le premier proposé s'il n'y en a pas déjà un. */

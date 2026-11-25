@@ -128,6 +128,8 @@ export class DetailPatientPage {
       city: 'SAINT-LOUIS',
       state: 'KÉDOUGOU',
     };
+    // Fiche chargée avant « Activer » : le chargement reverrouille le formulaire (lecture seule)
+    await expect(this.dateNaissanceInput, 'Fiche chargée').not.toHaveValue('', { timeout: 15000 });
     await this.buttonActiveTab.click();
     await expect(this.dateNaissanceInput).toBeEditable();
     await this.dateNaissanceInput.fill(data.doB);

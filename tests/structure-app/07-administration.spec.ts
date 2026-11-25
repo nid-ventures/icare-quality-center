@@ -1575,18 +1575,11 @@ test.describe('Module Administration', () => {
       // La police enregistrée n'est pas réaffichée par le formulaire : elle est lue dans la session
       const saved = await page.evaluate(() => JSON.parse(localStorage.getItem('refdatahi') ?? '{}'));
       const original = { ...(await settings.readInvoice()), policy: saved.policy || 'Calibri' };
-      // Couleur des titres et tableaux : en lecture seule, toujours noire, depuis le frontend f167b28c (23/11),
-      // en attendant le backend qui l'enregistre (hi-appmodules-reactor, PR #4)
-      const BLACK = '#000000';
-      const { titleColor: _readOnly, ...editable } = original;
-      const changed = { policy: 'Arial', color: '#1a5276', titleColor: BLACK, header: `En-tête QA ${stamp}`, footer: `Pied de page QA ${stamp}` };
-      const { titleColor: _black, ...changedEditable } = changed;
+      const changed = { policy: 'Arial', color: '#1a5276', titleColor: '#7b241c', header: `En-tête QA ${stamp}`, footer: `Pied de page QA ${stamp}` };
       try {
-        await test.step('Modifier police, couleur du texte, en-tête et pied de page ; couleur des titres en lecture seule (noir) ; enregistrer', async () => {
+        await test.step('Modifier police, couleurs du texte et des titres, en-tête et pied de page, enregistrer (sans déconnexion)', async () => {
           await settings.enableInvoice();
-          await expect(settings.invoiceInput('titleColor'), 'Couleur des titres non modifiable').toBeDisabled();
-          await expect(settings.invoiceInput('titleColor'), 'Couleur des titres : noir').toHaveValue(BLACK);
-          await settings.fillInvoice(changedEditable);
+          await settings.fillInvoice(changed);
           await settings.save(settings.invoiceSave);
         });
         await test.step('Les nouvelles valeurs sont affichées', async () => {
@@ -1606,7 +1599,7 @@ test.describe('Module Administration', () => {
           expect.soft(html, 'Police').toMatch(/font-family:\s*Arial/);
           expect.soft(html.toLowerCase(), 'Couleur du texte').toMatch(/#1a5276|rgb\(26,\s*82,\s*118\)/);
           // Titre de la facture et en-tête du tableau
-          expect.soft(html.toLowerCase(), 'Couleur des titres et tableaux : noir').toMatch(/#000000|#000\b|rgb\(0,\s*0,\s*0\)|color:\s*black/);
+          expect.soft(html.toLowerCase(), 'Couleur des titres et tableaux').toMatch(/#7b241c|rgb\(123,\s*36,\s*28\)/);
         });
       } finally {
         await test.step("Remettre les valeurs d'origine", async () => {
@@ -1618,7 +1611,7 @@ test.describe('Module Administration', () => {
           await refreshedAgain;
           // Toujours réenregistrer : le formulaire est rempli depuis le cache, qui a pu être périmé
           await settings.enableInvoice();
-          await settings.fillInvoice(editable);
+          await settings.fillInvoice(original);
           await settings.save(settings.invoiceSave);
           settings = await openSettings(page);
           await settings.openInvoice();

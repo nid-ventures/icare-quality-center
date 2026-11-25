@@ -150,6 +150,9 @@ test.describe("Module Dossier médical — Bilans d'analyses", () => {
     await page.getByRole('tab', { name: /Résultat/ }).or(page.locator('a.nav-link', { hasText: 'Résultat' })).first().click();
     const pane = page.locator('[id^="result-content-"]');
     await expect(pane).toBeVisible();
+    // Résultat chargé : le bouton affiche « Chargement… » tant que les données arrivent (lues trop tôt,
+    // elles seraient vides)
+    await expect(pane.locator('.btn-action-activate'), 'Résultat chargé').not.toHaveText(/Chargement/, { timeout: 20000 });
     return pane;
   }
 
