@@ -7,6 +7,7 @@ import { CreateHonorairePage } from '../pages/structure/honoraire/create-honorai
 import { ADMIN_STORAGE_STATE } from '../test-data/structure-users';
 import { structure, tenant } from '../test-data/tenants';
 import { ensureFreshAdminSession } from './admin-login';
+import { ignoreRecoveredDrafts } from '../pages/structure/shared/unsaved-dialog';
 
 /**
  * Prérequis des relevés d'honoraires, créés par les tests eux-mêmes si besoin :
@@ -56,6 +57,7 @@ export async function ensureHonorairePrerequisites(browser: Browser): Promise<Ho
     ignoreHTTPSErrors: true,
   });
   const page = await context.newPage();
+  await ignoreRecoveredDrafts(page);
   try {
     const portal = new PortalPage(page);
     await portal.goto();

@@ -5,6 +5,7 @@ import { DossierSearchPage } from '../pages/structure/patient/dossier-search.pag
 import { PatientDataGenerator } from '../pages/structure/generator/data-generator';
 import { ADMIN_STORAGE_STATE } from '../test-data/structure-users';
 import { ensureFreshAdminSession } from './admin-login';
+import { ignoreRecoveredDrafts } from '../pages/structure/shared/unsaved-dialog';
 
 export type DossierPatient = { identifier: string; firstName: string; lastName: string };
 
@@ -31,6 +32,7 @@ export async function createDossierPatient(
     ignoreHTTPSErrors: true,
   });
   const page = await context.newPage();
+  await ignoreRecoveredDrafts(page);
   try {
     const portal = new PortalPage(page);
     const patientPage = new PatientPage(page);

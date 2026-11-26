@@ -219,7 +219,7 @@ test.describe('Module Base patients', () => {
       const portal = new PortalPage(page);
       await test.step('Menu « Patients » : popup « Modifications non enregistrées »', async () => {
         await portal.openMenu('Patients');
-        await dialog.expectOpen(LEAVE, /Elles seront perdues si vous quittez la page/);
+        await dialog.expectOpen(LEAVE, /gardées en brouillon sur ce poste/);
       });
       await test.step('« Rester sur la page » : fiche toujours ouverte, saisie intacte', async () => {
         await dialog.answer(/Rester sur la page/);
@@ -229,7 +229,7 @@ test.describe('Module Base patients', () => {
       await test.step('« Quitter quand même » : liste des patients', async () => {
         await portal.openMenu('Patients');
         await dialog.expectOpen(LEAVE);
-        await dialog.answer(/Quitter quand même/);
+        await dialog.answer(/Quitter (quand même|sans sauvegarder)/);
         await page.waitForURL('**/patient/patients');
       });
       await test.step("Fiche rouverte : l'email saisi n'a pas été enregistré", async () => {
@@ -251,7 +251,7 @@ test.describe('Module Base patients', () => {
       ]).catch(() => false);
       if (popup) {
         const title = await dialog.title.innerText();
-        await dialog.answer(/Quitter quand même/);
+        await dialog.answer(/Quitter (quand même|sans sauvegarder)/);
         expect(popup, `Popup « ${title} » affichée`).toBe(false);
       }
       await page.waitForURL('**/patient/patients');
@@ -285,7 +285,7 @@ test.describe('Module Base patients', () => {
       page.on('dialog', d => { if (d.type() === 'beforeunload') nativeWarnings++; });
       await test.step('F5 : popup « Actualiser la page ? »', async () => {
         await email(page).press('F5');
-        await dialog.expectOpen(/ACTUALISER LA PAGE/, /Elles seront perdues si vous actualisez la page/);
+        await dialog.expectOpen(/ACTUALISER LA PAGE/, /gardées en brouillon sur ce poste/);
       });
       await test.step('« Rester sur la page » : saisie intacte', async () => {
         await dialog.answer(/Rester sur la page/);
@@ -294,7 +294,7 @@ test.describe('Module Base patients', () => {
       await test.step('Ctrl+R puis « Actualiser quand même » : page rechargée sans second message du navigateur', async () => {
         await email(page).press('Control+r');
         await dialog.expectOpen(/ACTUALISER LA PAGE/);
-        await Promise.all([page.waitForEvent('load'), dialog.root.getByRole('button', { name: /Actualiser quand même/ }).click()]);
+        await Promise.all([page.waitForEvent('load'), dialog.root.getByRole('button', { name: /Actualiser (quand même|sans sauvegarder)/ }).click()]);
         await new DetailPatientPage(page).checkIfPageLoad();
         await expect(birth(page), 'Fiche rechargée').not.toHaveValue('', { timeout: 15000 });
         await expect(email(page), "Email saisi non enregistré").toHaveValue(saved);
@@ -319,7 +319,7 @@ test.describe('Module Base patients', () => {
         await detail.openAddPersonModal();
         await firstName.fill('Contact non enregistré');
         await modal.getByRole('button', { name: 'Fermer' }).click();
-        await dialog.expectOpen(/SAISIE NON ENREGISTRÉE/, /Fermer quand même/);
+        await dialog.expectOpen(/SAISIE NON ENREGISTRÉE/, /gardées en brouillon sur ce poste/);
       });
       await test.step('« Revenir à la saisie » : fenêtre toujours ouverte, saisie intacte', async () => {
         await dialog.answer(/Revenir à la saisie/);

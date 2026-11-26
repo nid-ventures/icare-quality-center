@@ -2,6 +2,17 @@ import { type Page, type Locator, expect } from '@playwright/test';
 import { MyConfigurationPage } from './configuration.page';
 
 export type StructureDetails = { name: string; primaryEmail: string; primaryStreet: string; postalCode: string };
+/**
+ * Polices proposées par l'application (src/app/shared/utils/pdf-document-settings.ts du frontend,
+ * 344f7eda) : valeur enregistrée -> libellé de la liste. Valeur vide ou hors liste -> Poppins.
+ */
+export const PDF_FONTS: Record<string, string> = {
+  'Poppins': 'Poppins', 'Carlito': 'Carlito (Calibri)', 'Lato': 'Lato', 'Helvetica': 'Helvetica',
+  'Times New Roman': 'Times', 'Courier New': 'Courier',
+};
+const fontLabel = (value: string) => PDF_FONTS[value] ?? value;
+const fontValue = (label: string) => Object.keys(PDF_FONTS).find(v => PDF_FONTS[v] === label) ?? label;
+
 /** color : texte ; titleColor : titres et tableaux (facture, ordonnance, bulletins). */
 export type InvoiceSettings = { policy: string; color: string; titleColor: string; header: string; footer: string };
 
@@ -33,7 +44,9 @@ export class StructureSettingsPage {
   }
 
   detailsInput(name: keyof StructureDetails | 'hiCode'): Locator { return this.details.locator(`input[formcontrolname="${name}"]`); }
-  invoiceInput(name: keyof InvoiceSettings): Locator { return this.invoice.locator(`input[formcontrolname="${name}"]`); }
+  invoiceInput(name: Exclude<keyof InvoiceSettings, 'policy'>): Locator { return this.invoice.locator(`input[formcontrolname="${name}"]`); }
+  /** Police : liste (ng-select) depuis le frontend 344f7eda, polices embarquées dans les PDF et factures. */
+  get policySelect(): Locator { return this.invoice.locator('ng-select[formcontrolname="policy"]'); }
   get detailsSave(): Locator { return this.details.locator('.form-actions button.btn-save-modern'); }
   get invoiceSave(): Locator { return this.invoice.locator('.form-actions button.btn-save-modern'); }
   get logoInput(): Locator { return this.details.locator('input[type="file"]'); }
@@ -101,7 +114,8 @@ export class StructureSettingsPage {
 
   async readInvoice(): Promise<InvoiceSettings> {
     return {
-      policy: await this.invoiceInput('policy').inputValue(),
+      // Libellé seul : .ng-value contient aussi l'icône d'effacement « × »
+      policy: fontValue(((await this.policySelect.locator('.ng-value-label').first().textContent()) ?? '').trim()),
       color: await this.invoiceInput('color').inputValue(),
       titleColor: await this.invoiceInput('titleColor').inputValue(),
       header: await this.invoiceInput('header').inputValue(),
@@ -114,7 +128,19 @@ export class StructureSettingsPage {
   }
 
   async fillInvoice(values: Partial<InvoiceSettings>) {
-    for (const [name, value] of Object.entries(values)) await this.invoiceInput(name as keyof InvoiceSettings).fill(value ?? '');
+    for (const [name, value] of Object.entries(values)) {
+      if (name === 'policy') await this.choosePolicy(value ?? '');
+      else await this.invoiceInput(name as Exclude<keyof InvoiceSettings, 'policy'>).fill(value ?? '');
+    }
+  }
+
+  /** Choisit la police par sa valeur enregistrée (Poppins, Carlito, Lato, Helvetica, Times New Roman, Courier New). */
+  async choosePolicy(value: string) {
+    await this.policySelect.locator('.ng-select-container').click();
+    const option = this.page.locator('.ng-dropdown-panel .ng-option').filter({ hasText: fontLabel(value) }).first();
+    await expect(option, `Police « ${value} » proposée`).toBeVisible();
+    await option.click();
+    await expect(this.policySelect.locator('.ng-value-label').first()).toHaveText(fontLabel(value));
   }
 
   /**

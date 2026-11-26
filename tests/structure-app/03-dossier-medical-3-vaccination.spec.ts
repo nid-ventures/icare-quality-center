@@ -166,7 +166,7 @@ test.describe('Module Dossier médical — Vaccination', () => {
     const leave = () => page.locator('.btn-back').filter({ visible: true }).first().click();
     await test.step('Retour : avertissement « Modifications non enregistrées »', async () => {
       await leave();
-      await dialog.expectOpen(/MODIFICATIONS NON ENREGISTRÉES/, /seront perdues si vous quittez la page/);
+      await dialog.expectOpen(/MODIFICATIONS NON ENREGISTRÉES/, /gardées en brouillon sur ce poste/);
     });
     await test.step('« Rester sur la page » : chaque champ saisi intact', async () => {
       await dialog.answer(/Rester sur la page/);
@@ -175,7 +175,7 @@ test.describe('Module Dossier médical — Vaccination', () => {
     });
     await test.step('« Quitter quand même » : la vaccination et ses doses gardent les valeurs enregistrées', async () => {
       await leave();
-      await dialog.answer(/Quitter quand même/);
+      await dialog.answer(/Quitter (quand même|sans sauvegarder)/);
       await expect(page).toHaveURL(/patient-dashboard/);
       await new VaccinationPage(page).gotoFromPatientDashboard();
       const reopened = await openVaccination(page);

@@ -7,6 +7,7 @@ import { CarePathwayTemplatePage, ACT_DOMAINS, type CarePathwayTemplate, type Se
 import { ConsultationFormPage } from '../../pages/structure/consultation/consultation-form.page';
 import { ADMIN_STORAGE_STATE } from '../../test-data/structure-users';
 import { clearPrefilledConsultant } from '../../pages/structure/shared/consultant';
+import { ignoreRecoveredDrafts } from '../../pages/structure/shared/unsaved-dialog';
 
 test.setTimeout(300000);
 
@@ -451,8 +452,8 @@ test.describe('Module Dossier médical — Parcours de soins paramétrés', () =
     const templates = await openTemplates(page);
     await templates.section.getByRole('button', { name: /Nouveau type de parcours/ }).click();
     await expect(templates.modal).toBeVisible();
-    // Le type est prérempli avec "PRENATAL" pour un nouveau modèle : on le vide.
-    await templates.modal.locator('[formcontrolname="careplanType"]').fill('');
+    // Frontend 344f7eda : le type n'est plus prérempli (« PRENATAL » auparavant) pour un nouveau modèle
+    await expect(templates.modal.locator('[formcontrolname="careplanType"]'), 'Type non prérempli').toHaveValue('');
     await templates.modal.getByRole('button', { name: /Enregistrer/ }).click();
     await expect(templates.modal.getByText('Le type de parcours est obligatoire')).toBeVisible();
     await expect(templates.modal.getByText('La description est obligatoire')).toBeVisible();
@@ -472,9 +473,9 @@ test.describe('Module Dossier médical — Parcours de soins paramétrés', () =
     await group.locator('ng-select[formcontrolname="domain"] .ng-select-container').click();
     await templates.modal.locator('.ng-dropdown-panel .ng-option').filter({ hasText: /^\s*Consultation\s*$/ }).first().click();
 
-    const info = group.getByText(/Non proposées \(aucune spécialité disponible\)/);
-    await expect(info, 'Message des consultations non proposées').toBeVisible();
-    for (const name of blocked) await expect(info).toContainText(name);
+    // Frontend 344f7eda : le message « Non proposées (aucune spécialité disponible) » est retiré ;
+    // les consultations sans spécialité restent simplement absentes de la liste.
+    await expect(group.getByText(/Non proposées/), 'Message « Non proposées » retiré').toHaveCount(0);
 
     await group.locator('ng-select[formcontrolname="acts"] .ng-select-container').click();
     const options = templates.modal.locator('.ng-dropdown-panel .ng-option');
@@ -492,6 +493,7 @@ test.describe('Module Dossier médical — Parcours de soins paramétrés', () =
     const other = await browser.newContext({ baseURL: process.env.BASE_URL, storageState: ADMIN_STORAGE_STATE, viewport: null, ignoreHTTPSErrors: true });
     try {
       const otherPage = await other.newPage();
+      await ignoreRecoveredDrafts(otherPage);
       await new PortalPage(otherPage).goto();
       await (await openTemplates(otherPage)).create(OTHER_SESSION);
     } finally {

@@ -454,8 +454,11 @@ test.describe('Module Dossier médical — Imagerie', () => {
           await expect(reopened.locator('app-echographie-simple-foetus')).toHaveCount(1, { timeout: 3000 });
           await foetusSheet(reopened, 1);
         }).toPass({ timeout: 20000 });
-        // Foetus 1 intact, nombre d'embryons ramené à 1, autres champs inchangés
-        await expectFoetuses(page, reopened, [[1, foetus1]]);
+        // Foetus 1 intact, nombre d'embryons ramené à 1, autres champs inchangés. Les fiches peuvent
+        // encore être redessinées (vu une fois : 1 puis 0 fiche) : vérification reprise le temps du rechargement
+        await expect(async () => {
+          await expectFoetuses(page, reopened, [[1, foetus1]]);
+        }).toPass({ timeout: 45000 });
         await new ConsultationFormPage(page, reopened).expectValues(asCheck(['caregiverId', 'date', 'ddr']), edited);
         await new ConsultationFormPage(page, reopened).expectValues(asCheck(['region', 'billableActs']), obstetric, { exact: true });
       });
