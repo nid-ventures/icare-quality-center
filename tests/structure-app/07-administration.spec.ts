@@ -1,5 +1,6 @@
 import { type Page, type Browser } from '@playwright/test';
 import fs from 'fs';
+import path from 'path';
 import { test, expect } from '../../fixtures/structure.fixture';
 import { AccountListPage } from '../../pages/structure/account/account-list.page';
 import { AccountCreateUpdatePage } from '../../pages/structure/account/account-create-update.page';
@@ -1292,8 +1293,10 @@ test.describe('Module Administration', () => {
         await consents.closeEdit();
       }
       // Copie de secours, pour restaurer à la main si le run s'arrête entre un retrait et sa recréation
-      fs.mkdirSync('test-results', { recursive: true });
-      fs.writeFileSync('test-results/consent-originals.json', JSON.stringify(originals, null, 2));
+      // Un fichier par structure, dans le dossier de résultats du run (--output) : plusieurs structures en parallèle
+      const backup = path.join(test.info().project.outputDir, `consent-originals-${tenant.key}.json`);
+      fs.mkdirSync(path.dirname(backup), { recursive: true });
+      fs.writeFileSync(backup, JSON.stringify(originals, null, 2));
     });
 
     test('Modifier le texte de la configuration Secrétaire médicale', async ({ page }) => {
