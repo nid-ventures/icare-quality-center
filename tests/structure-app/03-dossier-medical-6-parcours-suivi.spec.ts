@@ -129,10 +129,12 @@ async function goToStep(page: Page, n: number) {
 }
 
 /**
- * Bouton de la barre d'actions du parcours ("Modifier …", "Archiver …"), suivi du nom du parcours.
+ * Actions du parcours : « Archiver … » (barre d'actions, suivi du nom du parcours) ; « Modifier »
+ * (frontend 344f7eda : dans l'encadré « Informations clés », sans le nom du parcours).
  */
-const pathwayAction = (page: Page, action: 'Modifier' | 'Archiver') =>
-  page.locator('.pw-actions-bar').getByRole('button', { name: new RegExp(`^\\W*${action}\\b`) });
+const pathwayAction = (page: Page, action: 'Modifier' | 'Archiver') => action === 'Modifier'
+  ? page.locator('.pw-card').filter({ hasText: 'Informations clés' }).getByRole('button', { name: /^\W*Modifier\s*$/ })
+  : page.locator('.pw-actions-bar').getByRole('button', { name: new RegExp(`^\\W*${action}\\b`) });
 
 /** « Archiver » un parcours non prénatal : simple confirmation (sans issue de grossesse), puis Enregistrer. */
 async function confirmSimpleArchive(page: Page, name: string) {
@@ -613,9 +615,16 @@ test.describe('Module Dossier médical — Suivi des parcours de soins (homme, f
   });
 
   // ---------------- Résumé et modification ----------------
-  test('Les boutons du parcours portent le nom du parcours', async ({ page }) => {
+  test("Informations clés : date de début seule et bouton « Modifier » dans l'encadré ; « Archiver » porte le nom du parcours", async ({ page }) => {
+    // Frontend 344f7eda : hors prénatal, seule la date de début est une information clé (plus de
+    // groupe sanguin, rhésus, poids…) ; « Modifier » est rattaché à l'encadré, sans le nom du parcours.
     await openPathway(page, woman, FEMMES.name);
-    await expect(pathwayAction(page, 'Modifier')).toContainText(FEMMES.name, { timeout: 5000 });
+    const card = page.locator('.pw-card').filter({ hasText: 'Informations clés' });
+    await expect(pathwayAction(page, 'Modifier'), 'Bouton « Modifier » dans « Informations clés »').toBeVisible({ timeout: 5000 });
+    await expect(pathwayAction(page, 'Modifier')).toHaveAttribute('title', /Modifier les informations clés du parcours/);
+    await expect(card.locator('.pw-vital'), 'Une seule information clé (date de début)').toHaveCount(1);
+    await expect(card.locator('.pw-vital .label')).not.toHaveText(/Groupe sanguin|Rhésus|Poids|Taille|IMC/);
+    await expect(pathwayAction(page, 'Archiver')).toContainText(FEMMES.name);
   });
 
   test("Le résumé du parcours (fiche grossesse) n'est pas proposé pour un parcours non prénatal", async ({ page }) => {

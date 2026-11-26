@@ -21,6 +21,7 @@ import { PatientCarePage } from '../../pages/structure/patient/patient-care.page
 import { createDossierPatient, DOSSIER_SETUP_TIMEOUT, type DossierPatient } from '../../fixtures/dossier-patient';
 import { hasModule, tenant, withoutModuleReason } from '../../test-data/tenants';
 import { ensureFreshAdminSession } from '../../fixtures/admin-login';
+import { ignoreRecoveredDrafts } from '../../pages/structure/shared/unsaved-dialog';
 
 // Libellé réel du rôle non-soignant dans le sélecteur de rôles
 const NON_CAREGIVER_ROLE = 'HI-ADMINISTRATOR';
@@ -987,6 +988,7 @@ test.describe('Module Administration', () => {
       await ensureFreshAdminSession(browser);
       const context = await browser.newContext({ baseURL: process.env.BASE_URL, storageState: ADMIN_STORAGE_STATE, viewport: null, ignoreHTTPSErrors: true });
       const page = await context.newPage();
+      await ignoreRecoveredDrafts(page);
       try {
         const portal = new PortalPage(page);
         await portal.goto();
@@ -1555,9 +1557,11 @@ test.describe('Module Administration', () => {
       const settings = await openSettings(page);
       await settings.openInvoice();
       const original = await settings.readInvoice();
-      for (const name of ['policy', 'header', 'footer'] as const) {
+      for (const name of ['header', 'footer'] as const) {
         await expect(settings.invoiceInput(name), `${name} en lecture seule`).toHaveAttribute('readonly', '');
       }
+      // Police : liste (frontend 344f7eda), grisée tant que le formulaire n'est pas activé
+      await expect(settings.policySelect, 'Police en lecture seule').toHaveClass(/ng-select-disabled/);
       await settings.enableInvoice();
       await settings.fillInvoice({ header: 'En-tête annulé', footer: 'Pied annulé' });
       await settings.cancelInvoice();
@@ -1572,10 +1576,11 @@ test.describe('Module Administration', () => {
       let settings = await openSettings(page);
       await settings.openInvoice();
       await refreshed;
-      // La police enregistrée n'est pas réaffichée par le formulaire : elle est lue dans la session
-      const saved = await page.evaluate(() => JSON.parse(localStorage.getItem('refdatahi') ?? '{}'));
-      const original = { ...(await settings.readInvoice()), policy: saved.policy || 'Calibri' };
-      const changed = { policy: 'Arial', color: '#1a5276', titleColor: '#7b241c', header: `En-tête QA ${stamp}`, footer: `Pied de page QA ${stamp}` };
+      // Police choisie dans une liste depuis le frontend 344f7eda (Poppins par défaut, ancienne saisie
+      // libre rapprochée de la liste) : la valeur affichée est celle qui sera réenregistrée
+      const original = await settings.readInvoice();
+      const policy = original.policy === 'Lato' ? 'Courier New' : 'Lato';
+      const changed = { policy, color: '#1a5276', titleColor: '#7b241c', header: `En-tête QA ${stamp}`, footer: `Pied de page QA ${stamp}` };
       try {
         await test.step('Modifier police, couleurs du texte et des titres, en-tête et pied de page, enregistrer (sans déconnexion)', async () => {
           await settings.enableInvoice();
@@ -1596,7 +1601,8 @@ test.describe('Module Administration', () => {
           const { text, html } = await printFirstInvoice(page);
           expect.soft(text, 'En-tête imprimé').toContain(changed.header);
           expect.soft(text, 'Pied de page imprimé').toContain(changed.footer);
-          expect.soft(html, 'Police').toMatch(/font-family:\s*Arial/);
+          // Lato : police embarquée (@font-face) ; Courier New : police système
+          expect.soft(html, 'Police').toMatch(policy === 'Lato' ? /font-family:\s*'?Lato/ : /font-family:\s*'?Courier New/);
           expect.soft(html.toLowerCase(), 'Couleur du texte').toMatch(/#1a5276|rgb\(26,\s*82,\s*118\)/);
           // Titre de la facture et en-tête du tableau
           expect.soft(html.toLowerCase(), 'Couleur des titres et tableaux').toMatch(/#7b241c|rgb\(123,\s*36,\s*28\)/);
@@ -1616,8 +1622,7 @@ test.describe('Module Administration', () => {
           settings = await openSettings(page);
           await settings.openInvoice();
           const restored = await settings.readInvoice();
-          expect({ header: restored.header, footer: restored.footer, color: restored.color, titleColor: restored.titleColor }, "Valeurs d'origine")
-            .toEqual({ header: original.header, footer: original.footer, color: original.color, titleColor: original.titleColor });
+          expect(restored, "Valeurs d'origine").toEqual(original);
         });
       }
     });

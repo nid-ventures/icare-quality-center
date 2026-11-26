@@ -1,6 +1,7 @@
 import path from 'path';
 import { test as base, expect, type Page } from '@playwright/test';
 import { PortalPage } from '../pages/structure/portal/portal.page';
+import { ignoreRecoveredDrafts } from '../pages/structure/shared/unsaved-dialog';
 import { ensureFreshAdminSession } from './admin-login';
 import { ADMIN_STORAGE_STATE } from '../test-data/structure-users';
 import { installVisualNotes, showVisualNote, visualNotesEnabled, visualPause, VISIBLE_STEPS, type VisualNote } from './visual-notes';
@@ -18,12 +19,16 @@ type StructureFixtures = {
    * interne) reste à traiter par les tests (UnsavedDialog).
    */
   beforeUnload: void;
+  /** Popup « SAISIE NON ENREGISTRÉE RETROUVÉE » (brouillon de formulaire) : « Ignorer » automatique. */
+  recoveredDraftIgnored: void;
   /**
    * Portail iCare déjà ouvert (`/modules`) avec la session administrateur partagée
    * (storageState écrit par auth.setup.ts). Chaque test part donc d'un état connecté.
    */
   portal: PortalPage;
 };
+
+export { RECOVERED_DRAFT } from '../pages/structure/shared/unsaved-dialog';
 
 // Page et bandeau du test en cours (un seul worker, une page par test) : utilisés par test.step.
 let currentPage: Page | null = null;
@@ -93,6 +98,16 @@ export const test = base.extend<StructureFixtures>({
     page.on('dialog', dialog => {
       void (dialog.type() === 'beforeunload' ? dialog.accept() : dialog.dismiss()).catch(() => {});
     });
+    await use();
+  }, { auto: true }],
+
+  recoveredDraftIgnored: [async ({ page }, use) => {
+    // Depuis le frontend 344f7eda, une saisie laissée sans enregistrer est gardée en brouillon sur le
+    // poste et reproposée à la réouverture du formulaire (« SAISIE NON ENREGISTRÉE RETROUVÉE » :
+    // Reprendre / Ignorer). Les tests qui quittent volontairement une saisie puis rouvrent le
+    // formulaire répondent « Ignorer », comme un utilisateur qui ne veut pas la reprendre. Un test
+    // qui vérifie la reprise retire ce traitement : page.removeLocatorHandler(RECOVERED_DRAFT(page)).
+    await ignoreRecoveredDrafts(page);
     await use();
   }, { auto: true }],
 

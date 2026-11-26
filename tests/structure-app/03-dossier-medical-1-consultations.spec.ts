@@ -804,7 +804,7 @@ test.describe('Module Dossier médical — Consultations', () => {
         await test.step('Quitter quand même', async () => {
           await leave(page);
           await dialog.expectOpen(LEAVE_TITLE);
-          await dialog.answer(/Quitter quand même/);
+          await dialog.answer(/Quitter (quand même|sans sauvegarder)/);
         });
         const banner = new DraftBanner(page);
         await test.step('Retour : rien sur le serveur, brouillon proposé (type, date du jour, 3 prescriptions)', async () => {
@@ -875,7 +875,7 @@ test.describe('Module Dossier médical — Consultations', () => {
       await test.step('Avertissement « CONSULTATION NON ENREGISTRÉE » attendu (dents saisies)', async () => {
         const warned = await dialog.root.waitFor({ state: 'visible', timeout: 10000 }).then(() => true, () => false);
         expect.soft(warned, 'Avertissement avant de quitter avec un odontogramme saisi').toBe(true);
-        if (warned) await dialog.answer(/Quitter quand même/);
+        if (warned) await dialog.answer(/Quitter (quand même|sans sauvegarder)/);
       });
       const banner = new DraftBanner(page);
       await backToConsultations(page);
@@ -910,7 +910,7 @@ test.describe('Module Dossier médical — Consultations', () => {
       await fillEverything(page, root, TYPES.pediatric, 'pediatric');
       const dialog = new UnsavedDialog(page);
       await leave(page);
-      await dialog.answer(/Quitter quand même/);
+      await dialog.answer(/Quitter (quand même|sans sauvegarder)/);
       await backToConsultations(page);
       const banner = new DraftBanner(page);
       await expect(banner.root).toBeVisible();
