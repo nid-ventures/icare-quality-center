@@ -8,7 +8,7 @@ import { PatientDataGenerator, type PatientData } from '../../pages/structure/ge
 import { ContactPersonGenerator } from '../../pages/structure/generator/contact-person-generator';
 import { CareDataGenerator } from '../../pages/structure/generator/care-data-generator';
 import { hasModule, withoutModuleReason } from '../../test-data/tenants';
-import { UnsavedDialog } from '../../pages/structure/shared/unsaved-dialog';
+import { UnsavedDialog, RECOVERED_DRAFT } from '../../pages/structure/shared/unsaved-dialog';
 
 // 5 min : la création d'un patient attend la liste des patients (/patients/getAll), qui peut
 // dépasser une minute en local ; multiplié par 6 en mode visuel (SLOWMO) comme dans la configuration
@@ -299,6 +299,59 @@ test.describe('Module Base patients', () => {
         await expect(birth(page), 'Fiche rechargée').not.toHaveValue('', { timeout: 15000 });
         await expect(email(page), "Email saisi non enregistré").toHaveValue(saved);
         expect(nativeWarnings, 'Message natif « Quitter le site ? » du navigateur').toBe(0);
+      });
+    });
+
+    // Frontend 344f7eda : un formulaire qui sait s'enregistrer est proposé à l'enregistrement depuis la popup
+    test("Fiche modifiée : « Sauvegarder et quitter » enregistre la saisie puis ouvre la page demandée", async ({ page }) => {
+      const { patient } = await openActivatedFile(page);
+      const typed = `sauve.quitte${Date.now() % 1000000}@example.com`;
+      await email(page).fill(typed);
+      const dialog = new UnsavedDialog(page);
+      await test.step('Menu « Patients » : popup avec Sauvegarder et quitter / Rester sur la page / Quitter sans sauvegarder', async () => {
+        await new PortalPage(page).openMenu('Patients');
+        await dialog.expectOpen(LEAVE);
+        for (const label of [/Sauvegarder et quitter/, /Rester sur la page/, /Quitter sans sauvegarder/]) {
+          await expect(dialog.root.getByRole('button', { name: label }), `Bouton ${label.source}`).toBeVisible();
+        }
+      });
+      await test.step('« Sauvegarder et quitter » : liste des patients, sans autre confirmation', async () => {
+        await dialog.root.getByRole('button', { name: /Sauvegarder et quitter/ }).click();
+        await page.waitForURL('**/patient/patients', { timeout: 30000 });
+        await dialog.expectClosed();
+      });
+      await test.step("Fiche rouverte : l'email saisi est enregistré", async () => {
+        await reopenFile(page, patient);
+        await expect(email(page)).toHaveValue(typed);
+      });
+    });
+
+    test("Fiche quittée sans sauvegarder : la saisie est retrouvée en brouillon et « Reprendre » la réaffiche", async ({ page }) => {
+      const { patient, saved } = await openActivatedFile(page);
+      const typed = `brouillon${Date.now() % 1000000}@example.com`;
+      await email(page).fill(typed);
+      const dialog = new UnsavedDialog(page);
+      await test.step('Quitter sans sauvegarder', async () => {
+        await new PortalPage(page).openMenu('Patients');
+        await dialog.expectOpen(LEAVE);
+        await dialog.answer(/Quitter (quand même|sans sauvegarder)/);
+        await page.waitForURL('**/patient/patients');
+      });
+      await test.step("Fiche rouverte : valeur enregistrée affichée tant que le formulaire n'est pas activé", async () => {
+        await reopenFile(page, patient);
+        await expect(email(page)).toHaveValue(saved);
+      });
+      await test.step('Activer le formulaire : « Saisie non enregistrée retrouvée » (Reprendre / Ignorer)', async () => {
+        // Ce test vérifie la reprise : la réponse automatique « Ignorer » est retirée
+        await page.removeLocatorHandler(RECOVERED_DRAFT(page));
+        await page.getByRole('button', { name: 'Activer le formulaire' }).click();
+        await dialog.expectOpen(/SAISIE NON ENREGISTRÉE RETROUVÉE/, /gardée en brouillon sur ce poste/);
+        await expect(dialog.root.getByRole('button', { name: /Ignorer/ })).toBeVisible();
+      });
+      await test.step('« Reprendre » : la saisie non enregistrée est réaffichée dans le formulaire activé', async () => {
+        await dialog.answer(/Reprendre/);
+        await expect(email(page)).toHaveValue(typed);
+        await expect(email(page)).toBeEditable();
       });
     });
 

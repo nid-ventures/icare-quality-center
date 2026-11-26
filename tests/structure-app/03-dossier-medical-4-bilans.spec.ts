@@ -395,6 +395,20 @@ test.describe("Module Dossier médical — Bilans d'analyses", () => {
       page.getByRole('button', { name: /Générer le bulletin/ }).click(),
     ]);
     expect(download.suggestedFilename()).toMatch(/^Bulletin_Analyses_.+_\d{4}-\d{2}-\d{2}\.pdf$/);
+    await test.step('Le bulletin utilise la police de Paramètres › Configuration des documents', async () => {
+      // Frontend 344f7eda : police lue dans le cache refdatahi (policy) ; Helvetica, Times et Courier
+      // sont les polices de jsPDF, les autres (Poppins par défaut, Carlito, Lato) sont embarquées
+      const policy = await page.evaluate(() => {
+        try { return String(JSON.parse(localStorage.getItem('refdatahi') || 'null')?.policy ?? ''); } catch { return ''; }
+      });
+      const p = policy.trim().toLowerCase();
+      const baseFont = p === 'times new roman' ? 'Times-Roman' : p === 'courier new' ? 'Courier'
+        : p === 'helvetica' ? 'Helvetica' : p === 'carlito' ? 'Carlito' : p === 'lato' ? 'Lato' : 'Poppins';
+      const pdf = readFileSync(await download.path()).toString('latin1');
+      const fonts = [...new Set([...pdf.matchAll(/\/BaseFont\s*\/([^\s/>]+)/g)].map(m => m[1]))];
+      expect(fonts, `Police « ${policy || 'par défaut'} » dans le PDF (polices : ${fonts.join(', ')})`)
+        .toContainEqual(expect.stringMatching(new RegExp(`^([A-Z]{6}\\+)?${baseFont}`)));
+    });
   });
 
   test('Imprimer le bulletin depuis la liste des bilans (PDF)', async ({ page }) => {
