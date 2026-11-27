@@ -97,6 +97,19 @@ export class MyConfigurationPage {
     });
   }
 
+  /**
+   * Cartes masquées dans la version de production du frontend (branche main, d6583712) : elles
+   * restent dans la page avec l'attribut `hidden`. Une carte absente de la page est une régression.
+   */
+  static readonly PROD_HIDDEN_SECTIONS = ['Modules de la structure', 'Modules & Privilèges'];
+
+  /** La carte est présente dans la page mais masquée (`hidden`, version de production). */
+  async isSectionHidden(title: string): Promise<boolean> {
+    const card = this.configCard(title);
+    await expect(card, `Carte « ${title} » présente dans la page`).toHaveCount(1);
+    return (await card.getAttribute('hidden')) !== null;
+  }
+
   async expectSectionsVisible(titles: string[]) {
     for (const title of titles) {
       await expect(this.configCard(title).locator('.config-card-header')).toBeVisible();
