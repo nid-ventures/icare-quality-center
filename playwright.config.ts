@@ -66,6 +66,9 @@ export default defineConfig({
     // jusqu'au délai du test (30 min en visuel), ce qui ressemble à un blocage. Doublé en visuel
     // (SLOWMO) où l'application, ralentie par les pauses, met plus de temps à se stabiliser.
     actionTimeout: Number(process.env.SLOWMO) > 0 ? 60000 : 30000,
+    // Délai maximal d'une navigation (goto, waitForURL…) : sans lui, un clic qui n'a pas ouvert la
+    // page attendue fait attendre jusqu'au délai du test (1 h en 03-6). Doublé en visuel.
+    navigationTimeout: Number(process.env.SLOWMO) > 0 ? 120000 : 60000,
     // Nécessaire pour l'environnement local (nid-dev.localhost.com) qui utilise un certificat
     // auto-signé non approuvé par défaut ; sans impact sur les environnements distants qui ont
     // un certificat valide.

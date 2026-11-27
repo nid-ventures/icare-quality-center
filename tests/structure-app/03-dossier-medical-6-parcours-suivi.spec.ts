@@ -98,8 +98,13 @@ const pathwayTile = (page: Page, name: string) =>
 /** Ouvre le détail du parcours en cours `name` depuis le dashboard du patient. */
 async function openPathway(page: Page, patient: DossierPatient, name: string) {
   await openPatientFile(page, patient);
-  await page.getByRole('link', { name: new RegExp(`${name}\\s*Voir le parcours`) }).first().click();
-  await page.waitForURL('**/patient/patient-care-pathway-detail/**');
+  // Un clic peut rester sans effet (tuile redessinée au même moment) : nouveau clic tant que le
+  // détail du parcours n'est pas ouvert, au lieu d'attendre une navigation qui ne viendra pas
+  const link = page.getByRole('link', { name: new RegExp(`${name}\\s*Voir le parcours`) }).first();
+  await expect(async () => {
+    if (!page.url().includes('/patient/patient-care-pathway-detail/')) await link.click({ timeout: 10000 });
+    await page.waitForURL('**/patient/patient-care-pathway-detail/**', { timeout: 10000 });
+  }).toPass({ timeout: 60000 });
   await expect(page.locator('.pw-hero')).toBeVisible({ timeout: 20000 });
 }
 

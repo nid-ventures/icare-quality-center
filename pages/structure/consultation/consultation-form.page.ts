@@ -57,8 +57,14 @@ export class ConsultationFormPage {
 
   private async openDropdown(select: Locator) {
     await select.scrollIntoViewIfNeeded();
-    await select.locator('.ng-select-container').click();
-    await this.page.locator('.ng-dropdown-panel .ng-option').first().waitFor({ state: 'visible', timeout: 10000 });
+    // Ouverture par la flèche : au centre du champ, un clic peut tomber sur la croix « × » d'une valeur
+    // déjà choisie (longs libellés d'actes à facturer) — il la retire au lieu d'ouvrir la liste.
+    // Nouveau clic tant qu'aucune option n'est affichée (la flèche ouvre une liste fermée).
+    const option = this.page.locator('.ng-dropdown-panel .ng-option').first();
+    await expect(async () => {
+      if (!(await option.isVisible())) await select.locator('.ng-arrow-wrapper').click();
+      await option.waitFor({ state: 'visible', timeout: 2000 });
+    }).toPass({ timeout: 15000 });
   }
 
   /** Remplit les champs dans l'ordre donné (placer d'abord les choix qui affichent d'autres champs). */
@@ -130,21 +136,29 @@ export class ConsultationFormPage {
           const select = control.first();
           await expect(select, `Liste multiple "${field.name}"`).toBeVisible();
           const labels: string[] = [];
+          // Valeurs déjà présentes (formulaire de modification) : gardées, les choix s'y ajoutent
+          const before = await select.locator('.ng-value').count();
           const wanted = field.options ?? [];
           const total = Math.max(field.count ?? 0, wanted.length);
           for (let i = 0; i < total; i++) {
             await this.openDropdown(select);
             // Les options déjà choisies sont marquées .ng-option-selected : on prend la suivante libre.
             const free = this.page.locator('.ng-dropdown-panel .ng-option:not(.ng-option-disabled):not(.ng-option-selected)');
+            // Libellés déjà retenus exclus aussi : la marque .ng-option-selected peut arriver après la réouverture
+            const notPicked = labels.reduce((loc, picked) => loc.filter({ hasNotText: new RegExp(`^\\s*${escapeRegExp(picked)}\\s*$`, 'i') }), free);
             const option = i < wanted.length
               ? free.filter({ hasText: new RegExp(`^\\s*${escapeRegExp(wanted[i])}\\s*$`) }).first()
-              : free.first();
+              : notPicked.first();
             const label = ((await option.textContent()) ?? '').replace(/\s+/g, ' ').trim();
             labels.push(label);
-            await this.pick(option);
+            // Clic déclenché sur l'option visée elle-même (toggleItem de ng-select) : un clic à la souris
+            // peut tomber sur l'option voisine quand la liste se redessine, et décocher un acte déjà choisi.
+            await option.dispatchEvent('click');
             await this.closeDropdown(select);
             await expect(select.locator('.ng-value').filter({ hasText: new RegExp(escapeRegExp(label), 'i') }), `Valeur "${label}" ajoutée à "${field.name}"`).toHaveCount(1);
           }
+          // Un choix ne doit pas en avoir retiré un autre (clic sur une option déjà sélectionnée)
+          await expect(select.locator('.ng-value'), `${before + labels.length} valeur(s) dans "${field.name}"`).toHaveCount(before + labels.length);
           filled[field.name] = labels;
           break;
         }
