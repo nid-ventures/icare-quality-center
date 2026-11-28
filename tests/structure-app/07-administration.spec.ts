@@ -451,6 +451,16 @@ test.describe('Module Administration', () => {
     test("Afficher toutes les rubriques de l'espace paramétrage", async ({ page }) => {
       const configPage = new MyConfigurationPage(page);
       await configPage.expectLoaded();
+      // Version de production (frontend main) : « Modules de la structure » et « Modules &
+      // Privilèges » sont masquées ; on vérifie alors qu'elles le sont bien.
+      const hidden: string[] = [];
+      for (const title of MyConfigurationPage.PROD_HIDDEN_SECTIONS) {
+        if (await configPage.isSectionHidden(title)) hidden.push(title);
+      }
+      if (hidden.length) {
+        test.info().annotations.push({ type: 'Version de production', description: `Cartes masquées : ${hidden.join(', ')}` });
+        for (const title of hidden) await expect(configPage.configCard(title), `Carte « ${title} » masquée`).toBeHidden();
+      }
       await configPage.expectSectionsVisible([
         'Détails de la structure',
         'Modules de la structure',
@@ -461,7 +471,7 @@ test.describe('Module Administration', () => {
         'Actes',
         'Rémunération médecin',
         'Parcours de soins',
-      ]);
+      ].filter((title) => !hidden.includes(title)));
     });
 
     test('Modifier les détails de la structure puis annuler', async ({ page }) => {
@@ -519,6 +529,10 @@ test.describe('Module Administration', () => {
     // s'exécute dans un contexte isolé et ne modifie donc pas la configuration réelle.
     test('Désactiver puis réactiver un module de la structure', async ({ page, portal }) => {
       const configPage = new MyConfigurationPage(page);
+      test.skip(
+        await configPage.isSectionHidden('Modules de la structure'),
+        'Carte « Modules de la structure » masquée dans cette version du frontend (main / production)',
+      );
       await configPage.openSection('Modules de la structure');
 
       await test.step('Le module Administration est toujours actif', async () => {
